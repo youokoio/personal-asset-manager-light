@@ -206,6 +206,30 @@ const INITIAL_ACCOUNTS = [
   {name:"暗号資産取引所", type:"crypto"}
 ];
 
+/*
+ * FX口座ごとの設定
+ * marginRatePct：必要証拠金率
+ * lossCutRatio：ロスカット水準（証拠金維持率）
+ */
+const FX_ACCOUNT_SETTINGS = {
+  "LIGHT FX": {
+    marginRatePct:4,
+    lossCutRatio:100
+  },
+  "セントラル短資FX": {
+    marginRatePct:5,
+    lossCutRatio:100
+  },
+  "クリック365": {
+    marginRatePct:4,
+    lossCutRatio:50
+  },
+  "LION FX": {
+    marginRatePct:4,
+    lossCutRatio:100
+  }
+};
+
 const TYPE_LABELS = {
   bank:"銀行",
   fx:"FX",
@@ -328,16 +352,22 @@ function createInitialData() {
 
   return {
     schemaVersion: SCHEMA_VERSION,
-    accounts: INITIAL_ACCOUNTS.map(item => ({
-      id:createId(),
-      name:item.name,
-      type:item.type,
-      memo:"",
-      lossCutRatio:item.type === "fx" ? 100 : null,
-      marginRatePct:item.type === "fx" ? 4 : null,
-      createdAt:now,
-      updatedAt:now
-    })),
+    accounts: INITIAL_ACCOUNTS.map(item => {
+      const fxSettings = item.type === "fx"
+        ? FX_ACCOUNT_SETTINGS[item.name]
+        : null;
+
+      return {
+        id:createId(),
+        name:item.name,
+        type:item.type,
+        memo:"",
+        lossCutRatio:fxSettings ? fxSettings.lossCutRatio : null,
+        marginRatePct:fxSettings ? fxSettings.marginRatePct : null,
+        createdAt:now,
+        updatedAt:now
+      };
+    }),
     snapshots:[]
   };
 }
@@ -374,6 +404,51 @@ function validateData(data) {
   }
 }
 
+/*
+ * 既存データのFX口座設定を更新する。
+ * 口座名「株365」は正式名称「クリック365」に変更する。
+ * 履歴データや口座IDは変更しない。
+ */
+function migrateFxAccountSettings(data) {
+  let changed = false;
+
+  for (const account of data.accounts) {
+    if (account.name === "株365") {
+      account.name = "クリック365";
+      account.type = "fx";
+      changed = true;
+    }
+
+    const settings = FX_ACCOUNT_SETTINGS[account.name];
+    if (!settings) continue;
+
+    if (account.type !== "fx") {
+      account.type = "fx";
+      changed = true;
+    }
+
+    if (account.lossCutRatio !== settings.lossCutRatio) {
+      account.lossCutRatio = settings.lossCutRatio;
+      changed = true;
+    }
+
+    if (account.marginRatePct !== settings.marginRatePct) {
+      account.marginRatePct = settings.marginRatePct;
+      changed = true;
+    }
+
+    if (changed) {
+      account.updatedAt = new Date().toISOString();
+    }
+  }
+
+  if (changed) {
+    saveData(data);
+  }
+
+  return data;
+}
+
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY);
 
@@ -385,7 +460,8 @@ function loadData() {
 
   const parsed = JSON.parse(raw);
   validateData(parsed);
-  return parsed;
+
+  return migrateFxAccountSettings(parsed);
 }
 
 function saveData(data) {
