@@ -3,9 +3,966 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#17324d">
+<meta name="description" content="端末内で管理する個人用資産管理アプリ">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<title>個人資産管理</title>
+<style>
+:root {
+  color-scheme: light;
+  --navy:#17324d;
+  --blue:#27628a;
+  --bg:#f2f5f8;
+  --card:#fff;
+  --text:#17212b;
+  --muted:#687786;
+  --border:#dce3e9;
+  --red:#b33b3b;
+  --green:#28764c;
+}
+* { box-sizing:border-box; }
+body {
+  margin:0;
+  padding:0 0 calc(82px + env(safe-area-inset-bottom));
+  background:var(--bg);
+  color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  font-size:15px;
+}
+header {
+  background:var(--navy);
+  color:white;
+  padding:20px 18px 17px;
+}
+header h1 { margin:0; font-size:20px; }
+header p { margin:5px 0 0; color:#d6e2ec; font-size:12px; }
+main { max-width:760px; margin:0 auto; padding:16px; }
+h2 { margin:4px 0 14px; font-size:19px; }
+h3 { margin:0 0 10px; font-size:16px; }
+.card {
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:14px;
+  padding:15px;
+  margin-bottom:13px;
+  box-shadow:0 2px 7px rgba(20,40,60,.04);
+}
+.metric-label { color:var(--muted); font-size:12px; }
+.metric-value { font-size:25px; font-weight:700; margin-top:5px; overflow-wrap:anywhere; }
+.metric-sub { color:var(--muted); font-size:12px; margin-top:5px; }
+.metric-grid {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:10px;
+}
+.metric-grid .card { margin:0; }
+.account-row {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  padding:13px 0;
+  border-bottom:1px solid var(--border);
+}
+.account-row:last-child { border-bottom:0; }
+.account-name { font-weight:650; }
+.account-meta { color:var(--muted); font-size:12px; margin-top:4px; }
+.account-value { text-align:right; font-weight:700; white-space:nowrap; }
+button {
+  border:0;
+  border-radius:9px;
+  padding:11px 14px;
+  background:var(--blue);
+  color:white;
+  font-size:14px;
+  font-weight:600;
+  cursor:pointer;
+}
+button.secondary { background:#e8eef3; color:var(--navy); }
+button.danger { background:#f9e9e9; color:var(--red); }
+button:disabled { opacity:.45; }
+button.small { padding:7px 10px; font-size:12px; }
+.actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+.field { margin-bottom:13px; }
+.field label { display:block; font-size:13px; font-weight:600; margin-bottom:6px; }
+.field input, .field textarea, .field select {
+  display:block;
+  width:100%;
+  min-height:43px;
+  border:1px solid #cbd5de;
+  border-radius:8px;
+  padding:10px;
+  background:white;
+  color:var(--text);
+  font-size:16px;
+}
+.field textarea { min-height:75px; resize:vertical; }
+.help { color:var(--muted); font-size:12px; margin-top:5px; line-height:1.5; }
+.snapshot-row {
+  padding:12px 0;
+  border-bottom:1px solid var(--border);
+}
+.snapshot-row:last-child { border-bottom:0; }
+.snapshot-top { display:flex; justify-content:space-between; gap:8px; }
+.snapshot-date { font-size:13px; color:var(--muted); }
+.snapshot-value { font-weight:700; }
+.snapshot-meta { font-size:12px; color:var(--muted); margin-top:5px; }
+.pill {
+  display:inline-block;
+  background:#e9f0f5;
+  color:#31536d;
+  border-radius:20px;
+  padding:3px 8px;
+  font-size:11px;
+}
+.positive { color:var(--green); }
+.negative { color:var(--red); }
+.empty { color:var(--muted); font-size:13px; padding:12px 0; }
+.notice {
+  border-radius:9px;
+  background:#edf3f7;
+  padding:11px;
+  color:#42596b;
+  font-size:12px;
+  line-height:1.6;
+  margin-bottom:13px;
+}
+.error {
+  background:#fff0f0;
+  color:#9e2828;
+  padding:12px;
+  border-radius:9px;
+  margin-bottom:12px;
+  font-size:13px;
+}
+.success {
+  background:#edf7f0;
+  color:#24643e;
+  padding:10px;
+  border-radius:9px;
+  margin-bottom:12px;
+  font-size:13px;
+}
+.bottom-nav {
+  position:fixed;
+  z-index:10;
+  bottom:0;
+  left:0;
+  right:0;
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  padding:8px 5px calc(8px + env(safe-area-inset-bottom));
+  background:#fff;
+  border-top:1px solid var(--border);
+}
+.bottom-nav button {
+  background:transparent;
+  color:var(--muted);
+  border-radius:8px;
+  padding:9px 2px;
+  font-size:12px;
+}
+.bottom-nav button.active { color:var(--blue); background:#edf3f7; }
+hr { border:0; border-top:1px solid var(--border); margin:14px 0; }
+.hidden { display:none !important; }
+@media (min-width:600px) {
+  main { padding:22px; }
+}
+</style>
 </head>
 <body>
-準備OK
+<header>
+  <h1>個人資産管理</h1>
+  <p>個人用・端末内保存</p>
+</header>
+
+<main id="app">
+  <div class="notice">読み込み中...</div>
+</main>
+
+<nav class="bottom-nav" aria-label="メインメニュー">
+  <button type="button" data-tab="dashboard" class="active">ダッシュボード</button>
+  <button type="button" data-tab="accounts">口座</button>
+  <button type="button" data-tab="fx">FX</button>
+  <button type="button" data-tab="data">データ</button>
+</nav>
+
+<script>
+"use strict";
+
+/* ---------- 定数・初期データ ---------- */
+
+const STORAGE_KEY = "pam2";
+const SCHEMA_VERSION = 1;
+
+const INITIAL_ACCOUNTS = [
+  {name:"LIGHT FX", type:"fx"},
+  {name:"セントラル短資FX", type:"fx"},
+  {name:"株365", type:"other"},
+  {name:"LION FX", type:"fx"},
+  {name:"楽天証券", type:"securities"},
+  {name:"iDeCo", type:"ideco"},
+  {name:"企業型DC", type:"dc"},
+  {name:"暗号資産取引所", type:"crypto"}
+];
+
+const TYPE_LABELS = {
+  bank:"銀行",
+  fx:"FX",
+  securities:"証券",
+  ideco:"iDeCo",
+  dc:"企業型DC",
+  crypto:"暗号資産",
+  other:"その他"
+};
+
+/* ---------- 純粋関数 ---------- */
+
+function createId() {
+  if (window.crypto && typeof window.crypto.randomUUID === "function") {
+    return window.crypto.randomUUID();
+  }
+  return "id-" + Date.now().toString(36) + "-" +
+    Math.random().toString(36).slice(2);
+}
+
+function localDateString(date = new Date()) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2,"0");
+  const d = String(date.getDate()).padStart(2,"0");
+  return `${y}-${m}-${d}`;
+}
+
+function toNumberOrNull(value) {
+  if (value === "" || value === null || value === undefined) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function formatYen(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "未入力";
+  }
+  return "¥" + Math.round(value).toLocaleString("ja-JP");
+}
+
+function formatSignedYen(value) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "未入力";
+  }
+  const sign = value > 0 ? "+" : value < 0 ? "−" : "";
+  return sign + "¥" + Math.abs(Math.round(value)).toLocaleString("ja-JP");
+}
+
+function compareSnapshots(a,b) {
+  if (a.asOfDate !== b.asOfDate) {
+    return b.asOfDate.localeCompare(a.asOfDate);
+  }
+  return String(b.recordedAt).localeCompare(String(a.recordedAt));
+}
+
+function getAccountSnapshots(data, accountId) {
+  return data.snapshots
+    .filter(s => s.accountId === accountId)
+    .slice()
+    .sort(compareSnapshots);
+}
+
+function getLatestSnapshot(data, accountId) {
+  return getAccountSnapshots(data, accountId)[0] || null;
+}
+
+function getPreviousSnapshot(data, accountId) {
+  return getAccountSnapshots(data, accountId)[1] || null;
+}
+
+function calculateDashboard(data) {
+  let total = 0;
+  let previousTotal = 0;
+  let previousComplete = true;
+  const typeTotals = {};
+  const accountRows = [];
+
+  for (const account of data.accounts) {
+    const latest = getLatestSnapshot(data, account.id);
+    const previous = getPreviousSnapshot(data, account.id);
+
+    const value = latest ? latest.value : null;
+    const previousValue = previous ? previous.value : null;
+
+    if (value !== null) {
+      total += value;
+      typeTotals[account.type] = (typeTotals[account.type] || 0) + value;
+    }
+
+    if (previousValue !== null) {
+      previousTotal += previousValue;
+    } else {
+      previousComplete = false;
+    }
+
+    accountRows.push({
+      account,
+      latest,
+      previous,
+      value,
+      difference: latest && previous
+        ? latest.value - previous.value
+        : null
+    });
+  }
+
+  return {
+    total,
+    previousTotal: previousComplete ? previousTotal : null,
+    difference: previousComplete ? total - previousTotal : null,
+    typeTotals,
+    accountRows
+  };
+}
+
+/* ---------- データ保存 ---------- */
+
+function createInitialData() {
+  const now = new Date().toISOString();
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    accounts: INITIAL_ACCOUNTS.map(item => ({
+      id:createId(),
+      name:item.name,
+      type:item.type,
+      memo:"",
+      lossCutRatio:item.type === "fx" ? 100 : null,
+      marginRatePct:item.type === "fx" ? 4 : null,
+      createdAt:now,
+      updatedAt:now
+    })),
+    snapshots:[]
+  };
+}
+
+function validateData(data) {
+  if (!data || typeof data !== "object") {
+    throw new Error("保存データの形式が正しくありません。");
+  }
+  if (data.schemaVersion !== SCHEMA_VERSION) {
+    throw new Error("対応していないデータ形式です。");
+  }
+  if (!Array.isArray(data.accounts) || !Array.isArray(data.snapshots)) {
+    throw new Error("口座または履歴データが正しくありません。");
+  }
+
+  for (const account of data.accounts) {
+    if (!account || typeof account.id !== "string" ||
+        typeof account.name !== "string" ||
+        !Object.hasOwn(TYPE_LABELS, account.type)) {
+      throw new Error("口座データに不正な項目があります。");
+    }
+  }
+
+  for (const snapshot of data.snapshots) {
+    if (!snapshot || typeof snapshot.id !== "string" ||
+        typeof snapshot.accountId !== "string" ||
+        typeof snapshot.asOfDate !== "string" ||
+        !Number.isFinite(snapshot.value)) {
+      throw new Error("履歴データに不正な項目があります。");
+    }
+    if (!data.accounts.some(a => a.id === snapshot.accountId)) {
+      throw new Error("履歴の口座参照先がありません。");
+    }
+  }
+}
+
+function loadData() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+
+  if (raw === null) {
+    const initial = createInitialData();
+    saveData(initial);
+    return initial;
+  }
+
+  const parsed = JSON.parse(raw);
+  validateData(parsed);
+  return parsed;
+}
+
+function saveData(data) {
+  validateData(data);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+let appData;
+let currentTab = "dashboard";
+let selectedAccountId = null;
+let editingSnapshotId = null;
+let messageText = "";
+let errorText = "";
+
+try {
+  appData = loadData();
+} catch (error) {
+  errorText = error.message || "データを読み込めませんでした。";
+}
+
+/* ---------- DOM共通処理 ---------- */
+
+const app = document.getElementById("app");
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined && text !== null) {
+    node.textContent = String(text);
+  }
+  return node;
+}
+
+function clearApp() {
+  app.replaceChildren();
+}
+
+function showMessage(text, isError = false) {
+  messageText = isError ? "" : text;
+  errorText = isError ? text : "";
+}
+
+function addMessage(container) {
+  if (errorText) {
+    container.appendChild(el("div","error",errorText));
+  } else if (messageText) {
+    container.appendChild(el("div","success",messageText));
+  }
+}
+
+function makeButton(label, action, className = "") {
+  const button = el("button",className,label);
+  button.type = "button";
+  button.dataset.action = action;
+  return button;
+}
+
+function makeField(labelText, name, value, options = {}) {
+  const wrapper = el("div","field");
+  const label = el("label","",labelText);
+  label.htmlFor = "field-" + name;
+
+  let input;
+  if (options.textarea) {
+    input = document.createElement("textarea");
+  } else {
+    input = document.createElement("input");
+    input.type = options.type || "number";
+    if (input.type === "number") input.step = "any";
+    if (options.inputmode) input.inputMode = options.inputmode;
+  }
+
+  input.id = "field-" + name;
+  input.name = name;
+  input.value = value === null || value === undefined ? "" : String(value);
+  if (options.required) input.required = true;
+  if (options.placeholder) input.placeholder = options.placeholder;
+
+  wrapper.append(label,input);
+
+  if (options.help) {
+    wrapper.appendChild(el("div","help",options.help));
+  }
+  return wrapper;
+}
+
+function makeSelectField(labelText, name, options, selected) {
+  const wrapper = el("div","field");
+  const label = el("label","",labelText);
+  label.htmlFor = "field-" + name;
+
+  const select = document.createElement("select");
+  select.id = "field-" + name;
+  select.name = name;
+
+  for (const item of options) {
+    const option = document.createElement("option");
+    option.value = item.value;
+    option.textContent = item.label;
+    if (item.value === selected) option.selected = true;
+    select.appendChild(option);
+  }
+
+  wrapper.append(label,select);
+  return wrapper;
+}
+
+function updateNavigation() {
+  document.querySelectorAll(".bottom-nav button").forEach(button => {
+    button.classList.toggle("active",button.dataset.tab === currentTab);
+  });
+}
+
+function heading(title) {
+  return el("h2","",title);
+}
+
+/* ---------- ダッシュボード ---------- */
+
+function renderDashboard() {
+  clearApp();
+  app.appendChild(heading("ダッシュボード"));
+  addMessage(app);
+
+  const summary = calculateDashboard(appData);
+
+  const grid = el("div","metric-grid");
+
+  const totalCard = el("section","card");
+  totalCard.appendChild(el("div","metric-label","総資産"));
+  totalCard.appendChild(el("div","metric-value",formatYen(summary.total)));
+  totalCard.appendChild(el("div","metric-sub","口座の最新評価額の合計"));
+  grid.appendChild(totalCard);
+
+  const differenceCard = el("section","card");
+  differenceCard.appendChild(el("div","metric-label","前回記録との差"));
+  differenceCard.appendChild(el("div","metric-value",
+    summary.difference === null ? "算出不可" : formatSignedYen(summary.difference)
+  ));
+  differenceCard.appendChild(el("div","metric-sub",
+    summary.difference === null
+      ? "比較可能な前回記録がありません"
+      : "各口座の前回記録との差の合計"
+  ));
+  grid.appendChild(differenceCard);
+
+  app.appendChild(grid);
+
+  const accountCard = el("section","card");
+  accountCard.appendChild(el("h3","","口座別一覧"));
+
+  for (const row of summary.accountRows) {
+    const line = el("div","account-row");
+    const left = el("div");
+    left.appendChild(el("div","account-name",row.account.name));
+    left.appendChild(el("div","account-meta",
+      TYPE_LABELS[row.account.type] + " ・ " +
+      (row.latest ? row.latest.asOfDate : "記録なし")
+    ));
+
+    const right = el("div");
+    right.appendChild(el("div","account-value",
+      row.value === null ? "未入力" : formatYen(row.value)
+    ));
+    if (row.difference !== null) {
+      const diff = el("div","account-meta",
+        "前回比 " + formatSignedYen(row.difference)
+      );
+      if (row.difference > 0) diff.classList.add("positive");
+      if (row.difference < 0) diff.classList.add("negative");
+      right.appendChild(diff);
+    }
+
+    line.append(left,right);
+    line.addEventListener("click",() => {
+      selectedAccountId = row.account.id;
+      currentTab = "accounts";
+      render();
+    });
+    line.style.cursor = "pointer";
+    accountCard.appendChild(line);
+  }
+
+  app.appendChild(accountCard);
+
+  const typeCard = el("section","card");
+  typeCard.appendChild(el("h3","","種別別合計"));
+
+  for (const [type,label] of Object.entries(TYPE_LABELS)) {
+    const value = summary.typeTotals[type];
+    if (value === undefined) continue;
+    const line = el("div","account-row");
+    line.appendChild(el("div","account-name",label));
+    line.appendChild(el("div","account-value",formatYen(value)));
+    typeCard.appendChild(line);
+  }
+
+  app.appendChild(typeCard);
+
+  app.appendChild(el("div","help",
+    "評価額が未入力の口座は総資産に含まれません。FX建玉は総資産に加算せず、FX口座の純資産snapshotを採用します。"
+  ));
+}
+
+/* ---------- 口座一覧・詳細 ---------- */
+
+function renderAccountList() {
+  app.appendChild(heading("口座一覧"));
+
+  const card = el("section","card");
+  card.appendChild(el("div","help",
+    "口座を選択すると、評価額履歴の追加・編集・削除ができます。"
+  ));
+
+  for (const account of appData.accounts) {
+    const latest = getLatestSnapshot(appData,account.id);
+    const line = el("div","account-row");
+
+    const left = el("div");
+    left.appendChild(el("div","account-name",account.name));
+    left.appendChild(el("div","account-meta",TYPE_LABELS[account.type]));
+
+    const right = el("div");
+    right.appendChild(el("div","account-value",
+      latest ? formatYen(latest.value) : "未入力"
+    ));
+    right.appendChild(el("div","account-meta",
+      latest ? latest.asOfDate : "記録なし"
+    ));
+
+    line.append(left,right);
+    line.style.cursor = "pointer";
+    line.addEventListener("click",() => {
+      selectedAccountId = account.id;
+      render();
+    });
+    card.appendChild(line);
+  }
+
+  app.appendChild(card);
+}
+
+function renderSnapshotRow(snapshot) {
+  const row = el("div","snapshot-row");
+
+  const top = el("div","snapshot-top");
+  top.appendChild(el("div","snapshot-date",snapshot.asOfDate));
+  top.appendChild(el("div","snapshot-value",formatYen(snapshot.value)));
+  row.appendChild(top);
+
+  const metaParts = [];
+  if (snapshot.pnl !== null && snapshot.pnl !== undefined) {
+    metaParts.push("損益 " + formatSignedYen(snapshot.pnl));
+  }
+  if (snapshot.cash !== null && snapshot.cash !== undefined) {
+    metaParts.push("現金 " + formatYen(snapshot.cash));
+  }
+  if (snapshot.principal !== null && snapshot.principal !== undefined) {
+    metaParts.push("元本 " + formatYen(snapshot.principal));
+  }
+  if (snapshot.swapTotal !== null && snapshot.swapTotal !== undefined) {
+    metaParts.push("累計スワップ " + formatYen(snapshot.swapTotal));
+  }
+  if (snapshot.requiredMargin !== null && snapshot.requiredMargin !== undefined) {
+    metaParts.push("必要証拠金 " + formatYen(snapshot.requiredMargin));
+  }
+  if (metaParts.length) {
+    row.appendChild(el("div","snapshot-meta",metaParts.join(" ／ ")));
+  }
+  if (snapshot.memo) {
+    row.appendChild(el("div","snapshot-meta","メモ：" + snapshot.memo));
+  }
+
+  const actions = el("div","actions");
+  const edit = makeButton("編集","edit-snapshot","secondary small");
+  edit.dataset.id = snapshot.id;
+  const remove = makeButton("削除","delete-snapshot","danger small");
+  remove.dataset.id = snapshot.id;
+  actions.append(edit,remove);
+  row.appendChild(actions);
+
+  return row;
+}
+
+function renderSnapshotForm(account) {
+  const existing = editingSnapshotId
+    ? appData.snapshots.find(s => s.id === editingSnapshotId)
+    : null;
+
+  const snapshots = getAccountSnapshots(appData,account.id);
+  const defaultDate = existing
+    ? existing.asOfDate
+    : snapshots.length ? snapshots[0].asOfDate : localDateString();
+
+  const form = document.createElement("form");
+  form.id = "snapshot-form";
+  form.appendChild(el("h3","",existing ? "履歴を編集" : "評価額を追加"));
+
+  form.appendChild(makeField("対象日","asOfDate",defaultDate,{
+    type:"date",
+    required:true,
+    help:"評価額の対象日です。入力した日とは別に記録します。"
+  }));
+
+  form.appendChild(makeField("評価額（円）","value",
+    existing ? existing.value : "",{
+      required:true,
+      inputmode:"decimal"
+    }
+  ));
+
+  form.appendChild(makeField("現金（円・任意）","cash",
+    existing ? existing.cash : "",{inputmode:"decimal"}
+  ));
+
+  form.appendChild(makeField("評価損益（円・任意）","pnl",
+    existing ? existing.pnl : "",{inputmode:"decimal"}
+  ));
+
+  form.appendChild(makeField("元本（円・任意）","principal",
+    existing ? existing.principal : "",{inputmode:"decimal"}
+  ));
+
+  if (account.type === "fx") {
+    form.appendChild(makeField("累計スワップ（円・任意）","swapTotal",
+      existing ? existing.swapTotal : "",{inputmode:"decimal"}
+    ));
+    form.appendChild(makeField("必要証拠金（円・任意）","requiredMargin",
+      existing ? existing.requiredMargin : "",{inputmode:"decimal"}
+    ));
+  }
+
+  form.appendChild(makeField("メモ（任意）","memo",
+    existing ? existing.memo : "",{textarea:true}
+  ));
+
+  form.appendChild(el("div","help",
+    "口座番号・契約番号・暗証番号・ログイン情報は入力しないでください。"
+  ));
+
+  const actions = el("div","actions");
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.textContent = existing ? "変更を保存" : "追加する";
+  actions.appendChild(save);
+
+  if (existing) {
+    actions.appendChild(makeButton("編集を中止","cancel-edit","secondary"));
+  }
+  form.appendChild(actions);
+
+  form.addEventListener("submit",handleSnapshotSubmit);
+  return form;
+}
+
+function renderAccountDetail() {
+  const account = appData.accounts.find(a => a.id === selectedAccountId);
+  if (!account) {
+    selectedAccountId = null;
+    renderAccountList();
+    return;
+  }
+
+  const back = makeButton("← 口座一覧へ","back-accounts","secondary");
+  app.appendChild(back);
+
+  app.appendChild(heading(account.name));
+
+  const latest = getLatestSnapshot(appData,account.id);
+  const info = el("section","card");
+  info.appendChild(el("div","metric-label","最新評価額"));
+  info.appendChild(el("div","metric-value",
+    latest ? formatYen(latest.value) : "未入力"
+  ));
+  info.appendChild(el("div","metric-sub",
+    latest ? "対象日：" + latest.asOfDate : "評価額の記録がありません"
+  ));
+  app.appendChild(info);
+
+  const formCard = el("section","card");
+  formCard.appendChild(renderSnapshotForm(account));
+  app.appendChild(formCard);
+
+  const historyCard = el("section","card");
+  historyCard.appendChild(el("h3","","評価額履歴"));
+
+  const snapshots = getAccountSnapshots(appData,account.id);
+  if (!snapshots.length) {
+    historyCard.appendChild(el("div","empty","履歴はまだありません。"));
+  } else {
+    for (const snapshot of snapshots) {
+      historyCard.appendChild(renderSnapshotRow(snapshot));
+    }
+  }
+
+  app.appendChild(historyCard);
+}
+
+/* ---------- FX・データタブ（後続段階） ---------- */
+
+function renderPlaceholder(title,description) {
+  app.appendChild(heading(title));
+  const card = el("section","card");
+  card.appendChild(el("div","notice",description));
+  card.appendChild(el("div","help","この機能は後続の開発段階で実装します。"));
+  app.appendChild(card);
+}
+
+/* ---------- 保存操作 ---------- */
+
+function handleSnapshotSubmit(event) {
+  event.preventDefault();
+
+  const form = event.currentTarget;
+  const values = new FormData(form);
+
+  const asOfDate = String(values.get("asOfDate") || "");
+  const value = toNumberOrNull(values.get("value"));
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(asOfDate)) {
+    showMessage("対象日を正しく入力してください。",true);
+    render();
+    return;
+  }
+
+  if (value === null) {
+    showMessage("評価額を数値で入力してください。",true);
+    render();
+    return;
+  }
+
+  const account = appData.accounts.find(a => a.id === selectedAccountId);
+  if (!account) return;
+
+  const now = new Date().toISOString();
+
+  const snapshot = {
+    id:editingSnapshotId || createId(),
+    accountId:account.id,
+    asOfDate,
+    recordedAt:now,
+    value,
+    cash:toNumberOrNull(values.get("cash")),
+    pnl:toNumberOrNull(values.get("pnl")),
+    principal:toNumberOrNull(values.get("principal")),
+    swapTotal:account.type === "fx"
+      ? toNumberOrNull(values.get("swapTotal"))
+      : null,
+    requiredMargin:account.type === "fx"
+      ? toNumberOrNull(values.get("requiredMargin"))
+      : null,
+    memo:String(values.get("memo") || "")
+  };
+
+  if (editingSnapshotId) {
+    const index = appData.snapshots.findIndex(s => s.id === editingSnapshotId);
+    if (index < 0) {
+      showMessage("編集対象の履歴が見つかりません。",true);
+      render();
+      return;
+    }
+    appData.snapshots[index] = snapshot;
+  } else {
+    appData.snapshots.push(snapshot);
+  }
+
+  account.updatedAt = now;
+
+  try {
+    saveData(appData);
+    editingSnapshotId = null;
+    showMessage("保存しました。");
+  } catch (error) {
+    showMessage(error.message || "保存に失敗しました。",true);
+  }
+
+  render();
+}
+
+function editSnapshot(id) {
+  const snapshot = appData.snapshots.find(s => s.id === id);
+  if (!snapshot) return;
+  selectedAccountId = snapshot.accountId;
+  editingSnapshotId = id;
+  showMessage("");
+  render();
+  window.scrollTo(0,0);
+}
+
+function deleteSnapshot(id) {
+  const snapshot = appData.snapshots.find(s => s.id === id);
+  if (!snapshot) return;
+
+  if (!window.confirm(
+    "この評価額履歴を削除しますか？\nこの操作は取り消せません。"
+  )) return;
+
+  appData.snapshots = appData.snapshots.filter(s => s.id !== id);
+
+  const account = appData.accounts.find(a => a.id === snapshot.accountId);
+  if (account) account.updatedAt = new Date().toISOString();
+
+  try {
+    saveData(appData);
+    editingSnapshotId = null;
+    showMessage("履歴を削除しました。");
+  } catch (error) {
+    showMessage(error.message || "削除に失敗しました。",true);
+  }
+
+  render();
+}
+
+/* ---------- 画面切り替え ---------- */
+
+function render() {
+  if (!appData) {
+    clearApp();
+    app.appendChild(el("div","error",
+      errorText || "データを読み込めません。"
+    ));
+    updateNavigation();
+    return;
+  }
+
+  updateNavigation();
+  clearApp();
+  addMessage(app);
+
+  if (currentTab === "dashboard") {
+    renderDashboard();
+  } else if (currentTab === "accounts") {
+    if (selectedAccountId) renderAccountDetail();
+    else renderAccountList();
+  } else if (currentTab === "fx") {
+    renderPlaceholder("FX","FX口座の評価額履歴は「口座」から入力できます。建玉管理・スワップ推定・ロスカット計算は後続段階で実装します。");
+  } else if (currentTab === "data") {
+    renderPlaceholder("データ管理","JSONバックアップ・復元機能はS2で実装します。");
+  }
+}
+
+document.querySelector(".bottom-nav").addEventListener("click",event => {
+  const button = event.target.closest("button[data-tab]");
+  if (!button) return;
+
+  currentTab = button.dataset.tab;
+  selectedAccountId = null;
+  editingSnapshotId = null;
+  showMessage("");
+  render();
+  window.scrollTo(0,0);
+});
+
+app.addEventListener("click",event => {
+  const button = event.target.closest("button[data-action]");
+  if (!button) return;
+
+  const action = button.dataset.action;
+  const id = button.dataset.id;
+
+  if (action === "edit-snapshot") {
+    editSnapshot(id);
+  } else if (action === "delete-snapshot") {
+    deleteSnapshot(id);
+  } else if (action === "back-accounts") {
+    selectedAccountId = null;
+    editingSnapshotId = null;
+    showMessage("");
+    render();
+  } else if (action === "cancel-edit") {
+    editingSnapshotId = null;
+    showMessage("");
+    render();
+  }
+});
+
+render();
+</script>
 </body>
 </html>
