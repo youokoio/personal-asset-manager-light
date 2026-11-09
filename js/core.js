@@ -2,19 +2,25 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S1b-v1";
+const APP_VERSION = "S1c-v1";
 const STORAGE_KEY = "pam2";
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const INITIAL_ACCOUNTS = [
-  {name:"LIGHT FX", type:"fx"},
-  {name:"セントラル短資FX", type:"fx"},
-  {name:"クリック365", type:"fx"},
-  {name:"LION FX", type:"fx"},
-  {name:"楽天証券", type:"securities"},
-  {name:"iDeCo", type:"ideco"},
-  {name:"企業型DC", type:"dc"},
-  {name:"暗号資産取引所", type:"crypto"}
+  {name:"LIGHT FX", type:"fx", category:"fx"},
+  {name:"セントラル短資FX", type:"fx", category:"fx"},
+  {name:"クリック365", type:"fx", category:"fx"},
+  {name:"LION FX", type:"fx", category:"fx"},
+  {name:"楽天証券", type:"securities", category:"stock"},
+  {name:"iDeCo", type:"ideco", category:"stock"},
+  {name:"企業型DC", type:"dc", category:"stock"},
+  {name:"GMOコイン", type:"crypto", category:"crypto"},
+  {name:"UFJ1", type:"bank", category:"bank"},
+  {name:"UFJ2", type:"bank", category:"bank"},
+  {name:"三井住友", type:"bank", category:"bank"},
+  {name:"楽天銀行", type:"bank", category:"bank"},
+  {name:"静岡銀行", type:"bank", category:"bank"},
+  {name:"ドコモSMTB", type:"bank", category:"bank"}
 ];
 
 /*
@@ -51,7 +57,14 @@ const TYPE_LABELS = {
   other:"その他"
 };
 
-/* ---------- 純粋関数 ---------- */
+const CATEGORY_LABELS = {
+  fx:"FX",
+  stock:"株式",
+  crypto:"暗号資産",
+  bank:"銀行"
+};
+
+/* ---------- 基本関数 ---------- */
 
 function createId() {
   if (window.crypto && typeof window.crypto.randomUUID === "function") {
@@ -89,18 +102,44 @@ function formatSignedYen(value) {
   return sign + "¥" + Math.abs(Math.round(value)).toLocaleString("ja-JP");
 }
 
+function isFiniteMetricValue(value) {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+/* ---------- スナップショット ---------- */
+
 function compareSnapshots(a,b) {
   if (a.asOfDate !== b.asOfDate) {
     return b.asOfDate.localeCompare(a.asOfDate);
   }
-  return String(b.recordedAt).localeCompare(String(a.recordedAt));
+  return String(b.recordedAt || "").localeCompare(
+    String(a.recordedAt || "")
+  );
 }
 
+/*
+ * 同じ口座・同じ対象日の記録が複数ある場合、
+ * recordedAt が最新の1件だけを採用する。
+ * その後、対象日の新しい順に並べる。
+ */
 function getAccountSnapshots(data, accountId) {
-  return data.snapshots
-    .filter(s => s.accountId === accountId)
-    .slice()
-    .sort(compareSnapshots);
+  const snapshots = data.snapshots.filter(
+    snapshot => snapshot.accountId === accountId
+  );
+
+  const latestByDate = new Map();
+
+  for (const snapshot of snapshots) {
+    const current = latestByDate.get(snapshot.asOfDate);
+
+    if (!current ||
+        String(snapshot.recordedAt || "") >
+        String(current.recordedAt || "")) {
+      latestByDate.set(snapshot.asOfDate, snapshot);
+    }
+  }
+
+  return Array.from(latestByDate.values()).sort(compareSnapshots);
 }
 
 function getLatestSnapshot(data, accountId) {
@@ -110,6 +149,139 @@ function getLatestSnapshot(data, accountId) {
 function getPreviousSnapshot(data, accountId) {
   return getAccountSnapshots(data, accountId)[1] || null;
 }
+
+/* ---------- 分類 ---------- */
+
+function getCategory(account) {
+  if (account && Object.prototype.hasOwnProperty.call(
+    CATEGORY_LABELS,
+    account.category
+  )) {
+    return account.category;
+  }
+
+  if (!account) return "stock";
+
+  switch (account.type) {
+    case "fx":
+      return "fx";
+    case "securities":
+    case "ideco":
+    case "dc":
+      return "stock";
+    case "crypto":
+      return "crypto";
+    case "bank":
+      return "bank";
+    default:
+      return "stock";
+  }
+}
+
+/*
+ * 分類別集計。
+ * null は合計に含めず、該当項目の入力口座数を別に返す。
+ * 銀行の前回比は、前回記録がある口座だけを合計する。
+ */
+function calculateCategoryTotals(data) {
+  const result = {};
+
+  for (const category of Object.keys(CATEGORY_LABELS)) {
+    result[category] = {
+      category,
+      label:CATEGORY_LABELS[category],
+      accountCount:0,
+      inputAccountCount:0,
+      cumulativeInvested:0,
+      effectivePrincipal:0,
+      pnl:0,
+      totalAssets:0,
+      realizedPnlTotal:0,
+      bankBalance:0,
+      bankChange:0,
+      counts:{
+        cumulativeInvested:0,
+        effectivePrincipal:0,
+        pnl:0,
+        totalAssets:0,
+        realizedPnlTotal:0,
+        bankBalance:0,
+        bankChange:0
+      }
+    };
+  }
+
+  for (const account of data.accounts) {
+    const category = getCategory(account);
+    const totals = result[category];
+
+    if (!totals) continue;
+
+    totals.accountCount += 1;
+
+    const snapshots = getAccountSnapshots(data, account.id);
+    const latest = snapshots[0] || null;
+    const previous = snapshots[1] || null;
+
+    if (!latest) continue;
+
+    totals.inputAccountCount += 1;
+
+    if (isFiniteMetricValue(latest.value)) {
+      totals.totalAssets += latest.value;
+      totals.counts.totalAssets += 1;
+
+      if (category === "bank") {
+        totals.bankBalance += latest.value;
+        totals.counts.bankBalance += 1;
+      }
+    }
+
+    const fields = [
+      "cumulativeInvested",
+      "effectivePrincipal",
+      "pnl",
+      "realizedPnlTotal"
+    ];
+
+    for (const field of fields) {
+      if (isFiniteMetricValue(latest[field])) {
+        totals[field] += latest[field];
+        totals.counts[field] += 1;
+      }
+    }
+
+    if (category === "bank" &&
+        previous &&
+        isFiniteMetricValue(latest.value) &&
+        isFiniteMetricValue(previous.value)) {
+      totals.bankChange += latest.value - previous.value;
+      totals.counts.bankChange += 1;
+    }
+  }
+
+  for (const totals of Object.values(result)) {
+    const fields = [
+      "cumulativeInvested",
+      "effectivePrincipal",
+      "pnl",
+      "totalAssets",
+      "realizedPnlTotal",
+      "bankBalance",
+      "bankChange"
+    ];
+
+    for (const field of fields) {
+      if (totals.counts[field] === 0) {
+        totals[field] = null;
+      }
+    }
+  }
+
+  return result;
+}
+
+/* ---------- ダッシュボード集計 ---------- */
 
 function calculateDashboard(data) {
   let total = 0;
