@@ -2,7 +2,8 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S1c-v1";
+const APP_VERSION = "S2-v1";
+const SPEC_VERSION = "v1.3";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 2;
 
@@ -29,22 +30,10 @@ const INITIAL_ACCOUNTS = [
  * lossCutRatio：ロスカット水準（証拠金維持率）
  */
 const FX_ACCOUNT_SETTINGS = {
-  "LIGHT FX": {
-    marginRatePct:4,
-    lossCutRatio:100
-  },
-  "セントラル短資FX": {
-    marginRatePct:5,
-    lossCutRatio:100
-  },
-  "クリック365": {
-    marginRatePct:4,
-    lossCutRatio:50
-  },
-  "LION FX": {
-    marginRatePct:4,
-    lossCutRatio:100
-  }
+  "LIGHT FX": {marginRatePct:4,lossCutRatio:100},
+  "セントラル短資FX": {marginRatePct:5,lossCutRatio:100},
+  "クリック365": {marginRatePct:4,lossCutRatio:50},
+  "LION FX": {marginRatePct:4,lossCutRatio:100}
 };
 
 const TYPE_LABELS = {
@@ -117,21 +106,14 @@ function compareSnapshots(a,b) {
   );
 }
 
-/*
- * 同じ口座・同じ対象日の記録が複数ある場合、
- * recordedAt が最新の1件だけを採用する。
- * その後、対象日の新しい順に並べる。
- */
 function getAccountSnapshots(data, accountId) {
   const snapshots = data.snapshots.filter(
     snapshot => snapshot.accountId === accountId
   );
-
   const latestByDate = new Map();
 
   for (const snapshot of snapshots) {
     const current = latestByDate.get(snapshot.asOfDate);
-
     if (!current ||
         String(snapshot.recordedAt || "") >
         String(current.recordedAt || "")) {
@@ -156,33 +138,20 @@ function getCategory(account) {
   if (account && Object.prototype.hasOwnProperty.call(
     CATEGORY_LABELS,
     account.category
-  )) {
-    return account.category;
-  }
-
+  )) return account.category;
   if (!account) return "stock";
 
   switch (account.type) {
-    case "fx":
-      return "fx";
+    case "fx": return "fx";
     case "securities":
     case "ideco":
-    case "dc":
-      return "stock";
-    case "crypto":
-      return "crypto";
-    case "bank":
-      return "bank";
-    default:
-      return "stock";
+    case "dc": return "stock";
+    case "crypto": return "crypto";
+    case "bank": return "bank";
+    default: return "stock";
   }
 }
 
-/*
- * 分類別集計。
- * null は合計に含めず、該当項目の入力口座数を別に返す。
- * 銀行の前回比は、前回記録がある口座だけを合計する。
- */
 function calculateCategoryTotals(data) {
   const result = {};
 
@@ -214,45 +183,34 @@ function calculateCategoryTotals(data) {
   for (const account of data.accounts) {
     const category = getCategory(account);
     const totals = result[category];
-
     if (!totals) continue;
-
     totals.accountCount += 1;
 
-    const snapshots = getAccountSnapshots(data, account.id);
+    const snapshots = getAccountSnapshots(data,account.id);
     const latest = snapshots[0] || null;
     const previous = snapshots[1] || null;
-
     if (!latest) continue;
-
     totals.inputAccountCount += 1;
 
     if (isFiniteMetricValue(latest.value)) {
       totals.totalAssets += latest.value;
       totals.counts.totalAssets += 1;
-
       if (category === "bank") {
         totals.bankBalance += latest.value;
         totals.counts.bankBalance += 1;
       }
     }
 
-    const fields = [
-      "cumulativeInvested",
-      "effectivePrincipal",
-      "pnl",
-      "realizedPnlTotal"
-    ];
-
-    for (const field of fields) {
+    for (const field of [
+      "cumulativeInvested","effectivePrincipal","pnl","realizedPnlTotal"
+    ]) {
       if (isFiniteMetricValue(latest[field])) {
         totals[field] += latest[field];
         totals.counts[field] += 1;
       }
     }
 
-    if (category === "bank" &&
-        previous &&
+    if (category === "bank" && previous &&
         isFiniteMetricValue(latest.value) &&
         isFiniteMetricValue(previous.value)) {
       totals.bankChange += latest.value - previous.value;
@@ -261,23 +219,13 @@ function calculateCategoryTotals(data) {
   }
 
   for (const totals of Object.values(result)) {
-    const fields = [
-      "cumulativeInvested",
-      "effectivePrincipal",
-      "pnl",
-      "totalAssets",
-      "realizedPnlTotal",
-      "bankBalance",
-      "bankChange"
-    ];
-
-    for (const field of fields) {
-      if (totals.counts[field] === 0) {
-        totals[field] = null;
-      }
+    for (const field of [
+      "cumulativeInvested","effectivePrincipal","pnl","totalAssets",
+      "realizedPnlTotal","bankBalance","bankChange"
+    ]) {
+      if (totals.counts[field] === 0) totals[field] = null;
     }
   }
-
   return result;
 }
 
@@ -291,9 +239,8 @@ function calculateDashboard(data) {
   const accountRows = [];
 
   for (const account of data.accounts) {
-    const latest = getLatestSnapshot(data, account.id);
-    const previous = getPreviousSnapshot(data, account.id);
-
+    const latest = getLatestSnapshot(data,account.id);
+    const previous = getPreviousSnapshot(data,account.id);
     const value = latest ? latest.value : null;
     const previousValue = previous ? previous.value : null;
 
@@ -301,28 +248,19 @@ function calculateDashboard(data) {
       total += value;
       typeTotals[account.type] = (typeTotals[account.type] || 0) + value;
     }
-
-    if (previousValue !== null) {
-      previousTotal += previousValue;
-    } else {
-      previousComplete = false;
-    }
+    if (previousValue !== null) previousTotal += previousValue;
+    else previousComplete = false;
 
     accountRows.push({
-      account,
-      latest,
-      previous,
-      value,
-      difference: latest && previous
-        ? latest.value - previous.value
-        : null
+      account,latest,previous,value,
+      difference:latest && previous ? latest.value - previous.value : null
     });
   }
 
   return {
     total,
-    previousTotal: previousComplete ? previousTotal : null,
-    difference: previousComplete ? total - previousTotal : null,
+    previousTotal:previousComplete ? previousTotal : null,
+    difference:previousComplete ? total - previousTotal : null,
     typeTotals,
     accountRows
   };
