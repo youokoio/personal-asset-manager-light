@@ -9,6 +9,20 @@ function appendHomeMetric(container,label,value) {
   container.appendChild(row);
 }
 
+function createHomeSummaryCard(label,value,subText,extraClass = "") {
+  const card = el("section","card home-summary-card " + extraClass);
+  const row = el("div","home-summary-row");
+  row.appendChild(el("div","metric-label",label));
+  row.appendChild(el("div","metric-value home-summary-value",value));
+  card.appendChild(row);
+
+  if (subText) {
+    card.appendChild(el("div","metric-sub",subText));
+  }
+
+  return card;
+}
+
 function renderDashboard() {
   clearApp();
   app.appendChild(heading("ホーム"));
@@ -17,31 +31,32 @@ function renderDashboard() {
   const summary = calculateDashboard(appData);
   const grid = el("div","metric-grid");
 
-  const totalCard = el("section","card home-total-card");
-  const totalRow = el("div","home-total-row");
-  totalRow.appendChild(el("div","metric-label","総資産"));
-  totalRow.appendChild(el("div","metric-value",
-    summary.total === null ? "未入力" : formatYen(summary.total)
+  grid.appendChild(createHomeSummaryCard(
+    "総資産",
+    summary.total === null ? "未入力" : formatYen(summary.total),
+    "入力済み " + summary.includedAccountCount + "口座",
+    "home-total-card"
   ));
-  totalCard.appendChild(totalRow);
-  totalCard.appendChild(el("div","metric-sub",
-    "入力済み " + summary.includedAccountCount + "口座"
-  ));
-  grid.appendChild(totalCard);
 
-  const differenceCard = el("section","card");
-  differenceCard.appendChild(el("div","metric-label","前回記録との差"));
-  differenceCard.appendChild(el("div","metric-value",
-    summary.difference === null
-      ? "算出不可"
-      : formatSignedYen(summary.difference)
+  const diff = summary.difference30;
+  const diffText = diff.isUnavailable
+    ? "算出不可"
+    : formatSignedYen(diff.difference);
+
+  const diffCard = createHomeSummaryCard(
+    "30日前からの差",
+    diffText,
+    diff.comparedAccountCount + "口座を比較／" +
+      diff.excludedAccountCount + "口座は比較対象外",
+    "home-difference-card"
+  );
+
+  diffCard.appendChild(el(
+    "div",
+    "metric-sub",
+    "比較日は口座ごとに異なります。各口座の最新記録日から30日前を基準にしています。"
   ));
-  differenceCard.appendChild(el("div","metric-sub",
-    summary.difference === null
-      ? "比較できる前回記録がありません"
-      : "比較対象 " + summary.previousAccountCount + "口座"
-  ));
-  grid.appendChild(differenceCard);
+  grid.appendChild(diffCard);
 
   app.appendChild(grid);
 
@@ -70,14 +85,18 @@ function renderDashboard() {
     if (category === "bank") {
       appendHomeMetric(card,"口座残高",
         formatYen(item.bankBalance));
-      appendHomeMetric(card,"前回記録との差",
-        formatSignedYen(item.bankChange));
-      if (item.counts.bankChange < item.inputAccountCount) {
-        card.appendChild(el("div","help",
-          "前回記録がない口座を除く " +
-          item.counts.bankChange + "口座の合計"
-        ));
-      }
+      appendHomeMetric(card,"30日前からの差",
+        item.bankChange === null
+          ? "算出不可"
+          : formatSignedYen(item.bankChange)
+      );
+      card.appendChild(el(
+        "div",
+        "help",
+        item.bankComparedAccountCount + "口座を比較／" +
+          item.bankExcludedAccountCount +
+          "口座は比較対象外。比較日は口座ごとに異なります。"
+      ));
     } else {
       appendHomeMetric(card,"総資産",
         formatYen(item.totalAssets));
