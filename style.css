@@ -158,3 +158,43 @@ hr { border:0; border-top:1px solid var(--border); margin:14px 0; }
 @media (min-width:600px) {
   main { padding:22px; }
 }
+
+/* ---------- S2 ヘッダーメニュー・データ管理 ---------- */
+.header-main-row {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+.header-menu-wrap { position:relative; }
+button.header-menu-button {
+  background:#fff;
+  color:var(--navy);
+  padding:9px 12px;
+  white-space:nowrap;
+}
+.header-menu {
+  position:absolute;
+  z-index:20;
+  top:calc(100% + 8px);
+  right:0;
+  min-width:140px;
+  padding:6px;
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius:10px;
+  box-shadow:0 4px 14px rgba(20,40,60,.18);
+}
+.header-menu button {
+  width:100%;
+  text-align:left;
+  background:transparent;
+  color:var(--text);
+}
+.backup-key-list {
+  margin:8px 0 12px;
+  padding-left:22px;
+  color:var(--muted);
+  font-size:12px;
+  overflow-wrap:anywhere;
+}
