@@ -68,7 +68,8 @@ function makeField(labelText, name, value, options = {}) {
 
 function makeSelectField(labelText, name, options, selected) {
   const wrapper = el("div","field");
-  const label = el("label","",labelText);
+  const label = el("label","","");
+  label.textContent = labelText;
   label.htmlFor = "field-" + name;
 
   const select = document.createElement("select");
