@@ -2,8 +2,8 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S1d追補A-v1";
-const SPEC_VERSION = "v1.3.1";
+const APP_VERSION = "S1d追補B-v1";
+const SPEC_VERSION = "v1.4";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 2;
 
@@ -138,11 +138,93 @@ function getAccountSnapshots(data, accountId) {
 }
 
 function getLatestSnapshot(data, accountId) {
-  return getAccountSnapshots(data, accountId)[0] || null;
+  return getAccountSnapshots(data,accountId)[0] || null;
 }
 
-function getPreviousSnapshot(data, accountId) {
-  return getAccountSnapshots(data, accountId)[1] || null;
+/* ---------- 30日前からの差 ---------- */
+
+function subtractCalendarDays(dateString,days) {
+  if (typeof dateString !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    return null;
+  }
+
+  const parts = dateString.split("-").map(Number);
+  const timestamp = Date.UTC(parts[0],parts[1] - 1,parts[2]);
+  const sourceDate = new Date(timestamp);
+
+  if (sourceDate.getUTCFullYear() !== parts[0] ||
+      sourceDate.getUTCMonth() !== parts[1] - 1 ||
+      sourceDate.getUTCDate() !== parts[2]) {
+    return null;
+  }
+
+  const target = new Date(timestamp - days * 86400000);
+  const year = target.getUTCFullYear();
+  const month = String(target.getUTCMonth() + 1).padStart(2,"0");
+  const day = String(target.getUTCDate()).padStart(2,"0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function calculateDiff30(data) {
+  let differenceTotal = 0;
+  let comparedAccountCount = 0;
+  const accountResults = [];
+
+  for (const account of data.accounts) {
+    const snapshots = getAccountSnapshots(data,account.id);
+    const current = snapshots[0] || null;
+
+    let baseDate = null;
+    let comparison = null;
+    let difference = null;
+    let comparable = false;
+
+    if (current && isFiniteMetricValue(current.value)) {
+      baseDate = subtractCalendarDays(current.asOfDate,30);
+
+      if (baseDate !== null) {
+        comparison = snapshots.find(snapshot =>
+          snapshot.asOfDate <= baseDate &&
+          isFiniteMetricValue(snapshot.value)
+        ) || null;
+      }
+
+      if (comparison) {
+        difference = current.value - comparison.value;
+        differenceTotal += difference;
+        comparedAccountCount += 1;
+        comparable = true;
+      }
+    }
+
+    accountResults.push({
+      accountId:account.id,
+      accountName:account.name,
+      currentSnapshot:current,
+      currentValue:current && isFiniteMetricValue(current.value)
+        ? current.value
+        : null,
+      baseDate,
+      comparisonSnapshot:comparison,
+      comparisonDate:comparison ? comparison.asOfDate : null,
+      comparisonValue:comparison ? comparison.value : null,
+      difference,
+      comparable
+    });
+  }
+
+  const excludedAccountCount =
+    data.accounts.length - comparedAccountCount;
+
+  return {
+    difference:comparedAccountCount > 0 ? differenceTotal : null,
+    comparedAccountCount,
+    excludedAccountCount,
+    isUnavailable:comparedAccountCount === 0,
+    accounts:accountResults
+  };
 }
 
 /* ---------- 分類 ---------- */
@@ -180,18 +262,21 @@ function calculateCategoryTotals(data) {
       totalAssets:0,
       realizedPnlTotal:0,
       bankBalance:0,
-      bankChange:0,
+      bankChange:null,
+      bankComparedAccountCount:0,
+      bankExcludedAccountCount:0,
       counts:{
         cumulativeInvested:0,
         effectivePrincipal:0,
         pnl:0,
         totalAssets:0,
         realizedPnlTotal:0,
-        bankBalance:0,
-        bankChange:0
+        bankBalance:0
       }
     };
   }
+
+  const diff30 = calculateDiff30(data);
 
   for (const account of data.accounts) {
     const category = getCategory(account);
@@ -199,9 +284,7 @@ function calculateCategoryTotals(data) {
     if (!totals) continue;
     totals.accountCount += 1;
 
-    const snapshots = getAccountSnapshots(data,account.id);
-    const latest = snapshots[0] || null;
-    const previous = snapshots[1] || null;
+    const latest = getLatestSnapshot(data,account.id);
     if (!latest) continue;
     totals.inputAccountCount += 1;
 
@@ -222,23 +305,37 @@ function calculateCategoryTotals(data) {
         totals.counts[field] += 1;
       }
     }
-
-    if (category === "bank" && previous &&
-        isFiniteMetricValue(latest.value) &&
-        isFiniteMetricValue(previous.value)) {
-      totals.bankChange += latest.value - previous.value;
-      totals.counts.bankChange += 1;
-    }
   }
+
+  const bankDiff = diff30.accounts.filter(item =>
+    item.comparable &&
+    data.accounts.some(account =>
+      account.id === item.accountId &&
+      getCategory(account) === "bank"
+    )
+  );
+
+  const bankAccountCount = data.accounts.filter(account =>
+    getCategory(account) === "bank"
+  ).length;
+
+  result.bank.bankComparedAccountCount = bankDiff.length;
+  result.bank.bankExcludedAccountCount =
+    bankAccountCount - bankDiff.length;
+
+  result.bank.bankChange = bankDiff.length > 0
+    ? bankDiff.reduce((sum,item) => sum + item.difference,0)
+    : null;
 
   for (const totals of Object.values(result)) {
     for (const field of [
       "cumulativeInvested","effectivePrincipal","pnl","totalAssets",
-      "realizedPnlTotal","bankBalance","bankChange"
+      "realizedPnlTotal","bankBalance"
     ]) {
       if (totals.counts[field] === 0) totals[field] = null;
     }
   }
+
   return result;
 }
 
@@ -247,48 +344,18 @@ function calculateCategoryTotals(data) {
 function calculateDashboard(data) {
   let total = 0;
   let includedAccountCount = 0;
-  let previousDifference = 0;
-  let previousAccountCount = 0;
-  const accountRows = [];
 
   for (const account of data.accounts) {
     const latest = getLatestSnapshot(data,account.id);
-    const previous = getPreviousSnapshot(data,account.id);
-    const value = latest && isFiniteMetricValue(latest.value)
-      ? latest.value
-      : null;
-    const previousValue = previous &&
-      isFiniteMetricValue(previous.value)
-      ? previous.value
-      : null;
+    if (!latest || !isFiniteMetricValue(latest.value)) continue;
 
-    if (value !== null) {
-      total += value;
-      includedAccountCount += 1;
-    }
-
-    let difference = null;
-    if (value !== null && previousValue !== null) {
-      difference = value - previousValue;
-      previousDifference += difference;
-      previousAccountCount += 1;
-    }
-
-    accountRows.push({
-      account,
-      latest,
-      previous,
-      value,
-      difference
-    });
+    total += latest.value;
+    includedAccountCount += 1;
   }
 
   return {
     total:includedAccountCount > 0 ? total : null,
     includedAccountCount,
-    difference:previousAccountCount > 0 ? previousDifference : null,
-    previousAccountCount,
-    excludedPreviousCount:data.accounts.length - previousAccountCount,
-    accountRows
+    difference30:calculateDiff30(data)
   };
 }
