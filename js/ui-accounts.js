@@ -1,65 +1,134 @@
 "use strict";
 
-/* ---------- 口座一覧・詳細 ---------- */
+/* ---------- 分類別口座一覧・詳細 ---------- */
 
-function renderAccountList() {
-  app.appendChild(heading("口座一覧"));
+function appendAccountMetric(container,label,value) {
+  const row = el("div","account-metric-line");
+  row.appendChild(el("div","account-metric-label",label));
+  row.appendChild(el("div","account-metric-value",value));
+  container.appendChild(row);
+}
 
-  const card = el("section","card");
-  card.appendChild(el("div","help",
-    "口座を選択すると、評価額履歴の追加・編集・削除ができます。"
-  ));
+function renderCategoryAccountList(category) {
+  const label = CATEGORY_LABELS[category];
+  app.appendChild(heading(label));
 
-  for (const account of appData.accounts) {
+  const accounts = appData.accounts.filter(
+    account => getCategory(account) === category
+  );
+
+  if (!accounts.length) {
+    app.appendChild(el("div","empty","口座がありません。"));
+    return;
+  }
+
+  for (const account of accounts) {
     const latest = getLatestSnapshot(appData,account.id);
-    const line = el("div","account-row");
+    const previous = getPreviousSnapshot(appData,account.id);
+    const card = el("section","card account-card");
+    const top = el("div","account-card-top");
 
     const left = el("div");
     left.appendChild(el("div","account-name",account.name));
-    left.appendChild(el("div","account-meta",TYPE_LABELS[account.type]));
-
-    const right = el("div");
-    right.appendChild(el("div","account-value",
-      latest ? formatYen(latest.value) : "未入力"
+    left.appendChild(el("div","account-meta",
+      latest
+        ? formatDateWithWeekday(latest.asOfDate)
+        : "記録なし"
     ));
-    right.appendChild(el("div","account-meta",
-      latest ? latest.asOfDate : "記録なし"
-    ));
+    top.appendChild(left);
 
-    line.append(left,right);
-    line.style.cursor = "pointer";
-    line.addEventListener("click",() => {
-      selectedAccountId = account.id;
-      render();
+    const open = makeButton("詳細","open-account","secondary small");
+    open.dataset.id = account.id;
+    top.appendChild(open);
+    card.appendChild(top);
+
+    if (!latest) {
+      card.appendChild(el("div","empty","未入力"));
+    } else if (category === "bank") {
+      appendAccountMetric(card,"口座残高",formatYen(latest.value));
+
+      const change = previous &&
+        isFiniteMetricValue(latest.value) &&
+        isFiniteMetricValue(previous.value)
+          ? latest.value - previous.value
+          : null;
+
+      appendAccountMetric(card,"前回記録との差",
+        change === null ? "算出不可" : formatSignedYen(change)
+      );
+    } else {
+      appendAccountMetric(card,"総資産",formatYen(latest.value));
+      appendAccountMetric(card,"累計投資元本",
+        formatYen(latest.cumulativeInvested));
+      appendAccountMetric(card,"有効元本",
+        formatYen(latest.effectivePrincipal));
+      appendAccountMetric(card,"評価損益",
+        formatSignedYen(latest.pnl));
+
+      if (category === "fx") {
+        appendAccountMetric(card,"累積確定損益","後続段階で対応");
+        appendAccountMetric(card,"累計スワップ",
+          formatYen(latest.swapTotal));
+        appendAccountMetric(card,"為替差益","後続段階で対応");
+      } else {
+        appendAccountMetric(card,"累積確定損益",
+          formatSignedYen(latest.realizedPnlTotal));
+      }
+    }
+
+    card.addEventListener("click",event => {
+      if (event.target.closest("button")) {
+        selectedAccountId = account.id;
+        render();
+      } else {
+        selectedAccountId = account.id;
+        render();
+      }
     });
-    card.appendChild(line);
-  }
 
-  app.appendChild(card);
+    app.appendChild(card);
+  }
 }
+
+/* ---------- 口座詳細 ---------- */
 
 function renderSnapshotRow(snapshot) {
   const row = el("div","snapshot-row");
 
   const top = el("div","snapshot-top");
-  top.appendChild(el("div","snapshot-date",snapshot.asOfDate));
+  top.appendChild(el("div","snapshot-date",
+    formatDateWithWeekday(snapshot.asOfDate)));
   top.appendChild(el("div","snapshot-value",formatYen(snapshot.value)));
   row.appendChild(top);
 
   const metaParts = [];
   if (snapshot.pnl !== null && snapshot.pnl !== undefined) {
-    metaParts.push("損益 " + formatSignedYen(snapshot.pnl));
+    metaParts.push("評価損益 " + formatSignedYen(snapshot.pnl));
   }
   if (snapshot.cash !== null && snapshot.cash !== undefined) {
     metaParts.push("現金 " + formatYen(snapshot.cash));
   }
-  if (snapshot.principal !== null && snapshot.principal !== undefined) {
+  if (snapshot.effectivePrincipal !== null &&
+      snapshot.effectivePrincipal !== undefined) {
+    metaParts.push("有効元本 " + formatYen(snapshot.effectivePrincipal));
+  } else if (snapshot.principal !== null &&
+             snapshot.principal !== undefined) {
     metaParts.push("元本 " + formatYen(snapshot.principal));
+  }
+  if (snapshot.cumulativeInvested !== null &&
+      snapshot.cumulativeInvested !== undefined) {
+    metaParts.push("累計投資元本 " + formatYen(snapshot.cumulativeInvested));
+  }
+  if (snapshot.realizedPnlTotal !== null &&
+      snapshot.realizedPnlTotal !== undefined) {
+    metaParts.push("累積確定損益 " +
+      formatSignedYen(snapshot.realizedPnlTotal));
   }
   if (snapshot.swapTotal !== null && snapshot.swapTotal !== undefined) {
     metaParts.push("累計スワップ " + formatYen(snapshot.swapTotal));
   }
-  if (snapshot.requiredMargin !== null && snapshot.requiredMargin !== undefined) {
+  if (snapshot.requiredMargin !== null &&
+      snapshot.requiredMargin !== undefined) {
     metaParts.push("必要証拠金 " + formatYen(snapshot.requiredMargin));
   }
   if (metaParts.length) {
@@ -155,11 +224,15 @@ function renderAccountDetail() {
   const account = appData.accounts.find(a => a.id === selectedAccountId);
   if (!account) {
     selectedAccountId = null;
-    renderAccountList();
+    renderCategoryAccountList(currentTab);
     return;
   }
 
-  const back = makeButton("← 口座一覧へ","back-accounts","secondary");
+  const back = makeButton(
+    "← " + CATEGORY_LABELS[getCategory(account)] + "一覧へ",
+    "back-accounts",
+    "secondary"
+  );
   app.appendChild(back);
 
   app.appendChild(heading(account.name));
@@ -171,7 +244,9 @@ function renderAccountDetail() {
     latest ? formatYen(latest.value) : "未入力"
   ));
   info.appendChild(el("div","metric-sub",
-    latest ? "対象日：" + latest.asOfDate : "評価額の記録がありません"
+    latest
+      ? "対象日：" + formatDateWithWeekday(latest.asOfDate)
+      : "評価額の記録がありません"
   ));
   app.appendChild(info);
 
