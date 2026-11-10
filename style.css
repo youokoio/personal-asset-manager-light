@@ -42,7 +42,8 @@ h3 { margin:0 0 10px; font-size:16px; }
   font-size:25px;
   font-weight:700;
   margin-top:5px;
-  overflow-wrap:anywhere;
+  white-space:nowrap;
+  overflow-wrap:normal;
   font-variant-numeric:tabular-nums;
 }
 .metric-sub { color:var(--muted); font-size:12px; margin-top:5px; }
@@ -52,6 +53,32 @@ h3 { margin:0 0 10px; font-size:16px; }
   gap:10px;
 }
 .metric-grid .card { margin:0; }
+.metric-grid .home-total-card {
+  grid-column:1 / -1;
+}
+.home-total-card {
+  container-type:inline-size;
+}
+.home-total-row {
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:10px;
+  min-width:0;
+}
+.home-total-row .metric-label {
+  flex:0 0 auto;
+  white-space:nowrap;
+}
+.home-total-row .metric-value {
+  flex:0 1 auto;
+  min-width:0;
+  margin-top:0;
+  text-align:right;
+  font-size:clamp(13px,6cqw,25px);
+  white-space:nowrap;
+  overflow-wrap:normal;
+}
 .account-row {
   display:flex;
   justify-content:space-between;
@@ -276,12 +303,17 @@ button.header-menu-button {
 .home-metric-value,
 .account-metric-value {
   text-align:right;
-  font-size:13px;
+  font-size:clamp(11px,5cqw,13px);
   font-weight:650;
   flex:0 1 58%;
   min-width:0;
-  overflow-wrap:anywhere;
+  white-space:nowrap;
+  overflow-wrap:normal;
   font-variant-numeric:tabular-nums;
+}
+.home-metric-row,
+.account-metric-line {
+  container-type:inline-size;
 }
 .account-card { cursor:pointer; }
 .account-card-top {
