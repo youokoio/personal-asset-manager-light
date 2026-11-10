@@ -53,29 +53,30 @@ h3 { margin:0 0 10px; font-size:16px; }
   gap:10px;
 }
 .metric-grid .card { margin:0; }
-.metric-grid .home-total-card {
+.metric-grid .home-total-card,
+.metric-grid .home-difference-card {
   grid-column:1 / -1;
 }
-.home-total-card {
+.home-summary-card {
   container-type:inline-size;
 }
-.home-total-row {
+.home-summary-row {
   display:flex;
   align-items:baseline;
   justify-content:space-between;
   gap:10px;
   min-width:0;
 }
-.home-total-row .metric-label {
+.home-summary-row .metric-label {
   flex:0 0 auto;
   white-space:nowrap;
 }
-.home-total-row .metric-value {
+.home-summary-value {
   flex:0 1 auto;
   min-width:0;
   margin-top:0;
   text-align:right;
-  font-size:clamp(13px,6cqw,25px);
+  font-size:25px;
   white-space:nowrap;
   overflow-wrap:normal;
 }
@@ -315,6 +316,13 @@ button.header-menu-button {
 .account-metric-line {
   container-type:inline-size;
 }
+.account-metric-sub {
+  margin-top:3px;
+  color:var(--muted);
+  font-size:10px;
+  font-weight:400;
+  white-space:normal;
+}
 .account-card { cursor:pointer; }
 .account-card-top {
   display:flex;
@@ -331,7 +339,8 @@ button.header-menu-button {
 @media (max-width:370px) {
   .bottom-nav button { font-size:10px; }
   .metric-grid { gap:7px; }
-  .metric-value { font-size:21px; }
+  .metric-value,
+  .home-summary-value { font-size:21px; }
   .snapshot-date { flex-basis:10em; width:10em; }
 }
 @media (min-width:600px) {
