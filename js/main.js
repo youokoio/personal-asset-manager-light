@@ -3,7 +3,7 @@
 /* ---------- アプリ状態・起動 ---------- */
 
 let appData;
-let currentTab = "dashboard";
+let currentTab = "home";
 let selectedAccountId = null;
 let editingSnapshotId = null;
 let messageText = "";
@@ -14,16 +14,6 @@ try {
   appData = loadData();
 } catch (error) {
   errorText = error.message || "データを読み込めませんでした。";
-}
-
-/* ---------- FX・データタブ（後続段階） ---------- */
-
-function renderPlaceholder(title,description) {
-  app.appendChild(heading(title));
-  const card = el("section","card");
-  card.appendChild(el("div","notice",description));
-  card.appendChild(el("div","help","この機能は後続の開発段階で実装します。"));
-  app.appendChild(card);
 }
 
 /* ---------- 画面切り替え ---------- */
@@ -40,13 +30,14 @@ function render() {
   clearApp();
   addMessage(app);
 
-  if (currentTab === "dashboard") {
+  if (currentTab === "home") {
     renderDashboard();
-  } else if (currentTab === "accounts") {
-    if (selectedAccountId) renderAccountDetail();
-    else renderAccountList();
-  } else if (currentTab === "fx") {
-    renderPlaceholder("FX","FX口座の評価額履歴は「口座」から入力できます。建玉管理・スワップ推定・ロスカット計算は後続段階で実装します。");
+  } else if (["fx","stock","crypto","bank"].includes(currentTab)) {
+    if (selectedAccountId) {
+      renderAccountDetail();
+    } else {
+      renderCategoryAccountList(currentTab);
+    }
   } else if (currentTab === "data") {
     renderDataManagement();
   }
@@ -110,7 +101,10 @@ app.addEventListener("click",event => {
   const action = button.dataset.action;
   const id = button.dataset.id;
 
-  if (action === "edit-snapshot") {
+  if (action === "open-account") {
+    selectedAccountId = id;
+    render();
+  } else if (action === "edit-snapshot") {
     editSnapshot(id);
   } else if (action === "delete-snapshot") {
     deleteSnapshot(id);
