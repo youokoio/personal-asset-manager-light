@@ -141,13 +141,6 @@ app.addEventListener("click",event => {
   }
 });
 
-app.addEventListener("change",event => {
-  if (event.target.id === "backup-file-input") {
-    const file = event.target.files && event.target.files[0];
-    importBackupFile(file);
-  }
-});
-
 /* ---------- PWA ---------- */
 
 if ("serviceWorker" in navigator) {
