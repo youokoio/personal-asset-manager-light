@@ -90,7 +90,73 @@ function renderCategoryAccountList(category) {
   }
 }
 
-/* ---------- 口座詳細 ---------- */
+/* ---------- 入力フォーム補助 ---------- */
+
+function getSnapshotInputValue(snapshot,field) {
+  if (!snapshot) return null;
+
+  if (field === "effectivePrincipal") {
+    if (snapshot.effectivePrincipal !== null &&
+        snapshot.effectivePrincipal !== undefined) {
+      return snapshot.effectivePrincipal;
+    }
+    return snapshot.principal ?? null;
+  }
+
+  return snapshot[field] ?? null;
+}
+
+function addPreviousValueHint(wrapper,input,previousValue,isText = false) {
+  if (previousValue === null || previousValue === undefined) return;
+
+  const hint = el("div","previous-value-hint");
+  wrapper.appendChild(hint);
+
+  const update = () => {
+    let isSame;
+
+    if (isText) {
+      isSame = input.value === String(previousValue);
+    } else {
+      const currentValue = toNumberOrNull(input.value);
+      const oldValue = toNumberOrNull(previousValue);
+      isSame = currentValue !== null &&
+        oldValue !== null &&
+        currentValue === oldValue;
+    }
+
+    hint.textContent = isSame ? "前回と同じ" : "";
+    hint.classList.toggle("hidden",!isSame);
+  };
+
+  input.addEventListener("input",update);
+  input.addEventListener("change",update);
+  update();
+}
+
+function appendSnapshotInputField(
+  form,
+  label,
+  field,
+  value,
+  previousValue,
+  options = {}
+) {
+  const wrapper = makeField(label,field,value,options);
+  const input = wrapper.querySelector("input,textarea");
+
+  if (options.showPreviousHint && previousValue !== null &&
+      previousValue !== undefined) {
+    addPreviousValueHint(
+      wrapper,
+      input,
+      previousValue,
+      Boolean(options.textarea)
+    );
+  }
+
+  form.appendChild(wrapper);
+}
 
 function renderSnapshotRow(snapshot) {
   const row = el("div","snapshot-row");
@@ -149,59 +215,172 @@ function renderSnapshotRow(snapshot) {
   return row;
 }
 
+/* ---------- 履歴入力フォーム ---------- */
+
 function renderSnapshotForm(account) {
   const existing = editingSnapshotId
     ? appData.snapshots.find(s => s.id === editingSnapshotId)
     : null;
 
   const snapshots = getAccountSnapshots(appData,account.id);
+  const previous = !existing ? snapshots[0] || null : null;
+
+  const source = existing || previous || {};
   const defaultDate = existing
     ? existing.asOfDate
-    : snapshots.length ? snapshots[0].asOfDate : localDateString();
+    : previous
+      ? previous.asOfDate
+      : localDateString();
+
+  const category = getCategory(account);
+  const isBank = category === "bank";
+  const isFx = category === "fx";
 
   const form = document.createElement("form");
   form.id = "snapshot-form";
   form.appendChild(el("h3","",existing ? "履歴を編集" : "評価額を追加"));
 
-  form.appendChild(makeField("対象日","asOfDate",defaultDate,{
-    type:"date",
-    required:true,
-    help:"評価額の対象日です。入力した日とは別に記録します。"
-  }));
-
-  form.appendChild(makeField("評価額（円）","value",
-    existing ? existing.value : "",{
-      required:true,
-      inputmode:"decimal"
-    }
-  ));
-
-  form.appendChild(makeField("現金（円・任意）","cash",
-    existing ? existing.cash : "",{inputmode:"decimal"}
-  ));
-
-  form.appendChild(makeField("評価損益（円・任意）","pnl",
-    existing ? existing.pnl : "",{inputmode:"decimal"}
-  ));
-
-  form.appendChild(makeField("元本（円・任意）","principal",
-    existing ? existing.principal : "",{inputmode:"decimal"}
-  ));
-
-  if (account.type === "fx") {
-    form.appendChild(makeField("累計スワップ（円・任意）","swapTotal",
-      existing ? existing.swapTotal : "",{inputmode:"decimal"}
-    ));
-    form.appendChild(makeField("必要証拠金（円・任意）","requiredMargin",
-      existing ? existing.requiredMargin : "",{inputmode:"decimal"}
+  if (!existing && previous) {
+    form.appendChild(el(
+      "div",
+      "notice",
+      "前回の値を引き継ぎました。確認して変更してください。保存済みの履歴は変更されません。"
     ));
   }
 
-  form.appendChild(makeField("メモ（任意）","memo",
-    existing ? existing.memo : "",{textarea:true}
-  ));
+  const dateField = makeField("対象日","asOfDate",defaultDate,{
+    type:"date",
+    required:true,
+    help:"対象日：" + formatDateWithWeekday(defaultDate)
+  });
+  const dateInput = dateField.querySelector("input");
+  const dateHelp = dateField.querySelector(".help");
 
-  form.appendChild(el("div","help",
+  dateInput.addEventListener("change",() => {
+    dateHelp.textContent =
+      "対象日：" + formatDateWithWeekday(dateInput.value);
+  });
+
+  form.appendChild(dateField);
+
+  if (isBank) {
+    appendSnapshotInputField(
+      form,
+      "口座残高（円）",
+      "value",
+      source.value,
+      previous ? getSnapshotInputValue(previous,"value") : null,
+      {
+        required:true,
+        inputmode:"decimal",
+        showPreviousHint:Boolean(previous)
+      }
+    );
+  } else {
+    appendSnapshotInputField(
+      form,
+      "総資産（評価額・円）",
+      "value",
+      source.value,
+      previous ? getSnapshotInputValue(previous,"value") : null,
+      {
+        required:true,
+        inputmode:"decimal",
+        showPreviousHint:Boolean(previous)
+      }
+    );
+
+    appendSnapshotInputField(
+      form,
+      "累計投資元本（円）",
+      "cumulativeInvested",
+      getSnapshotInputValue(source,"cumulativeInvested"),
+      previous
+        ? getSnapshotInputValue(previous,"cumulativeInvested")
+        : null,
+      {inputmode:"decimal",showPreviousHint:Boolean(previous)}
+    );
+
+    appendSnapshotInputField(
+      form,
+      "有効元本（円）",
+      "effectivePrincipal",
+      getSnapshotInputValue(source,"effectivePrincipal"),
+      previous
+        ? getSnapshotInputValue(previous,"effectivePrincipal")
+        : null,
+      {inputmode:"decimal",showPreviousHint:Boolean(previous)}
+    );
+
+    appendSnapshotInputField(
+      form,
+      "評価損益（円）",
+      "pnl",
+      source.pnl,
+      previous ? getSnapshotInputValue(previous,"pnl") : null,
+      {inputmode:"decimal",showPreviousHint:Boolean(previous)}
+    );
+
+    if (!isFx) {
+      appendSnapshotInputField(
+        form,
+        "累積確定損益（円）",
+        "realizedPnlTotal",
+        source.realizedPnlTotal,
+        previous
+          ? getSnapshotInputValue(previous,"realizedPnlTotal")
+          : null,
+        {inputmode:"decimal",showPreviousHint:Boolean(previous)}
+      );
+    }
+
+    appendSnapshotInputField(
+      form,
+      "現金（円・任意）",
+      "cash",
+      source.cash,
+      previous ? getSnapshotInputValue(previous,"cash") : null,
+      {inputmode:"decimal",showPreviousHint:Boolean(previous)}
+    );
+
+    if (isFx) {
+      appendSnapshotInputField(
+        form,
+        "累計スワップ（円・任意）",
+        "swapTotal",
+        source.swapTotal,
+        previous ? getSnapshotInputValue(previous,"swapTotal") : null,
+        {inputmode:"decimal",showPreviousHint:Boolean(previous)}
+      );
+
+      appendSnapshotInputField(
+        form,
+        "必要証拠金（円・任意）",
+        "requiredMargin",
+        source.requiredMargin,
+        previous
+          ? getSnapshotInputValue(previous,"requiredMargin")
+          : null,
+        {inputmode:"decimal",showPreviousHint:Boolean(previous)}
+      );
+    }
+  }
+
+  appendSnapshotInputField(
+    form,
+    "メモ（任意）",
+    "memo",
+    source.memo || "",
+    previous && previous.memo ? previous.memo : null,
+    {
+      textarea:true,
+      showPreviousHint:Boolean(previous && previous.memo)
+    }
+  );
+
+  form.appendChild(el(
+    "div",
+    "help",
     "口座番号・契約番号・暗証番号・ログイン情報は入力しないでください。"
   ));
 
@@ -287,7 +466,7 @@ function handleSnapshotSubmit(event) {
   }
 
   if (value === null) {
-    showMessage("評価額を数値で入力してください。",true);
+    showMessage("金額を数値で入力してください。",true);
     render();
     return;
   }
@@ -295,7 +474,14 @@ function handleSnapshotSubmit(event) {
   const account = appData.accounts.find(a => a.id === selectedAccountId);
   if (!account) return;
 
+  const category = getCategory(account);
+  const isBank = category === "bank";
+  const isFx = category === "fx";
   const now = new Date().toISOString();
+
+  const previousSnapshot = editingSnapshotId
+    ? appData.snapshots.find(s => s.id === editingSnapshotId)
+    : null;
 
   const snapshot = {
     id:editingSnapshotId || createId(),
@@ -303,13 +489,24 @@ function handleSnapshotSubmit(event) {
     asOfDate,
     recordedAt:now,
     value,
-    cash:toNumberOrNull(values.get("cash")),
-    pnl:toNumberOrNull(values.get("pnl")),
-    principal:toNumberOrNull(values.get("principal")),
-    swapTotal:account.type === "fx"
+    cash:isBank ? null : toNumberOrNull(values.get("cash")),
+    pnl:isBank ? null : toNumberOrNull(values.get("pnl")),
+    principal:previousSnapshot
+      ? previousSnapshot.principal ?? null
+      : null,
+    cumulativeInvested:isBank
+      ? null
+      : toNumberOrNull(values.get("cumulativeInvested")),
+    effectivePrincipal:isBank
+      ? null
+      : toNumberOrNull(values.get("effectivePrincipal")),
+    realizedPnlTotal:isBank || isFx
+      ? null
+      : toNumberOrNull(values.get("realizedPnlTotal")),
+    swapTotal:isFx
       ? toNumberOrNull(values.get("swapTotal"))
       : null,
-    requiredMargin:account.type === "fx"
+    requiredMargin:isFx
       ? toNumberOrNull(values.get("requiredMargin"))
       : null,
     memo:String(values.get("memo") || "")
