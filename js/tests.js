@@ -40,6 +40,24 @@
     };
   }
 
+  function makeSnapshot(
+    id,accountId,asOfDate,recordedAt,value,extra = {}
+  ) {
+    return {
+      id,
+      accountId,
+      asOfDate,
+      recordedAt,
+      value,
+      cumulativeInvested:null,
+      effectivePrincipal:null,
+      pnl:null,
+      realizedPnlTotal:null,
+      memo:"",
+      ...extra
+    };
+  }
+
   runTest("v1からv2への移行と新項目追加",() => {
     const oldData = {
       schemaVersion:1,
@@ -162,41 +180,30 @@
         makeAccount("a1","架空FX口座","fx","fx")
       ],
       snapshots:[
-        {
-          id:"old",
-          accountId:"a1",
-          asOfDate:"2026-11-01",
-          recordedAt:"2026-11-01T09:00:00.000Z",
-          value:100,
-          memo:""
-        },
-        {
-          id:"new",
-          accountId:"a1",
-          asOfDate:"2026-11-01",
-          recordedAt:"2026-11-01T12:00:00.000Z",
-          value:150,
-          memo:""
-        },
-        {
-          id:"previous",
-          accountId:"a1",
-          asOfDate:"2026-10-31",
-          recordedAt:"2026-10-31T12:00:00.000Z",
-          value:90,
-          memo:""
-        }
+        makeSnapshot(
+          "old","a1","2026-11-01",
+          "2026-11-01T09:00:00.000Z",100
+        ),
+        makeSnapshot(
+          "new","a1","2026-11-01",
+          "2026-11-01T12:00:00.000Z",150
+        ),
+        makeSnapshot(
+          "previous","a1","2026-10-01",
+          "2026-10-01T12:00:00.000Z",90
+        )
       ]
     };
 
-    assert(getLatestSnapshot(data,"a1").id === "new","最新記録の採用が正しくありません。");
-    assert(getPreviousSnapshot(data,"a1").id === "previous","前回記録の採用が正しくありません。");
+    assert(getLatestSnapshot(data,"a1").id === "new",
+      "最新記録の採用が正しくありません。");
 
     const snapshots = getAccountSnapshots(data,"a1");
-    assert(snapshots.length === 2,"同一対象日の重複が除外されていません。");
+    assert(snapshots.length === 2,
+      "同一対象日の重複が除外されていません。");
   });
 
-  runTest("分類別集計と銀行の前回比",() => {
+  runTest("分類別集計と銀行の30日前差",() => {
     const data = {
       accounts:[
         makeAccount("fx1","架空FX口座","fx","fx"),
@@ -204,58 +211,15 @@
         makeAccount("bank1","架空銀行口座","bank","bank")
       ],
       snapshots:[
-        {
-          id:"fx-old",
-          accountId:"fx1",
-          asOfDate:"2026-11-09",
-          recordedAt:"2026-11-09T10:00:00.000Z",
-          value:900,
-          cumulativeInvested:600,
-          effectivePrincipal:700,
-          pnl:80,
-          realizedPnlTotal:null,
-          memo:""
-        },
-        {
-          id:"fx-new",
-          accountId:"fx1",
-          asOfDate:"2026-11-10",
-          recordedAt:"2026-11-10T10:00:00.000Z",
-          value:1000,
-          cumulativeInvested:700,
-          effectivePrincipal:800,
-          pnl:100,
-          realizedPnlTotal:null,
-          memo:""
-        },
-        {
-          id:"stock-new",
-          accountId:"stock1",
-          asOfDate:"2026-11-10",
-          recordedAt:"2026-11-10T10:00:00.000Z",
-          value:2000,
-          cumulativeInvested:null,
-          effectivePrincipal:1500,
-          pnl:-50,
-          realizedPnlTotal:10,
-          memo:""
-        },
-        {
-          id:"bank-old",
-          accountId:"bank1",
-          asOfDate:"2026-11-09",
-          recordedAt:"2026-11-09T10:00:00.000Z",
-          value:450,
-          memo:""
-        },
-        {
-          id:"bank-new",
-          accountId:"bank1",
-          asOfDate:"2026-11-10",
-          recordedAt:"2026-11-10T10:00:00.000Z",
-          value:500,
-          memo:""
-        }
+        makeSnapshot("fx-old","fx1","2026-10-01","2026-10-01T10:00:00.000Z",900),
+        makeSnapshot("fx-new","fx1","2026-11-10","2026-11-10T10:00:00.000Z",1000,{
+          cumulativeInvested:700,effectivePrincipal:800,pnl:100
+        }),
+        makeSnapshot("stock-new","stock1","2026-11-10","2026-11-10T10:00:00.000Z",2000,{
+          effectivePrincipal:1500,pnl:-50,realizedPnlTotal:10
+        }),
+        makeSnapshot("bank-old","bank1","2026-10-01","2026-10-01T10:00:00.000Z",450),
+        makeSnapshot("bank-new","bank1","2026-11-10","2026-11-10T10:00:00.000Z",500)
       ]
     };
 
@@ -269,52 +233,93 @@
     assert(totals.stock.cumulativeInvested === null,"未入力の累計投資元本が0扱いされています。");
     assert(totals.stock.effectivePrincipal === 1500,"株式有効元本の合計が正しくありません。");
     assert(totals.bank.bankBalance === 500,"銀行残高の合計が正しくありません。");
-    assert(totals.bank.bankChange === 50,"銀行の前回比が正しくありません。");
-    assert(totals.fx.inputAccountCount === 1,"FXの入力済み口座数が正しくありません。");
+    assert(totals.bank.bankChange === 50,"銀行の30日前差が正しくありません。");
+    assert(totals.bank.bankComparedAccountCount === 1,"銀行の比較対象口座数が正しくありません。");
   });
 
-  runTest("ホームの総資産と前回差は比較可能な口座だけで集計",() => {
+  runTest("30日前比較：10月1日と10月20日から11月10日",() => {
     const data = {
-      accounts:[
-        makeAccount("a1","架空口座A","fx","fx"),
-        makeAccount("a2","架空口座B","securities","stock"),
-        makeAccount("a3","架空口座C","bank","bank")
-      ],
+      accounts:[makeAccount("a","架空口座A","fx","fx")],
       snapshots:[
-        {
-          id:"a1-old",
-          accountId:"a1",
-          asOfDate:"2026-11-09",
-          recordedAt:"2026-11-09T10:00:00.000Z",
-          value:100,
-          memo:""
-        },
-        {
-          id:"a1-new",
-          accountId:"a1",
-          asOfDate:"2026-11-10",
-          recordedAt:"2026-11-10T10:00:00.000Z",
-          value:150,
-          memo:""
-        },
-        {
-          id:"a2-new",
-          accountId:"a2",
-          asOfDate:"2026-11-10",
-          recordedAt:"2026-11-10T10:00:00.000Z",
-          value:200,
-          memo:""
-        }
+        makeSnapshot("a1","a","2026-10-01","2026-10-01T10:00:00.000Z",1000000),
+        makeSnapshot("a2","a","2026-10-20","2026-10-20T10:00:00.000Z",1100000),
+        makeSnapshot("a3","a","2026-11-10","2026-11-10T10:00:00.000Z",1200000)
       ]
     };
 
-    const summary = calculateDashboard(data);
+    const result = calculateDiff30(data);
+    const accountResult = result.accounts[0];
 
-    assert(summary.total === 350,"総資産の合計が正しくありません。");
-    assert(summary.includedAccountCount === 2,"総資産の対象口座数が正しくありません。");
-    assert(summary.difference === 50,"前回差の合計が正しくありません。");
-    assert(summary.previousAccountCount === 1,"前回差の比較対象口座数が正しくありません。");
-    assert(summary.excludedPreviousCount === 2,"前回差の対象外口座数が正しくありません。");
+    assert(accountResult.baseDate === "2026-10-11","基準日が10月11日ではありません。");
+    assert(accountResult.comparisonDate === "2026-10-01","比較値の対象日が10月1日ではありません。");
+    assert(accountResult.difference === 200000,"差額が+200,000円ではありません。");
+    assert(result.difference === 200000,"合計差額が正しくありません。");
+    assert(result.comparedAccountCount === 1,"比較口座数が正しくありません。");
+  });
+
+  runTest("30日前比較：基準日以前の記録がない口座は対象外",() => {
+    const data = {
+      accounts:[makeAccount("b","架空口座B","bank","bank")],
+      snapshots:[
+        makeSnapshot("b1","b","2026-11-05","2026-11-05T10:00:00.000Z",100),
+        makeSnapshot("b2","b","2026-11-10","2026-11-10T10:00:00.000Z",120)
+      ]
+    };
+
+    const result = calculateDiff30(data);
+
+    assert(result.comparedAccountCount === 0,"比較対象外になっていません。");
+    assert(result.excludedAccountCount === 1,"対象外口座数が正しくありません。");
+    assert(result.difference === null,"比較できないのに差額が0扱いされています。");
+    assert(result.accounts[0].comparable === false,"口座別の比較対象判定が正しくありません。");
+  });
+
+  runTest("30日前比較：同一対象日はrecordedAtが新しい値を採用",() => {
+    const data = {
+      accounts:[makeAccount("c","架空口座C","fx","fx")],
+      snapshots:[
+        makeSnapshot("c-old","c","2026-10-01","2026-10-01T09:00:00.000Z",100),
+        makeSnapshot("c-new","c","2026-10-01","2026-10-01T12:00:00.000Z",150),
+        makeSnapshot("c-current","c","2026-11-10","2026-11-10T10:00:00.000Z",300)
+      ]
+    };
+
+    const result = calculateDiff30(data);
+
+    assert(result.accounts[0].comparisonSnapshot.id === "c-new",
+      "比較値にrecordedAtが新しい記録が採用されていません。");
+    assert(result.accounts[0].difference === 150,
+      "新しい比較値を使った差額が正しくありません。");
+  });
+
+  runTest("30日前比較：全口座が対象外なら算出不可",() => {
+    const data = {
+      accounts:[
+        makeAccount("d1","架空口座D1","fx","fx"),
+        makeAccount("d2","架空口座D2","bank","bank")
+      ],
+      snapshots:[
+        makeSnapshot("d1-current","d1","2026-11-10","2026-11-10T10:00:00.000Z",100),
+        makeSnapshot("d2-current","d2","2026-11-10","2026-11-10T10:00:00.000Z",200)
+      ]
+    };
+
+    const result = calculateDiff30(data);
+    const dashboard = calculateDashboard(data);
+
+    assert(result.isUnavailable === true,"算出不可の判定が正しくありません。");
+    assert(result.difference === null,"差額が0になっています。");
+    assert(result.comparedAccountCount === 0,"比較対象口座数が0ではありません。");
+    assert(result.excludedAccountCount === 2,"対象外口座数が正しくありません。");
+    assert(dashboard.difference30.isUnavailable === true,
+      "ホーム側で算出不可になっていません。");
+  });
+
+  runTest("30日前比較：月またぎで2026-03-01から30日を引く",() => {
+    assert(
+      subtractCalendarDays("2026-03-01",30) === "2026-01-30",
+      "月またぎの基準日が2026-01-30ではありません。"
+    );
   });
 
   runTest("日付に正しい曜日を付ける",() => {
