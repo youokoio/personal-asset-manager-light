@@ -273,6 +273,61 @@
     assert(totals.fx.inputAccountCount === 1,"FXの入力済み口座数が正しくありません。");
   });
 
+  runTest("ホームの総資産と前回差は比較可能な口座だけで集計",() => {
+    const data = {
+      accounts:[
+        makeAccount("a1","架空口座A","fx","fx"),
+        makeAccount("a2","架空口座B","securities","stock"),
+        makeAccount("a3","架空口座C","bank","bank")
+      ],
+      snapshots:[
+        {
+          id:"a1-old",
+          accountId:"a1",
+          asOfDate:"2026-11-09",
+          recordedAt:"2026-11-09T10:00:00.000Z",
+          value:100,
+          memo:""
+        },
+        {
+          id:"a1-new",
+          accountId:"a1",
+          asOfDate:"2026-11-10",
+          recordedAt:"2026-11-10T10:00:00.000Z",
+          value:150,
+          memo:""
+        },
+        {
+          id:"a2-new",
+          accountId:"a2",
+          asOfDate:"2026-11-10",
+          recordedAt:"2026-11-10T10:00:00.000Z",
+          value:200,
+          memo:""
+        }
+      ]
+    };
+
+    const summary = calculateDashboard(data);
+
+    assert(summary.total === 350,"総資産の合計が正しくありません。");
+    assert(summary.includedAccountCount === 2,"総資産の対象口座数が正しくありません。");
+    assert(summary.difference === 50,"前回差の合計が正しくありません。");
+    assert(summary.previousAccountCount === 1,"前回差の比較対象口座数が正しくありません。");
+    assert(summary.excludedPreviousCount === 2,"前回差の対象外口座数が正しくありません。");
+  });
+
+  runTest("日付に正しい曜日を付ける",() => {
+    assert(
+      formatDateWithWeekday("2026-11-10") === "2026-11-10（火）",
+      "日付の曜日表示が正しくありません。"
+    );
+    assert(
+      formatDateWithWeekday(null) === "未入力",
+      "未入力日付の表示が正しくありません。"
+    );
+  });
+
   for (const result of results) {
     const item = document.createElement("li");
     item.textContent = `${result.success ? "合格" : "不合格"}：${result.name} — ${result.message}`;
