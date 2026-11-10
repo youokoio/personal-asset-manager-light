@@ -17,11 +17,13 @@ function renderDashboard() {
   const summary = calculateDashboard(appData);
   const grid = el("div","metric-grid");
 
-  const totalCard = el("section","card");
-  totalCard.appendChild(el("div","metric-label","総資産"));
-  totalCard.appendChild(el("div","metric-value",
+  const totalCard = el("section","card home-total-card");
+  const totalRow = el("div","home-total-row");
+  totalRow.appendChild(el("div","metric-label","総資産"));
+  totalRow.appendChild(el("div","metric-value",
     summary.total === null ? "未入力" : formatYen(summary.total)
   ));
+  totalCard.appendChild(totalRow);
   totalCard.appendChild(el("div","metric-sub",
     "入力済み " + summary.includedAccountCount + "口座"
   ));
