@@ -2,7 +2,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S2-v2";
+const APP_VERSION = "S1d-v1";
 const SPEC_VERSION = "v1.3";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 2;
@@ -24,11 +24,6 @@ const INITIAL_ACCOUNTS = [
   {name:"ドコモSMTB", type:"bank", category:"bank"}
 ];
 
-/*
- * FX口座ごとの設定
- * marginRatePct：必要証拠金率
- * lossCutRatio：ロスカット水準（証拠金維持率）
- */
 const FX_ACCOUNT_SETTINGS = {
   "LIGHT FX": {marginRatePct:4,lossCutRatio:100},
   "セントラル短資FX": {marginRatePct:5,lossCutRatio:100},
@@ -68,6 +63,24 @@ function localDateString(date = new Date()) {
   const m = String(date.getMonth() + 1).padStart(2,"0");
   const d = String(date.getDate()).padStart(2,"0");
   return `${y}-${m}-${d}`;
+}
+
+function formatDateWithWeekday(value) {
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value || "未入力";
+  }
+
+  const parts = value.split("-").map(Number);
+  const date = new Date(parts[0],parts[1] - 1,parts[2]);
+  const weekdays = ["日","月","火","水","木","金","土"];
+
+  if (date.getFullYear() !== parts[0] ||
+      date.getMonth() !== parts[1] - 1 ||
+      date.getDate() !== parts[2]) {
+    return value;
+  }
+
+  return value + "（" + weekdays[date.getDay()] + "）";
 }
 
 function toNumberOrNull(value) {
@@ -233,35 +246,49 @@ function calculateCategoryTotals(data) {
 
 function calculateDashboard(data) {
   let total = 0;
-  let previousTotal = 0;
-  let previousComplete = true;
-  const typeTotals = {};
+  let includedAccountCount = 0;
+  let previousDifference = 0;
+  let previousAccountCount = 0;
   const accountRows = [];
 
   for (const account of data.accounts) {
     const latest = getLatestSnapshot(data,account.id);
     const previous = getPreviousSnapshot(data,account.id);
-    const value = latest ? latest.value : null;
-    const previousValue = previous ? previous.value : null;
+    const value = latest && isFiniteMetricValue(latest.value)
+      ? latest.value
+      : null;
+    const previousValue = previous &&
+      isFiniteMetricValue(previous.value)
+      ? previous.value
+      : null;
 
     if (value !== null) {
       total += value;
-      typeTotals[account.type] = (typeTotals[account.type] || 0) + value;
+      includedAccountCount += 1;
     }
-    if (previousValue !== null) previousTotal += previousValue;
-    else previousComplete = false;
+
+    let difference = null;
+    if (value !== null && previousValue !== null) {
+      difference = value - previousValue;
+      previousDifference += difference;
+      previousAccountCount += 1;
+    }
 
     accountRows.push({
-      account,latest,previous,value,
-      difference:latest && previous ? latest.value - previous.value : null
+      account,
+      latest,
+      previous,
+      value,
+      difference
     });
   }
 
   return {
-    total,
-    previousTotal:previousComplete ? previousTotal : null,
-    difference:previousComplete ? total - previousTotal : null,
-    typeTotals,
+    total:includedAccountCount > 0 ? total : null,
+    includedAccountCount,
+    difference:previousAccountCount > 0 ? previousDifference : null,
+    previousAccountCount,
+    excludedPreviousCount:data.accounts.length - previousAccountCount,
     accountRows
   };
 }
