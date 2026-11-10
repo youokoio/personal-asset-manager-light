@@ -18,6 +18,34 @@ function getTemporaryBackupKeys() {
   return keys.sort();
 }
 
+/*
+ * JSONバックアップの準備
+ * v1はv2へ移行してから検証する。
+ * v2は複製してから検証する。
+ * 元の読み込みデータは直接変更しない。
+ */
+function prepareImportedData(parsed) {
+  if (!parsed ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed)) {
+    throw new Error("JSONデータの形式が正しくありません。");
+  }
+
+  let imported;
+
+  if (parsed.schemaVersion === 1) {
+    imported = migrateDataV1ToV2(parsed);
+  } else if (parsed.schemaVersion === SCHEMA_VERSION) {
+    imported = JSON.parse(JSON.stringify(parsed));
+    migrateFxAccountSettings(imported);
+  } else {
+    throw new Error("対応していないデータ形式です。");
+  }
+
+  validateData(imported);
+  return imported;
+}
+
 function renderDataManagement() {
   app.appendChild(heading("データ管理"));
 
@@ -45,11 +73,22 @@ function renderDataManagement() {
   const fileField = el("div","field");
   const fileLabel = el("label","","バックアップJSONファイル");
   fileLabel.htmlFor = "backup-file-input";
+
   const fileInput = el("input","");
   fileInput.type = "file";
   fileInput.id = "backup-file-input";
   fileInput.name = "backupFile";
   fileInput.accept = ".json,application/json";
+
+  /*
+   * ファイル入力欄自身でchangeを受け取る。
+   * app要素へのイベント委譲に依存しない。
+   */
+  fileInput.addEventListener("change",() => {
+    const file = fileInput.files && fileInput.files[0];
+    importBackupFile(file);
+  });
+
   fileField.append(fileLabel,fileInput);
   restoreCard.appendChild(fileField);
   restoreCard.appendChild(el("p","help",
@@ -136,12 +175,15 @@ async function exportBackupJson() {
 
 function importBackupFile(file) {
   if (!file) return;
+
   const reader = new FileReader();
+
   reader.onload = () => {
     try {
       const parsed = JSON.parse(String(reader.result));
       const imported = prepareImportedData(parsed);
       const sourceVersion = parsed.schemaVersion;
+
       const confirmed = window.confirm(
         `schemaVersion ${sourceVersion} のバックアップを復元します。現在のデータは置き換わります。続けますか？`
       );
@@ -151,6 +193,7 @@ function importBackupFile(file) {
       if (currentRaw !== null) {
         localStorage.setItem("pam2_pre_import",currentRaw);
       }
+
       saveData(imported);
       appData = imported;
       deleteAllArmed = false;
@@ -161,10 +204,12 @@ function importBackupFile(file) {
       render();
     }
   };
+
   reader.onerror = () => {
     showMessage("ファイルを読み込めませんでした。",true);
     render();
   };
+
   reader.readAsText(file);
 }
 
