@@ -2,10 +2,17 @@
 
 /* ---------- 分類別口座一覧・詳細 ---------- */
 
-function appendAccountMetric(container,label,value) {
+function appendAccountMetric(container,label,value,subText = "") {
   const row = el("div","account-metric-line");
-  row.appendChild(el("div","account-metric-label",label));
-  row.appendChild(el("div","account-metric-value",value));
+  const labelBox = el("div","account-metric-label",label);
+  row.appendChild(labelBox);
+
+  const valueBox = el("div","account-metric-value");
+  valueBox.appendChild(el("div","",value));
+  if (subText) {
+    valueBox.appendChild(el("div","account-metric-sub",subText));
+  }
+  row.appendChild(valueBox);
   container.appendChild(row);
 }
 
@@ -22,9 +29,12 @@ function renderCategoryAccountList(category) {
     return;
   }
 
+  const diff30 = category === "bank"
+    ? calculateDiff30(appData)
+    : null;
+
   for (const account of accounts) {
     const latest = getLatestSnapshot(appData,account.id);
-    const previous = getPreviousSnapshot(appData,account.id);
     const card = el("section","card account-card");
     const top = el("div","account-card-top");
 
@@ -47,14 +57,20 @@ function renderCategoryAccountList(category) {
     } else if (category === "bank") {
       appendAccountMetric(card,"口座残高",formatYen(latest.value));
 
-      const change = previous &&
-        isFiniteMetricValue(latest.value) &&
-        isFiniteMetricValue(previous.value)
-          ? latest.value - previous.value
-          : null;
+      const result = diff30.accounts.find(item =>
+        item.accountId === account.id
+      );
 
-      appendAccountMetric(card,"前回記録との差",
-        change === null ? "算出不可" : formatSignedYen(change)
+      appendAccountMetric(
+        card,
+        "30日前からの差",
+        result && result.comparable
+          ? formatSignedYen(result.difference)
+          : "算出不可",
+        result && result.comparable
+          ? "比較値の対象日：" +
+            formatDateWithWeekday(result.comparisonDate)
+          : "30日前以前の比較記録がありません"
       );
     } else {
       appendAccountMetric(card,"総資産",formatYen(latest.value));
