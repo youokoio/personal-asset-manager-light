@@ -1,9 +1,6 @@
 "use strict";
 
-(function runTests() {
-  const resultsElement = document.getElementById("test-results");
-  const summaryElement = document.getElementById("test-summary");
-
+function runAllTests() {
   const results = [];
 
   function assert(condition,message) {
@@ -333,6 +330,40 @@
     );
   });
 
+  runTest("S2b：自己診断6項目が架空データで正常",() => {
+    const data = createInitialData();
+    const account = data.accounts[0];
+    data.snapshots.push({
+      id:"diagnostic-snapshot",
+      accountId:account.id,
+      asOfDate:"2026-01-01",
+      recordedAt:"2026-01-01T10:00:00.000Z",
+      value:12345,
+      cumulativeInvested:null,
+      effectivePrincipal:null,
+      pnl:null,
+      realizedPnlTotal:null,
+      cash:null,
+      swapTotal:null,
+      requiredMargin:null,
+      memo:"架空データ"
+    });
+
+    const report = runDataSelfDiagnosis(data,true);
+    assert(report.items.length === 6,"診断項目が6件ではありません。");
+    assert(report.ngCount === 0,"正常データで自己診断NGが発生しました。");
+    assert(report.items.find(item => item.name === "版情報").status === "info",
+      "版情報がOK/NG判定から分離されていません。");
+  });
+
+  return results;
+}
+
+if (document.body && document.body.dataset.testRunner === "true") {
+  const results = runAllTests();
+  const resultsElement = document.getElementById("test-results");
+  const summaryElement = document.getElementById("test-summary");
+
   for (const result of results) {
     const item = document.createElement("li");
     item.textContent = `${result.success ? "合格" : "不合格"}：${result.name} — ${result.message}`;
@@ -341,7 +372,5 @@
 
   const passed = results.filter(result => result.success).length;
   const failed = results.length - passed;
-
-  summaryElement.textContent =
-    `${passed}件合格 / ${failed}件不合格（全${results.length}件）`;
-})();
+  summaryElement.textContent = `${passed}件合格 / ${failed}件不合格（全${results.length}件）`;
+}
