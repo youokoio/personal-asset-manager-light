@@ -132,8 +132,69 @@ app.addEventListener("click",event => {
   } else if (action === "cancel-delete-all") {
     deleteAllArmed = false;
     render();
+  } else if (action === "run-self-diagnosis") {
+    runSelfDiagnosisAndRender();
+  } else if (action === "run-tests") {
+    runTestsAndRender();
   }
 });
+
+/* ---------- S2b 自己診断・テスト実行 ---------- */
+
+async function runSelfDiagnosisAndRender() {
+  let registered = false;
+  try {
+    if ("serviceWorker" in navigator) {
+      const registration = await navigator.serviceWorker.getRegistration();
+      registered = Boolean(registration);
+    }
+  } catch (error) {
+    registered = false;
+  }
+
+  dataDiagnosisResults = runDataSelfDiagnosis(appData,registered);
+  showMessage("");
+  render();
+}
+
+function runTestsAndRender() {
+  if (typeof runAllTests === "function") {
+    dataTestResults = runAllTests();
+    dataTestLoading = false;
+    render();
+    return;
+  }
+
+  if (dataTestLoading) return;
+  dataTestLoading = true;
+  render();
+
+  const script = document.createElement("script");
+  script.src = "./js/tests.js";
+  script.onload = () => {
+    dataTestLoading = false;
+    if (typeof runAllTests === "function") {
+      dataTestResults = runAllTests();
+    } else {
+      dataTestResults = [{
+        name:"テスト関数の読み込み",
+        success:false,
+        message:"runAllTests() が見つかりません。"
+      }];
+    }
+    render();
+  };
+  script.onerror = () => {
+    dataTestLoading = false;
+    dataTestResults = [{
+      name:"テストファイルの読み込み",
+      success:false,
+      message:"js/tests.js を読み込めませんでした。"
+    }];
+    render();
+  };
+  document.head.appendChild(script);
+}
 
 /* ---------- PWA ---------- */
 
