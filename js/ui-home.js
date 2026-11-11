@@ -100,8 +100,6 @@ function renderDashboard() {
     } else {
       appendHomeMetric(card,"総資産",
         formatYen(item.totalAssets));
-      appendHomeMetric(card,"累計投資元本",
-        formatYen(item.cumulativeInvested));
       appendHomeMetric(card,"有効元本",
         formatYen(item.effectivePrincipal));
       appendHomeMetric(card,"評価損益",
