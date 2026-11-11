@@ -2,10 +2,10 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S2b-v2";
+const APP_VERSION = "S1f-v1";
 const SPEC_VERSION = "v1.7";
 const STORAGE_KEY = "pam2";
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const INITIAL_ACCOUNTS = [
   {name:"LIGHT FX", type:"fx", category:"fx"},
@@ -47,6 +47,54 @@ const CATEGORY_LABELS = {
   crypto:"暗号資産",
   bank:"銀行"
 };
+
+const DEFAULT_FX_FIELD_LABELS = {
+  "LIGHT FX":{
+    value:"純資産額",
+    effectivePrincipal:"口座残高",
+    pnl:"建玉評価損益",
+    swapTotal:"スワップ"
+  },
+  "セントラル短資FX":{
+    value:"口座清算価値",
+    effectivePrincipal:"口座残高",
+    pnl:"建玉評価損益",
+    swapTotal:"未決済スワップ"
+  },
+  "クリック365":{
+    value:"時価評価総額",
+    effectivePrincipal:"口座残高",
+    pnl:"未決済建玉評価損益",
+    swapTotal:"累計スワップ"
+  },
+  "LION FX":{
+    value:"有効証拠金",
+    effectivePrincipal:"預託証拠金",
+    pnl:"ポジション損益",
+    swapTotal:"未実現スワップ"
+  }
+};
+
+function getAccountFieldLabel(account,field,fallback) {
+  const value = account && account.fieldLabels
+    ? account.fieldLabels[field]
+    : null;
+  return typeof value === "string" && value.trim()
+    ? value
+    : fallback;
+}
+
+function getDefaultAutoCalc(account) {
+  if (account && account.type === "fx") {
+    return ["LIGHT FX","クリック365","LION FX"].includes(account.name)
+      ? "swap"
+      : null;
+  }
+  if (account && ["securities","ideco","dc"].includes(account.type)) {
+    return "principal";
+  }
+  return null;
+}
 
 /* ---------- 基本関数 ---------- */
 
@@ -247,6 +295,57 @@ function getCategory(account) {
   }
 }
 
+function getFxDataMappingTargets(data) {
+  const fxAccounts = new Map(
+    data.accounts
+      .filter(account => account.type === "fx")
+      .map(account => [account.id,account.name])
+  );
+
+  return data.snapshots
+    .filter(snapshot =>
+      fxAccounts.has(snapshot.accountId) &&
+      (snapshot.effectivePrincipal === null ||
+       snapshot.effectivePrincipal === undefined) &&
+      isFiniteMetricValue(snapshot.cash)
+    )
+    .map(snapshot => ({
+      snapshotId:snapshot.id,
+      accountId:snapshot.accountId,
+      accountName:fxAccounts.get(snapshot.accountId),
+      asOfDate:snapshot.asOfDate,
+      cash:snapshot.cash
+    }));
+}
+
+function applyFxDataMapping(data,targets) {
+  const nextData = JSON.parse(JSON.stringify(data));
+  const targetById = new Map(
+    targets.map(target => [target.snapshotId,target])
+  );
+  const fxAccountIds = new Set(
+    nextData.accounts
+      .filter(account => account.type === "fx")
+      .map(account => account.id)
+  );
+
+  for (const snapshot of nextData.snapshots) {
+    const target = targetById.get(snapshot.id);
+    if (!target ||
+        !fxAccountIds.has(snapshot.accountId) ||
+        target.accountId !== snapshot.accountId ||
+        (snapshot.effectivePrincipal !== null &&
+         snapshot.effectivePrincipal !== undefined) ||
+        snapshot.cash !== target.cash ||
+        !isFiniteMetricValue(snapshot.cash)) {
+      continue;
+    }
+    snapshot.effectivePrincipal = snapshot.cash;
+  }
+
+  return nextData;
+}
+
 function calculateCategoryTotals(data) {
   const result = {};
 
@@ -256,7 +355,6 @@ function calculateCategoryTotals(data) {
       label:CATEGORY_LABELS[category],
       accountCount:0,
       inputAccountCount:0,
-      cumulativeInvested:0,
       effectivePrincipal:0,
       pnl:0,
       totalAssets:0,
@@ -266,7 +364,6 @@ function calculateCategoryTotals(data) {
       bankComparedAccountCount:0,
       bankExcludedAccountCount:0,
       counts:{
-        cumulativeInvested:0,
         effectivePrincipal:0,
         pnl:0,
         totalAssets:0,
@@ -298,7 +395,7 @@ function calculateCategoryTotals(data) {
     }
 
     for (const field of [
-      "cumulativeInvested","effectivePrincipal","pnl","realizedPnlTotal"
+      "effectivePrincipal","pnl","realizedPnlTotal"
     ]) {
       if (isFiniteMetricValue(latest[field])) {
         totals[field] += latest[field];
@@ -329,7 +426,7 @@ function calculateCategoryTotals(data) {
 
   for (const totals of Object.values(result)) {
     for (const field of [
-      "cumulativeInvested","effectivePrincipal","pnl","totalAssets",
+      "effectivePrincipal","pnl","totalAssets",
       "realizedPnlTotal","bankBalance"
     ]) {
       if (totals.counts[field] === 0) totals[field] = null;
