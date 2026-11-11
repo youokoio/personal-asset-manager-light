@@ -32,6 +32,13 @@ function runAllTests() {
       memo:"",
       lossCutRatio:null,
       marginRatePct:null,
+      fieldLabels:{
+        value:null,
+        effectivePrincipal:null,
+        pnl:null,
+        swapTotal:null
+      },
+      autoCalc:null,
       createdAt:"2026-01-01T00:00:00.000Z",
       updatedAt:"2026-01-01T00:00:00.000Z"
     };
@@ -55,7 +62,7 @@ function runAllTests() {
     };
   }
 
-  runTest("v1からv2への移行と新項目追加",() => {
+  runTest("v1からv3への移行と新項目追加",() => {
     const oldData = {
       schemaVersion:1,
       accounts:[
@@ -91,9 +98,10 @@ function runAllTests() {
       ]
     };
 
-    const migrated = migrateDataV1ToV2(oldData);
+    const migratedV2 = migrateDataV1ToV2(oldData);
+    const migrated = migrateDataV2ToV3(migratedV2);
 
-    assert(migrated.schemaVersion === 2,"schemaVersionが2ではありません。");
+    assert(migrated.schemaVersion === 3,"schemaVersionが3ではありません。");
     assert(migrated.accounts[0].id === "account-fx","既存口座IDが変わっています。");
     assert(migrated.accounts[0].category === "fx","FX分類が正しくありません。");
     assert(migrated.accounts[0].lossCutRatio === 123,"既存のロスカット設定が上書きされています。");
@@ -118,9 +126,119 @@ function runAllTests() {
     assert(Array.isArray(migrated.fxRates),"fxRatesが追加されていません。");
     assert(Array.isArray(migrated.loans),"loansが追加されていません。");
     assert(Array.isArray(migrated.loanSnapshots),"loanSnapshotsが追加されていません。");
+    assert(Array.isArray(migrated.fxSwapLedger),"fxSwapLedgerが追加されていません。");
+    assert(migrated.accounts[0].fieldLabels.value === "純資産額",
+      "FX口座のfieldLabels初期値が正しくありません。");
+    assert(migrated.accounts[0].autoCalc === "swap",
+      "FX口座のautoCalc初期値が正しくありません。");
     assert(migrated.settings.targetRatio === 150,"設定の初期値が正しくありません。");
 
     validateData(migrated);
+  });
+
+  runTest("v2からv3への移行は追加のみで繰り返しても同じ",() => {
+    const oldData = createInitialData();
+    oldData.schemaVersion = 2;
+    delete oldData.fxSwapLedger;
+
+    for (const account of oldData.accounts) {
+      delete account.fieldLabels;
+      delete account.autoCalc;
+    }
+
+    const fx = oldData.accounts.find(account => account.name === "LIGHT FX");
+    fx.lossCutRatio = 77;
+    fx.fieldLabels = {value:"独自の総資産名"};
+    fx.autoCalc = null;
+
+    const stock = oldData.accounts.find(account => account.name === "楽天証券");
+    const sourceJson = JSON.stringify(oldData);
+
+    const first = migrateDataV2ToV3(oldData);
+    const second = migrateDataV2ToV3(oldData);
+
+    assert(JSON.stringify(first) === JSON.stringify(second),
+      "同じv2データからの移行結果が一致しません。");
+    assert(first.schemaVersion === 3,"schemaVersionが3ではありません。");
+    assert(first.accounts.find(account => account.name === "LIGHT FX").lossCutRatio === 77,
+      "既存のFX設定が変更されています。");
+    assert(first.accounts.find(account => account.name === "LIGHT FX").fieldLabels.value === "独自の総資産名",
+      "既存のfieldLabelsが上書きされています。");
+    assert(first.accounts.find(account => account.name === "LIGHT FX").fieldLabels.pnl === "建玉評価損益",
+      "未設定のfieldLabelsが補完されていません。");
+    assert(first.accounts.find(account => account.name === "LIGHT FX").autoCalc === null,
+      "既存のautoCalcが上書きされています。");
+    assert(first.accounts.find(account => account.id === stock.id).autoCalc === "principal",
+      "株式口座のautoCalc初期値が正しくありません。");
+    assert(Array.isArray(first.fxSwapLedger),"fxSwapLedgerが追加されていません。");
+    assert(JSON.stringify(oldData) === sourceJson,
+      "移行処理が元データを変更しています。");
+    validateData(first);
+  });
+
+  runTest("FXデータの読み替え対象と複写",() => {
+    const data = createInitialData();
+    const fx = data.accounts.find(account => account.type === "fx");
+    const stock = data.accounts.find(account => account.type === "securities");
+
+    data.snapshots.push(
+      {
+        id:"map-target",
+        accountId:fx.id,
+        asOfDate:"2026-11-01",
+        recordedAt:"2026-11-01T10:00:00.000Z",
+        value:1000,
+        effectivePrincipal:null,
+        cash:800,
+        memo:"架空データ"
+      },
+      {
+        id:"map-zero",
+        accountId:fx.id,
+        asOfDate:"2026-11-02",
+        recordedAt:"2026-11-02T10:00:00.000Z",
+        value:1000,
+        effectivePrincipal:null,
+        cash:0,
+        memo:"架空データ"
+      },
+      {
+        id:"map-existing",
+        accountId:fx.id,
+        asOfDate:"2026-11-03",
+        recordedAt:"2026-11-03T10:00:00.000Z",
+        value:1000,
+        effectivePrincipal:700,
+        cash:900,
+        memo:"架空データ"
+      },
+      {
+        id:"map-stock",
+        accountId:stock.id,
+        asOfDate:"2026-11-01",
+        recordedAt:"2026-11-01T10:00:00.000Z",
+        value:1000,
+        effectivePrincipal:null,
+        cash:600,
+        memo:"架空データ"
+      }
+    );
+
+    const targets = getFxDataMappingTargets(data);
+    assert(targets.length === 2,"FX読み替え対象が2件ではありません。");
+    assert(targets.some(item => item.cash === 0),"現金0円の履歴が対象外です。");
+
+    const mapped = applyFxDataMapping(data,targets);
+    assert(mapped.snapshots.find(item => item.id === "map-target").effectivePrincipal === 800,
+      "現金から有効元本への複写が正しくありません。");
+    assert(mapped.snapshots.find(item => item.id === "map-zero").effectivePrincipal === 0,
+      "0円の複写が正しくありません。");
+    assert(mapped.snapshots.find(item => item.id === "map-target").cash === 800,
+      "元のcashが保持されていません。");
+    assert(data.snapshots.find(item => item.id === "map-target").effectivePrincipal === null,
+      "元データが変更されています。");
+    assert(getFxDataMappingTargets(mapped).length === 0,
+      "2回目の読み替え対象が残っています。");
   });
 
   runTest("初期口座の追加を繰り返しても重複しない",() => {
@@ -223,11 +341,11 @@ function runAllTests() {
     const totals = calculateCategoryTotals(data);
 
     assert(totals.fx.totalAssets === 1000,"FX総資産の合計が正しくありません。");
-    assert(totals.fx.cumulativeInvested === 700,"FX累計投資元本の合計が正しくありません。");
+    assert(!Object.prototype.hasOwnProperty.call(totals.fx,"cumulativeInvested"),
+      "分類別集計に累計投資元本が残っています。");
     assert(totals.fx.effectivePrincipal === 800,"FX有効元本の合計が正しくありません。");
     assert(totals.fx.pnl === 100,"FX評価損益の合計が正しくありません。");
     assert(totals.stock.totalAssets === 2000,"株式総資産の合計が正しくありません。");
-    assert(totals.stock.cumulativeInvested === null,"未入力の累計投資元本が0扱いされています。");
     assert(totals.stock.effectivePrincipal === 1500,"株式有効元本の合計が正しくありません。");
     assert(totals.bank.bankBalance === 500,"銀行残高の合計が正しくありません。");
     assert(totals.bank.bankChange === 50,"銀行の30日前差が正しくありません。");
