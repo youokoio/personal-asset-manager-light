@@ -136,6 +136,10 @@ app.addEventListener("click",event => {
     runSelfDiagnosisAndRender();
   } else if (action === "run-tests") {
     runTestsAndRender();
+  } else if (action === "preview-fx-mapping") {
+    previewFxDataMappingAndRender();
+  } else if (action === "apply-fx-mapping") {
+    executeFxDataMappingAndRender();
   }
 });
 
