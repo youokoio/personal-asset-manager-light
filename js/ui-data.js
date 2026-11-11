@@ -2,6 +2,149 @@
 
 /* ---------- データ管理画面 ---------- */
 
+let dataDiagnosisResults = null;
+let dataTestResults = null;
+let dataTestLoading = false;
+
+function runDataSelfDiagnosis(data,serviceWorkerRegistered) {
+  const items = [];
+  const add = (name,status,detail) => items.push({name,status,detail});
+
+  try {
+    validateData(data);
+    add("保存データの検証","ok","validateData に合格しました。");
+  } catch (error) {
+    add("保存データの検証","ng",error.message || "検証に失敗しました。");
+  }
+
+  try {
+    const exported = JSON.stringify(data);
+    const imported = JSON.parse(exported);
+    if (exported === JSON.stringify(imported)) {
+      add("書き出し・読み込みの往復","ok","メモリ上でJSONを往復し、内容が完全に一致しました。");
+    } else {
+      add("書き出し・読み込みの往復","ng","JSON往復後の内容が一致しません。");
+    }
+  } catch (error) {
+    add("書き出し・読み込みの往復","ng",error.message || "JSONの往復に失敗しました。");
+  }
+
+  try {
+    const accountIds = new Set(data.accounts.map(account => account.id));
+    const loanIds = new Set(data.loans.map(loan => loan.id));
+    const errors = [];
+
+    for (const item of data.snapshots) {
+      if (!accountIds.has(item.accountId)) errors.push("履歴 " + item.id + " の口座がありません。");
+    }
+    for (const item of data.holdings) {
+      if (!accountIds.has(item.accountId)) errors.push("商品別保有 " + item.id + " の口座がありません。");
+    }
+    for (const item of data.fxPositions) {
+      if (!accountIds.has(item.accountId)) errors.push("FX建玉 " + item.id + " の口座がありません。");
+    }
+    for (const item of data.loanSnapshots) {
+      if (!loanIds.has(item.loanId)) errors.push("ローン履歴 " + item.id + " のローンがありません。");
+    }
+
+    add(
+      "口座・ローンの参照整合",
+      errors.length === 0 ? "ok" : "ng",
+      errors.length === 0 ? "履歴・商品別保有・FX建玉・ローン履歴の参照先が存在します。" : errors.join(" ")
+    );
+  } catch (error) {
+    add("口座・ローンの参照整合","ng",error.message || "参照整合を確認できません。");
+  }
+
+  try {
+    const totals = calculateCategoryTotals(data);
+    const diff30 = calculateDiff30(data);
+    const errors = [];
+    const sumFields = [
+      ["cumulativeInvested","cumulativeInvested"],
+      ["effectivePrincipal","effectivePrincipal"],
+      ["pnl","pnl"],
+      ["totalAssets","value"],
+      ["realizedPnlTotal","realizedPnlTotal"]
+    ];
+
+    for (const category of Object.keys(CATEGORY_LABELS)) {
+      for (const [totalField,snapshotField] of sumFields) {
+        let expectedTotal = 0;
+        let includedCount = 0;
+
+        for (const account of data.accounts) {
+          if (getCategory(account) !== category) continue;
+          const latest = getLatestSnapshot(data,account.id);
+          if (!latest || !isFiniteMetricValue(latest[snapshotField])) continue;
+          expectedTotal += latest[snapshotField];
+          includedCount += 1;
+        }
+
+        const expected = includedCount > 0 ? expectedTotal : null;
+        const actual = totals[category] ? totals[category][totalField] : undefined;
+        if (actual !== expected) {
+          errors.push(CATEGORY_LABELS[category] + "の" + totalField + "が口座別合計と一致しません。");
+        }
+      }
+    }
+
+    const bankAccounts = data.accounts.filter(account => getCategory(account) === "bank");
+    const bankDiffs = diff30.accounts.filter(item =>
+      item.comparable && bankAccounts.some(account => account.id === item.accountId)
+    );
+    const expectedBankChange = bankDiffs.length > 0
+      ? bankDiffs.reduce((sum,item) => sum + item.difference,0)
+      : null;
+
+    if (totals.bank.bankBalance !== totals.bank.totalAssets) {
+      errors.push("銀行残高と銀行総資産の合計が一致しません。");
+    }
+    if (totals.bank.bankChange !== expectedBankChange) {
+      errors.push("銀行の30日前からの差が口座別合計と一致しません。");
+    }
+    if (totals.bank.bankComparedAccountCount !== bankDiffs.length) {
+      errors.push("銀行の比較対象口座数が一致しません。");
+    }
+    if (totals.bank.bankExcludedAccountCount !== bankAccounts.length - bankDiffs.length) {
+      errors.push("銀行の比較対象外口座数が一致しません。");
+    }
+
+    add(
+      "分類別集計の整合",
+      errors.length === 0 ? "ok" : "ng",
+      errors.length === 0 ? "各分類の元本・損益・総資産と銀行の残高・30日前差が口座別合計と一致します。" : errors.join(" ")
+    );
+  } catch (error) {
+    add("分類別集計の整合","ng",error.message || "分類別集計を確認できません。");
+  }
+
+  add(
+    "版情報",
+    "info",
+    "APP_VERSION=" + APP_VERSION + " / SPEC_VERSION=" + SPEC_VERSION +
+      " / schemaVersion=" + (data && data.schemaVersion)
+  );
+
+  add(
+    "Service Worker登録",
+    serviceWorkerRegistered ? "ok" : "ng",
+    serviceWorkerRegistered ? "Service Workerの登録を確認しました。" : "Service Workerの登録を確認できません。"
+  );
+
+  const ngCount = items.filter(item => item.status === "ng").length;
+  return {items,ngCount,allOk:ngCount === 0};
+}
+
+function appendDataCheckResults(container,items) {
+  const list = el("ul","backup-key-list");
+  for (const item of items) {
+    const label = item.status === "ok" ? "OK" : item.status === "ng" ? "NG" : "情報";
+    list.appendChild(el("li","",label + "： " + item.name + " — " + item.detail));
+  }
+  container.appendChild(list);
+}
+
 function formatBackupDate(value) {
   if (!value) return "未実施";
   const date = new Date(value);
@@ -133,6 +276,46 @@ function renderDataManagement() {
   versionCard.appendChild(el("p","metric-sub",`アプリ版：${APP_VERSION}`));
   versionCard.appendChild(el("p","metric-sub",`仕様書版：${SPEC_VERSION}`));
   app.appendChild(versionCard);
+
+  const diagnosisCard = el("section","card");
+  diagnosisCard.appendChild(el("h3","","自己診断"));
+  diagnosisCard.appendChild(el("p","help","保存データを変更せず、仕様書13章の6項目を確認します。"));
+  diagnosisCard.appendChild(makeButton("自己診断を実行","run-self-diagnosis"));
+  if (dataDiagnosisResults) {
+    diagnosisCard.appendChild(el(
+      "p",
+      dataDiagnosisResults.allOk ? "success" : "error",
+      dataDiagnosisResults.allOk ? "全部OK" : "NGあり（" + dataDiagnosisResults.ngCount + "件）"
+    ));
+    appendDataCheckResults(diagnosisCard,dataDiagnosisResults.items);
+  }
+  app.appendChild(diagnosisCard);
+
+  const testsCard = el("section","card");
+  testsCard.appendChild(el("h3","","テスト実行"));
+  testsCard.appendChild(el("p","help","ボタンを押したときだけ js/tests.js を読み込み、架空データでテストします。保存データは変更しません。"));
+  const testButton = makeButton("テスト実行","run-tests");
+  testButton.disabled = dataTestLoading;
+  testsCard.appendChild(testButton);
+  if (dataTestResults) {
+    const passed = dataTestResults.filter(item => item.success).length;
+    const failed = dataTestResults.length - passed;
+    testsCard.appendChild(el(
+      "p",
+      failed === 0 ? "success" : "error",
+      failed === 0 ? "全件合格（" + passed + "件）" : "不合格あり（" + failed + "件）"
+    ));
+    const list = el("ul","backup-key-list");
+    for (const item of dataTestResults) {
+      list.appendChild(el("li","",
+        (item.success ? "合格" : "不合格") + "：" + item.name + " — " + item.message
+      ));
+    }
+    testsCard.appendChild(list);
+  } else if (dataTestLoading) {
+    testsCard.appendChild(el("p","help","テストを読み込んでいます..."));
+  }
+  app.appendChild(testsCard);
 }
 
 function updateLastBackupAt(value) {
