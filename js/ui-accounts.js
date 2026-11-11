@@ -73,18 +73,29 @@ function renderCategoryAccountList(category) {
           : "30日前以前の比較記録がありません"
       );
     } else {
-      appendAccountMetric(card,"総資産",formatYen(latest.value));
-      appendAccountMetric(card,"累計投資元本",
-        formatYen(latest.cumulativeInvested));
-      appendAccountMetric(card,"有効元本",
-        formatYen(latest.effectivePrincipal));
-      appendAccountMetric(card,"評価損益",
-        formatSignedYen(latest.pnl));
+      appendAccountMetric(
+        card,
+        getAccountFieldLabel(account,"value","総資産"),
+        formatYen(latest.value)
+      );
+      appendAccountMetric(
+        card,
+        getAccountFieldLabel(account,"effectivePrincipal","有効元本"),
+        formatYen(latest.effectivePrincipal)
+      );
+      appendAccountMetric(
+        card,
+        getAccountFieldLabel(account,"pnl","評価損益"),
+        formatSignedYen(latest.pnl)
+      );
 
       if (category === "fx") {
         appendAccountMetric(card,"累積確定損益","後続段階で対応");
-        appendAccountMetric(card,"累計スワップ",
-          formatYen(latest.swapTotal));
+        appendAccountMetric(
+          card,
+          getAccountFieldLabel(account,"swapTotal","累計スワップ"),
+          formatYen(latest.swapTotal)
+        );
         appendAccountMetric(card,"為替差益","後続段階で対応");
       } else {
         appendAccountMetric(card,"累積確定損益",
@@ -196,10 +207,6 @@ function renderSnapshotRow(snapshot) {
   } else if (snapshot.principal !== null &&
              snapshot.principal !== undefined) {
     metaParts.push("元本 " + formatYen(snapshot.principal));
-  }
-  if (snapshot.cumulativeInvested !== null &&
-      snapshot.cumulativeInvested !== undefined) {
-    metaParts.push("累計投資元本 " + formatYen(snapshot.cumulativeInvested));
   }
   if (snapshot.realizedPnlTotal !== null &&
       snapshot.realizedPnlTotal !== undefined) {
