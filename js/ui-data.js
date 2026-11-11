@@ -5,6 +5,7 @@
 let dataDiagnosisResults = null;
 let dataTestResults = null;
 let dataTestLoading = false;
+let fxMappingPreview = null;
 
 function runDataSelfDiagnosis(data,serviceWorkerRegistered) {
   const items = [];
@@ -61,7 +62,6 @@ function runDataSelfDiagnosis(data,serviceWorkerRegistered) {
     const diff30 = calculateDiff30(data);
     const errors = [];
     const sumFields = [
-      ["cumulativeInvested","cumulativeInvested"],
       ["effectivePrincipal","effectivePrincipal"],
       ["pnl","pnl"],
       ["totalAssets","value"],
@@ -113,7 +113,7 @@ function runDataSelfDiagnosis(data,serviceWorkerRegistered) {
     add(
       "分類別集計の整合",
       errors.length === 0 ? "ok" : "ng",
-      errors.length === 0 ? "各分類の元本・損益・総資産と銀行の残高・30日前差が口座別合計と一致します。" : errors.join(" ")
+      errors.length === 0 ? "各分類の有効元本・損益・総資産と銀行の残高・30日前差が口座別合計と一致します。" : errors.join(" ")
     );
   } catch (error) {
     add("分類別集計の整合","ng",error.message || "分類別集計を確認できません。");
@@ -143,6 +143,55 @@ function appendDataCheckResults(container,items) {
     list.appendChild(el("li","",label + "： " + item.name + " — " + item.detail));
   }
   container.appendChild(list);
+}
+
+function previewFxDataMappingAndRender() {
+  fxMappingPreview = getFxDataMappingTargets(appData);
+  showMessage(
+    fxMappingPreview.length > 0
+      ? fxMappingPreview.length + "件の読み替え対象を確認してください。"
+      : "読み替え対象の履歴はありません。"
+  );
+  render();
+}
+
+function executeFxDataMappingAndRender() {
+  try {
+    if (fxMappingPreview === null) {
+      throw new Error("先に対象履歴をプレビューしてください。");
+    }
+
+    const currentTargets = getFxDataMappingTargets(appData);
+    if (JSON.stringify(currentTargets) !== JSON.stringify(fxMappingPreview)) {
+      fxMappingPreview = currentTargets;
+      showMessage("対象データが変わったため、プレビューを更新しました。内容を再確認してください。",true);
+      render();
+      return;
+    }
+
+    if (currentTargets.length === 0) {
+      showMessage("読み替え対象の履歴はありません。");
+      render();
+      return;
+    }
+
+    const currentRaw = localStorage.getItem(STORAGE_KEY);
+    if (currentRaw === null) {
+      throw new Error("保存データを確認できないため、読み替えを中止しました。");
+    }
+
+    localStorage.setItem("pam2_pre_fxmap",currentRaw);
+
+    const nextData = applyFxDataMapping(appData,currentTargets);
+    saveData(nextData);
+    appData = nextData;
+    fxMappingPreview = null;
+    showMessage("FXデータの読み替えを実行しました。");
+  } catch (error) {
+    showMessage(error.message || "FXデータの読み替えに失敗しました。",true);
+  }
+
+  render();
 }
 
 function formatBackupDate(value) {
@@ -177,10 +226,12 @@ function prepareImportedData(parsed) {
   let imported;
 
   if (parsed.schemaVersion === 1) {
-    imported = migrateDataV1ToV2(parsed);
+    const migratedV2 = migrateDataV1ToV2(parsed);
+    imported = migrateDataV2ToV3(migratedV2);
+  } else if (parsed.schemaVersion === 2) {
+    imported = migrateDataV2ToV3(parsed);
   } else if (parsed.schemaVersion === SCHEMA_VERSION) {
     imported = JSON.parse(JSON.stringify(parsed));
-    migrateFxAccountSettings(imported);
   } else {
     throw new Error("対応していないデータ形式です。");
   }
@@ -235,9 +286,45 @@ function renderDataManagement() {
   fileField.append(fileLabel,fileInput);
   restoreCard.appendChild(fileField);
   restoreCard.appendChild(el("p","help",
-    "対応形式：schemaVersion 1（移行後に検証）または現在のschemaVersion 2。"
+    "対応形式：schemaVersion 1・2（v3へ移行後に検証）または現在のschemaVersion 3。"
   ));
   app.appendChild(restoreCard);
+
+  const mappingCard = el("section","card");
+  mappingCard.appendChild(el("h3","","FXデータの読み替え"));
+  mappingCard.appendChild(el("p","help",
+    "FX口座の履歴で、有効元本が未設定かつ現金に数値があるものを、有効元本へ複写します。現金の値は残します。"
+  ));
+  mappingCard.appendChild(makeButton(
+    "対象履歴をプレビュー",
+    "preview-fx-mapping",
+    "secondary"
+  ));
+
+  if (fxMappingPreview !== null) {
+    if (fxMappingPreview.length === 0) {
+      mappingCard.appendChild(el("p","empty","読み替え対象の履歴はありません。"));
+    } else {
+      mappingCard.appendChild(el("p","help",
+        "次の履歴が対象です。内容を確認してから実行してください。"
+      ));
+      const previewList = el("ul","backup-key-list");
+      for (const item of fxMappingPreview) {
+        previewList.appendChild(el(
+          "li",
+          "",
+          item.accountName + "｜" + formatDateWithWeekday(item.asOfDate) +
+            "｜有効元本へ " + formatYen(item.cash)
+        ));
+      }
+      mappingCard.appendChild(previewList);
+      mappingCard.appendChild(makeButton(
+        "この内容で読み替えを実行",
+        "apply-fx-mapping"
+      ));
+    }
+  }
+  app.appendChild(mappingCard);
 
   const temporaryCard = el("section","card");
   temporaryCard.appendChild(el("h3","","一時バックアップ"));
@@ -379,6 +466,7 @@ function importBackupFile(file) {
 
       saveData(imported);
       appData = imported;
+      fxMappingPreview = null;
       deleteAllArmed = false;
       showMessage("バックアップを復元しました。");
       render();
