@@ -498,6 +498,84 @@ function renderChartLegend(series) {
   return legend;
 }
 
+function formatChartPercent(value) {
+  if (!Number.isFinite(value)) return "算出不可";
+  return (value > 0 ? "+" : "") + value.toFixed(2) + "%";
+}
+
+function appendChartAnnualizedSummary(section,annualized) {
+  section.appendChild(el(
+    "div",
+    "chart-series-setting-title",
+    "年利換算・参考値"
+  ));
+
+  if (!annualized) {
+    section.appendChild(el(
+      "div",
+      "empty",
+      "年利換算を表示できません。"
+    ));
+    return;
+  }
+
+  if (!annualized.available) {
+    const unavailableRow = el("div","chart-statistics-row");
+    unavailableRow.append(
+      el("span","chart-statistics-label","年利換算"),
+      el("span","chart-statistics-value","算出不可")
+    );
+    section.appendChild(unavailableRow);
+    section.appendChild(el("div","help",annualized.reason));
+
+    if (annualized.totalAssetsRate !== null) {
+      const assetRow = el("div","chart-statistics-row");
+      assetRow.append(
+        el("span","chart-statistics-label","総資産増減率（入出金を含む）"),
+        el("span","chart-statistics-value",
+          formatChartPercent(annualized.totalAssetsRate))
+      );
+      section.appendChild(assetRow);
+    }
+    return;
+  }
+
+  const rows = [
+    ["期間日数",annualized.days + "日"],
+    ["期間損益",formatChartAmount(annualized.periodProfit)],
+    ["基準額（有効元本平均）",formatChartAmount(annualized.baseAverage)],
+    ["年利（単純）",formatChartPercent(annualized.simpleAnnualRate * 100)],
+    ["年利（複利換算）",annualized.compoundAnnualRate === null
+      ? "算出不可"
+      : formatChartPercent(annualized.compoundAnnualRate * 100)],
+    ["総資産増減率（入出金を含む）",
+      annualized.totalAssetsRate === null
+        ? "算出不可"
+        : formatChartPercent(annualized.totalAssetsRate)]
+  ];
+
+  for (const [label,value] of rows) {
+    const row = el("div","chart-statistics-row");
+    row.append(
+      el("span","chart-statistics-label",label),
+      el("span","chart-statistics-value",value)
+    );
+    section.appendChild(row);
+  }
+
+  if (annualized.compoundReason) {
+    section.appendChild(el("div","help",annualized.compoundReason));
+  }
+
+  if (annualized.shortPeriod) {
+    section.appendChild(el(
+      "div",
+      "notice",
+      "期間が30日未満のため、年利は参考値です。"
+    ));
+  }
+}
+
 function renderChartStatistics(series) {
   const card = el("section","card");
   card.appendChild(el("h3","","期間統計"));
@@ -517,6 +595,7 @@ function renderChartStatistics(series) {
         "empty",
         "記録が足りません（2点以上の記録が必要です）。"
       ));
+      appendChartAnnualizedSummary(section,item.annualized);
       card.appendChild(section);
       continue;
     }
@@ -543,6 +622,7 @@ function renderChartStatistics(series) {
       section.appendChild(row);
     }
 
+    appendChartAnnualizedSummary(section,item.annualized);
     card.appendChild(section);
   }
 
