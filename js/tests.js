@@ -161,7 +161,7 @@ function runAllTests() {
       "同じv2データからの移行結果が一致しません。");
     assert(first.schemaVersion === 3,"schemaVersionが3ではありません。");
     assert(first.accounts.find(account => account.name === "LIGHT FX").lossCutRatio === 77,
-      "既存のFX設定が変更されています。");
+      "既存のFX設定が上書きされています。");
     assert(first.accounts.find(account => account.name === "LIGHT FX").fieldLabels.value === "独自の総資産名",
       "既存のfieldLabelsが上書きされています。");
     assert(first.accounts.find(account => account.name === "LIGHT FX").fieldLabels.pnl === "建玉評価損益",
@@ -525,6 +525,48 @@ function runAllTests() {
       assert(actual === item.expected,
         `${item.name}の累計スワップ計算が一致しません。`);
     }
+  });
+
+  runTest("S1g：口座分類ごとに自動計算の選択肢を制限",() => {
+    const fx = makeAccount("fx","LIGHT FX","fx","fx");
+    const central = makeAccount(
+      "central","セントラル短資FX","fx","fx"
+    );
+    const stock = makeAccount(
+      "stock","架空証券口座","securities","stock"
+    );
+    const crypto = makeAccount(
+      "crypto","架空暗号資産口座","crypto","crypto"
+    );
+    const bank = makeAccount(
+      "bank","架空銀行","bank","bank"
+    );
+
+    assert(
+      JSON.stringify(getAllowedAutoCalcValues(fx)) ===
+        JSON.stringify(["","swap"]),
+      "通常のFX口座は「なし／swap」のみ選択できません。"
+    );
+    assert(
+      JSON.stringify(getAllowedAutoCalcValues(central)) ===
+        JSON.stringify([""]),
+      "セントラル短資FXに自動計算の選択肢があります。"
+    );
+    assert(
+      JSON.stringify(getAllowedAutoCalcValues(stock)) ===
+        JSON.stringify(["","principal"]),
+      "株式口座は「なし／principal」のみ選択できません。"
+    );
+    assert(
+      JSON.stringify(getAllowedAutoCalcValues(crypto)) ===
+        JSON.stringify([""]),
+      "暗号資産口座に自動計算の選択肢があります。"
+    );
+    assert(
+      JSON.stringify(getAllowedAutoCalcValues(bank)) ===
+        JSON.stringify([""]),
+      "銀行口座に自動計算の選択肢があります。"
+    );
   });
 
   runTest("S1g：セントラル短資FXは自動計算しない",() => {
