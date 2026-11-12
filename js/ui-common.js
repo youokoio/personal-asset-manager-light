@@ -88,6 +88,71 @@ function makeSelectField(labelText, name, options, selected) {
   return wrapper;
 }
 
+/* ---------- 数値入力部品 ---------- */
+
+function enhanceNumericInput(wrapper,input) {
+  input.type = "text";
+  input.inputMode = "decimal";
+  input.autocomplete = "off";
+  input.classList.add("numeric-input");
+
+  input.addEventListener("focus",() => {
+    input.value = input.value.replace(/,/g,"");
+    window.setTimeout(() => input.select(),0);
+  });
+
+  input.addEventListener("blur",() => {
+    if (input.value.trim() === "") {
+      input.value = "";
+      return;
+    }
+    const number = toNumberOrNull(input.value);
+    if (number !== null) {
+      input.value = formatInputNumber(number);
+    }
+  });
+
+  const actions = el("div","numeric-input-actions");
+
+  const clear = makeButton("×","clear-numeric","secondary small");
+  clear.setAttribute("aria-label","入力値を消去");
+  clear.addEventListener("click",() => {
+    input.value = "";
+    input.dispatchEvent(new Event("input",{bubbles:true}));
+    input.focus();
+  });
+
+  const sign = makeButton("±","toggle-sign","secondary small");
+  sign.setAttribute("aria-label","符号を反転");
+  sign.addEventListener("click",() => {
+    const raw = input.value.replace(/,/g,"").trim();
+    if (!raw) return;
+
+    if (raw.startsWith("-")) {
+      input.value = raw.slice(1);
+    } else {
+      input.value = "-" + raw;
+    }
+
+    input.dispatchEvent(new Event("input",{bubbles:true}));
+    input.focus();
+  });
+
+  actions.append(clear,sign);
+  wrapper.appendChild(actions);
+}
+
+function makeNumericField(labelText,name,value,options = {}) {
+  const wrapper = makeField(labelText,name,value,{
+    ...options,
+    type:"text",
+    inputmode:"decimal"
+  });
+  const input = wrapper.querySelector("input");
+  enhanceNumericInput(wrapper,input);
+  return wrapper;
+}
+
 function updateNavigation() {
   document.querySelectorAll(".bottom-nav button").forEach(button => {
     button.classList.toggle("active",button.dataset.tab === currentTab);
