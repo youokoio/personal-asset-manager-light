@@ -40,6 +40,8 @@ function render() {
     }
   } else if (currentTab === "data") {
     renderDataManagement();
+  } else if (currentTab === "bulk") {
+    renderBulkInput();
   }
 }
 
@@ -64,8 +66,18 @@ headerMenuButton.addEventListener("click",() => {
 headerMenu.addEventListener("click",event => {
   const button = event.target.closest("button[data-menu-action]");
   if (!button) return;
+
   if (button.dataset.menuAction === "open-data") {
     currentTab = "data";
+    selectedAccountId = null;
+    editingSnapshotId = null;
+    deleteAllArmed = false;
+    showMessage("");
+    closeHeaderMenu();
+    render();
+    window.scrollTo(0,0);
+  } else if (button.dataset.menuAction === "open-bulk") {
+    currentTab = "bulk";
     selectedAccountId = null;
     editingSnapshotId = null;
     deleteAllArmed = false;
@@ -140,7 +152,30 @@ app.addEventListener("click",event => {
     previewFxDataMappingAndRender();
   } else if (action === "apply-fx-mapping") {
     executeFxDataMappingAndRender();
+  } else if (action === "bulk-expand") {
+    expandBulkImportText();
+  } else if (action === "bulk-clear-table") {
+    clearBulkImportTable();
+  } else if (action === "bulk-add-row") {
+    addBulkImportEmptyRow();
+  } else if (action === "bulk-delete-row") {
+    removeBulkImportRow(id);
+  } else if (action === "bulk-import-save") {
+    executeBulkImport();
   }
+});
+
+app.addEventListener("change",event => {
+  const input = event.target.closest(
+    "input[data-bulk-row-id][data-bulk-field]"
+  );
+  if (!input) return;
+
+  editBulkImportCell(
+    input.dataset.bulkRowId,
+    input.dataset.bulkField,
+    input.value
+  );
 });
 
 /* ---------- S2b 自己診断・テスト実行 ---------- */
