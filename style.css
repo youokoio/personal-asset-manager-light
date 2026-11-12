@@ -336,12 +336,72 @@ button.header-menu-button {
 .account-card-top > div { min-width:0; }
 .account-card-top .account-name { overflow-wrap:anywhere; }
 
+/* ---------- S1g 履歴入力フォーム ---------- */
+.snapshot-date-field input[type="date"] {
+  width:100%;
+  min-width:0;
+  max-width:100%;
+}
+
+.numeric-input-actions {
+  display:flex;
+  justify-content:flex-end;
+  gap:7px;
+  margin-top:6px;
+}
+
+.numeric-input-actions button {
+  min-width:43px;
+  min-height:35px;
+  padding:6px 12px;
+  font-size:15px;
+}
+
+.previous-value-row {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  min-height:31px;
+  margin-top:4px;
+}
+
+.previous-value-text {
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.4;
+  overflow-wrap:anywhere;
+}
+
+.previous-value-apply {
+  flex:0 0 auto;
+}
+
+.auto-calc-status {
+  display:inline-block;
+  margin:-5px 0 12px;
+  padding:4px 8px;
+  border-radius:6px;
+  background:#edf3f7;
+  color:#31536d;
+  font-size:11px;
+}
+
+.account-settings-card {
+  margin-top:13px;
+}
+
+.account-settings-card .field input {
+  font-size:16px;
+}
+
 @media (max-width:370px) {
   .bottom-nav button { font-size:10px; }
   .metric-grid { gap:7px; }
   .metric-value,
   .home-summary-value { font-size:21px; }
   .snapshot-date { flex-basis:10em; width:10em; }
+  .previous-value-row { align-items:flex-start; }
 }
 @media (min-width:600px) {
   main { padding:22px; }
