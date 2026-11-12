@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "pam2-s2b-v1";
+const CACHE_NAME = "pam2-s1g-v3";
 const APP_FILES = [
   "./index.html",
   "./style.css",
@@ -18,11 +18,23 @@ const APP_FILES = [
 ];
 
 self.addEventListener("install",event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(APP_FILES))
-      .then(() => self.skipWaiting())
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE_NAME);
+
+    for (const file of APP_FILES) {
+      const url = new URL(file,self.registration.scope);
+      const request = new Request(url.href,{cache:"reload"});
+      const response = await fetch(request);
+
+      if (!response || !response.ok) {
+        throw new Error("アプリファイルを取得できません: " + file);
+      }
+
+      await cache.put(url.href,response);
+    }
+
+    await self.skipWaiting();
+  })());
 });
 
 self.addEventListener("activate",event => {
@@ -38,11 +50,12 @@ self.addEventListener("activate",event => {
 self.addEventListener("fetch",event => {
   const request = event.request;
   if (request.method !== "GET") return;
+
   const requestUrl = new URL(request.url);
   if (requestUrl.origin !== self.location.origin) return;
 
   event.respondWith(
-    fetch(request).then(response => {
+    fetch(new Request(request,{cache:"no-cache"})).then(response => {
       if (response && response.ok) {
         const responseCopy = response.clone();
         return caches.open(CACHE_NAME)
@@ -50,10 +63,14 @@ self.addEventListener("fetch",event => {
           .then(() => response);
       }
       return response;
-    }).catch(() => caches.match(request).then(cached => {
-      if (cached) return cached;
-      if (request.mode === "navigate") return caches.match("./index.html");
-      return Response.error();
-    }))
+    }).catch(() => caches.open(CACHE_NAME).then(cache =>
+      cache.match(request).then(cached => {
+        if (cached) return cached;
+        if (request.mode === "navigate") {
+          return cache.match(new URL("./index.html",self.registration.scope).href);
+        }
+        return Response.error();
+      })
+    ))
   );
 });
