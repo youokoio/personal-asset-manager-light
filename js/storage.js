@@ -2,6 +2,18 @@
 
 /* ---------- データ保存 ---------- */
 
+function createDefaultFieldLabels(account) {
+  const defaults = DEFAULT_FX_FIELD_LABELS[account.name];
+  return defaults
+    ? {...defaults}
+    : {
+        value:null,
+        effectivePrincipal:null,
+        pnl:null,
+        swapTotal:null
+      };
+}
+
 function createInitialAccount(item,index,now) {
   const fxSettings = item.type === "fx"
     ? FX_ACCOUNT_SETTINGS[item.name]
@@ -16,6 +28,8 @@ function createInitialAccount(item,index,now) {
     memo:"",
     lossCutRatio:fxSettings ? fxSettings.lossCutRatio : null,
     marginRatePct:fxSettings ? fxSettings.marginRatePct : null,
+    fieldLabels:createDefaultFieldLabels(item),
+    autoCalc:getDefaultAutoCalc(item),
     createdAt:now,
     updatedAt:now
   };
@@ -33,6 +47,7 @@ function createInitialData() {
     holdings:[],
     fxPositions:[],
     fxRates:[],
+    fxSwapLedger:[],
     loans:[],
     loanSnapshots:[],
     settings:{
@@ -66,6 +81,7 @@ function validateData(data) {
     "holdings",
     "fxPositions",
     "fxRates",
+    "fxSwapLedger",
     "loans",
     "loanSnapshots"
   ];
@@ -97,6 +113,25 @@ function validateData(data) {
     if (!isNullableNumber(account.lossCutRatio) ||
         !isNullableNumber(account.marginRatePct)) {
       throw new Error("FX口座設定の数値が正しくありません。");
+    }
+
+    if (!account.fieldLabels ||
+        typeof account.fieldLabels !== "object" ||
+        Array.isArray(account.fieldLabels)) {
+      throw new Error("口座の fieldLabels が正しくありません。");
+    }
+
+    for (const field of [
+      "value","effectivePrincipal","pnl","swapTotal"
+    ]) {
+      if (account.fieldLabels[field] !== null &&
+          typeof account.fieldLabels[field] !== "string") {
+        throw new Error("口座の fieldLabels." + field + " が正しくありません。");
+      }
+    }
+
+    if (![null,"swap","principal"].includes(account.autoCalc)) {
+      throw new Error("口座の autoCalc が正しくありません。");
     }
   }
 
@@ -354,6 +389,48 @@ function migrateDataV1ToV2(oldData) {
   return data;
 }
 
+/* ---------- v2 → v3 移行 ---------- */
+
+function migrateDataV2ToV3(oldData) {
+  if (!oldData ||
+      oldData.schemaVersion !== 2 ||
+      !Array.isArray(oldData.accounts) ||
+      !Array.isArray(oldData.snapshots)) {
+    throw new Error("v2データの形式が正しくありません。");
+  }
+
+  const data = JSON.parse(JSON.stringify(oldData));
+  data.schemaVersion = 3;
+
+  for (const account of data.accounts) {
+    const defaults = createDefaultFieldLabels(account);
+
+    if (account.fieldLabels === undefined) {
+      account.fieldLabels = defaults;
+    } else if (account.fieldLabels &&
+        typeof account.fieldLabels === "object" &&
+        !Array.isArray(account.fieldLabels)) {
+      for (const field of [
+        "value","effectivePrincipal","pnl","swapTotal"
+      ]) {
+        if (account.fieldLabels[field] === undefined) {
+          account.fieldLabels[field] = defaults[field];
+        }
+      }
+    }
+
+    if (account.autoCalc === undefined) {
+      account.autoCalc = getDefaultAutoCalc(account);
+    }
+  }
+
+  if (data.fxSwapLedger === undefined) {
+    data.fxSwapLedger = [];
+  }
+
+  return data;
+}
+
 /* ---------- 読み込み・保存 ---------- */
 
 function loadData() {
@@ -368,31 +445,38 @@ function loadData() {
   const parsed = JSON.parse(raw);
 
   if (parsed && parsed.schemaVersion === 1) {
-    const backupKey = "pam2_pre_v2";
+    const backupV1Key = "pam2_pre_v2";
+
+    if (localStorage.getItem(backupV1Key) === null) {
+      localStorage.setItem(backupV1Key,raw);
+    }
+
+    const migratedV2 = migrateDataV1ToV2(parsed);
+    const backupV3Key = "pam2_pre_v3";
+
+    if (localStorage.getItem(backupV3Key) === null) {
+      localStorage.setItem(backupV3Key,JSON.stringify(migratedV2));
+    }
+
+    const migratedV3 = migrateDataV2ToV3(migratedV2);
+    validateData(migratedV3);
+    localStorage.setItem(STORAGE_KEY,JSON.stringify(migratedV3));
+
+    return migratedV3;
+  }
+
+  if (parsed && parsed.schemaVersion === 2) {
+    const backupKey = "pam2_pre_v3";
 
     if (localStorage.getItem(backupKey) === null) {
       localStorage.setItem(backupKey,raw);
     }
 
-    const migrated = migrateDataV1ToV2(parsed);
-
+    const migrated = migrateDataV2ToV3(parsed);
     validateData(migrated);
     localStorage.setItem(STORAGE_KEY,JSON.stringify(migrated));
 
     return migrated;
-  }
-
-  if (parsed && parsed.schemaVersion === 2) {
-    const before = JSON.stringify(parsed);
-
-    migrateFxAccountSettings(parsed);
-    validateData(parsed);
-
-    if (JSON.stringify(parsed) !== before) {
-      localStorage.setItem(STORAGE_KEY,JSON.stringify(parsed));
-    }
-
-    return parsed;
   }
 
   validateData(parsed);
