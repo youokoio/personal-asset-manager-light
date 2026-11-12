@@ -133,57 +133,426 @@ function getSnapshotInputValue(snapshot,field) {
   return snapshot[field] ?? null;
 }
 
-function addPreviousValueHint(wrapper,input,previousValue,isText = false) {
-  if (previousValue === null || previousValue === undefined) return;
+function getPreviousValueLabel(targetDate,value,isText = false) {
+  const dateLabel = targetDate
+    ? targetDate.slice(5).replace("-","/")
+    : "";
 
-  const hint = el("div","previous-value-hint");
-  wrapper.appendChild(hint);
+  const displayValue = isText
+    ? String(value)
+    : formatInputNumber(value);
 
-  const update = () => {
-    let isSame;
+  return `前回（${dateLabel}）：${displayValue}`;
+}
 
-    if (isText) {
-      isSame = input.value === String(previousValue);
-    } else {
-      const currentValue = toNumberOrNull(input.value);
-      const oldValue = toNumberOrNull(previousValue);
-      isSame = currentValue !== null &&
-        oldValue !== null &&
-        currentValue === oldValue;
+function updateSnapshotPreviousValues(form,account) {
+  const dateInput = form.elements.namedItem("asOfDate");
+  const targetDate = dateInput ? dateInput.value : "";
+  const previous = getPreviousSnapshotForInput(
+    appData,
+    account.id,
+    targetDate,
+    editingSnapshotId
+  );
+
+  form.querySelectorAll("[data-previous-field]").forEach(wrapper => {
+    const field = wrapper.dataset.previousField;
+    const hint = wrapper.querySelector(".previous-value-text");
+    const apply = wrapper.querySelector(".previous-value-apply");
+    const input = wrapper.querySelector("input,textarea");
+
+    const value = previous
+      ? getSnapshotInputValue(previous,field)
+      : null;
+
+    const hasValue = value !== null && value !== undefined &&
+      value !== "";
+
+    wrapper.classList.toggle("has-previous-value",hasValue);
+
+    if (!hasValue) {
+      hint.textContent = "";
+      hint.classList.add("hidden");
+      apply.classList.add("hidden");
+      apply.disabled = true;
+      return;
     }
 
-    hint.textContent = isSame ? "前回と同じ" : "";
-    hint.classList.toggle("hidden",!isSame);
-  };
+    hint.textContent = getPreviousValueLabel(
+      previous.asOfDate,
+      value,
+      Boolean(wrapper.dataset.textValue)
+    );
+    hint.classList.remove("hidden");
+    apply.classList.remove("hidden");
+    apply.disabled = false;
 
-  input.addEventListener("input",update);
-  input.addEventListener("change",update);
-  update();
+    apply.onclick = () => {
+      input.value = String(value);
+      input.dispatchEvent(new Event("input",{bubbles:true}));
+      input.dispatchEvent(new Event("change",{bubbles:true}));
+    };
+  });
+
+  const dateHelp = form.querySelector(".snapshot-date-help");
+  if (dateHelp) {
+    dateHelp.textContent =
+      "対象日：" + formatDateWithWeekday(targetDate);
+  }
 }
 
 function appendSnapshotInputField(
   form,
+  account,
   label,
   field,
   value,
-  previousValue,
   options = {}
 ) {
-  const wrapper = makeField(label,field,value,options);
-  const input = wrapper.querySelector("input,textarea");
+  const wrapper = options.textarea
+    ? makeField(label,field,value,{textarea:true})
+    : makeNumericField(label,field,value,{
+        required:Boolean(options.required),
+        placeholder:options.placeholder
+      });
 
-  if (options.showPreviousHint && previousValue !== null &&
-      previousValue !== undefined) {
-    addPreviousValueHint(
-      wrapper,
-      input,
-      previousValue,
-      Boolean(options.textarea)
-    );
-  }
+  wrapper.dataset.previousField = field;
+  if (options.textarea) wrapper.dataset.textValue = "true";
 
+  const hintRow = el("div","previous-value-row");
+  const hint = el("span","previous-value-text hidden");
+  const apply = makeButton(
+    "反映",
+    "apply-previous-value",
+    "secondary small previous-value-apply hidden"
+  );
+  apply.disabled = true;
+
+  hintRow.append(hint,apply);
+  wrapper.appendChild(hintRow);
   form.appendChild(wrapper);
 }
+
+function getSnapshotFieldLabel(account,field,fallback) {
+  return getAccountFieldLabel(account,field,fallback);
+}
+
+function setupSnapshotAutoCalculation(form,account) {
+  let targetField = null;
+  let sourceFields = [];
+
+  if (account.autoCalc === "principal") {
+    targetField = "effectivePrincipal";
+    sourceFields = ["value","pnl"];
+  } else if (account.autoCalc === "swap") {
+    targetField = "swapTotal";
+    sourceFields = ["value","effectivePrincipal","pnl"];
+  } else {
+    return;
+  }
+
+  const target = form.elements.namedItem(targetField);
+  const status = form.querySelector(".auto-calc-status");
+  if (!target || !status) return;
+
+  let manualOverride = false;
+
+  const update = () => {
+    if (manualOverride) return;
+
+    const values = {};
+    for (const field of sourceFields) {
+      const input = form.elements.namedItem(field);
+      values[field] = input ? toNumberOrNull(input.value) : null;
+    }
+
+    const calculated = calculateAutoCalcValue(account,values);
+    if (calculated === null) {
+      status.classList.add("hidden");
+      return;
+    }
+
+    target.value = String(calculated);
+    status.classList.remove("hidden");
+  };
+
+  target.addEventListener("input",() => {
+    manualOverride = true;
+    status.classList.add("hidden");
+  });
+
+  for (const field of sourceFields) {
+    const input = form.elements.namedItem(field);
+    if (input) {
+      input.addEventListener("input",update);
+      input.addEventListener("change",update);
+    }
+  }
+
+  if (target.value.trim() === "") update();
+}
+
+function renderSnapshotForm(account) {
+  const existing = editingSnapshotId
+    ? appData.snapshots.find(s => s.id === editingSnapshotId)
+    : null;
+
+  const category = getCategory(account);
+  const isBank = category === "bank";
+  const isFx = category === "fx";
+
+  const form = document.createElement("form");
+  form.id = "snapshot-form";
+  form.appendChild(el("h3","",existing ? "履歴を編集" : "評価額を追加"));
+
+  const defaultDate = existing
+    ? existing.asOfDate
+    : localDateString();
+
+  const dateField = makeField("対象日","asOfDate",defaultDate,{
+    type:"date",
+    required:true
+  });
+  dateField.classList.add("snapshot-date-field");
+  const dateInput = dateField.querySelector("input");
+  const dateHelp = el(
+    "div",
+    "help snapshot-date-help",
+    "対象日：" + formatDateWithWeekday(defaultDate)
+  );
+  dateField.appendChild(dateHelp);
+  form.appendChild(dateField);
+
+  if (isBank) {
+    appendSnapshotInputField(
+      form,
+      account,
+      "口座残高（円）",
+      "value",
+      existing ? existing.value : "",
+      {required:true}
+    );
+  } else {
+    appendSnapshotInputField(
+      form,
+      account,
+      getSnapshotFieldLabel(account,"value","総資産") + "（円）",
+      "value",
+      existing ? existing.value : "",
+      {required:true}
+    );
+
+    appendSnapshotInputField(
+      form,
+      account,
+      getSnapshotFieldLabel(account,"effectivePrincipal","有効元本") + "（円）",
+      "effectivePrincipal",
+      existing
+        ? getSnapshotInputValue(existing,"effectivePrincipal")
+        : "",
+      {}
+    );
+
+    appendSnapshotInputField(
+      form,
+      account,
+      getSnapshotFieldLabel(account,"pnl","評価損益") + "（円）",
+      "pnl",
+      existing ? existing.pnl : "",
+      {}
+    );
+
+    if (isFx) {
+      appendSnapshotInputField(
+        form,
+        account,
+        getSnapshotFieldLabel(account,"swapTotal","累計スワップ") + "（円）",
+        "swapTotal",
+        existing ? existing.swapTotal : "",
+        {}
+      );
+
+      appendSnapshotInputField(
+        form,
+        account,
+        "必要証拠金（円・任意）",
+        "requiredMargin",
+        existing ? existing.requiredMargin : "",
+        {}
+      );
+
+      const swapStatus = el("div","auto-calc-status hidden","自動計算");
+      swapStatus.dataset.target = "swapTotal";
+      form.appendChild(swapStatus);
+    } else {
+      appendSnapshotInputField(
+        form,
+        account,
+        "累積確定損益（円）",
+        "realizedPnlTotal",
+        existing ? existing.realizedPnlTotal : "",
+        {}
+      );
+
+      appendSnapshotInputField(
+        form,
+        account,
+        "現金（円・任意）",
+        "cash",
+        existing ? existing.cash : "",
+        {}
+      );
+
+      const principalStatus = el(
+        "div",
+        "auto-calc-status hidden",
+        "自動計算"
+      );
+      principalStatus.dataset.target = "effectivePrincipal";
+      form.appendChild(principalStatus);
+    }
+  }
+
+  appendSnapshotInputField(
+    form,
+    account,
+    "メモ（任意）",
+    "memo",
+    existing ? existing.memo || "" : "",
+    {textarea:true}
+  );
+
+  form.appendChild(el(
+    "div",
+    "help",
+    "口座番号・契約番号・暗証番号・ログイン情報は入力しないでください。"
+  ));
+
+  const actions = el("div","actions");
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.textContent = existing ? "変更を保存" : "追加する";
+  actions.appendChild(save);
+
+  if (existing) {
+    actions.appendChild(makeButton("編集を中止","cancel-edit","secondary"));
+  }
+  form.appendChild(actions);
+
+  dateInput.addEventListener("change",() => {
+    updateSnapshotPreviousValues(form,account);
+  });
+
+  form.addEventListener("submit",handleSnapshotSubmit);
+
+  updateSnapshotPreviousValues(form,account);
+  setupSnapshotAutoCalculation(form,account);
+
+  return form;
+}
+
+/* ---------- 口座設定 ---------- */
+
+function renderAccountSettings(account) {
+  const card = el("section","card account-settings-card");
+  card.appendChild(el("h3","","口座設定"));
+
+  const form = document.createElement("form");
+  form.id = "account-settings-form";
+
+  const labels = account.fieldLabels || {};
+  const labelFields = [
+    ["value","総資産の項目名"],
+    ["effectivePrincipal","有効元本の項目名"],
+    ["pnl","評価損益の項目名"],
+    ["swapTotal","累計スワップの項目名"]
+  ];
+
+  for (const [field,label] of labelFields) {
+    const wrapper = makeField(
+      label,
+      "label_" + field,
+      labels[field] || "",
+      {
+        type:"text",
+        placeholder:"標準名を使う場合は空欄"
+      }
+    );
+    form.appendChild(wrapper);
+  }
+
+  const autoCalcField = makeSelectField(
+    "自動計算",
+    "autoCalc",
+    [
+      {value:"",label:"なし"},
+      {value:"swap",label:"累計スワップ（swap）"},
+      {value:"principal",label:"有効元本（principal）"}
+    ],
+    account.autoCalc || ""
+  );
+  form.appendChild(autoCalcField);
+
+  form.appendChild(el(
+    "div",
+    "help",
+    "項目名を空欄にすると標準名を表示します。自動計算は口座ごとに設定します。"
+  ));
+
+  const actions = el("div","actions");
+  const save = document.createElement("button");
+  save.type = "submit";
+  save.textContent = "口座設定を保存";
+  actions.appendChild(save);
+  form.appendChild(actions);
+
+  form.addEventListener("submit",event => {
+    event.preventDefault();
+    handleAccountSettingsSubmit(event,account.id);
+  });
+
+  card.appendChild(form);
+  return card;
+}
+
+function handleAccountSettingsSubmit(event,accountId) {
+  event.preventDefault();
+
+  const account = appData.accounts.find(item => item.id === accountId);
+  if (!account) return;
+
+  const values = new FormData(event.currentTarget);
+  const fieldLabels = {};
+
+  for (const field of [
+    "value","effectivePrincipal","pnl","swapTotal"
+  ]) {
+    const value = String(values.get("label_" + field) || "").trim();
+    fieldLabels[field] = value || null;
+  }
+
+  const autoCalc = String(values.get("autoCalc") || "");
+  if (!["","swap","principal"].includes(autoCalc)) {
+    showMessage("自動計算の設定値が正しくありません。",true);
+    render();
+    return;
+  }
+
+  account.fieldLabels = fieldLabels;
+  account.autoCalc = autoCalc || null;
+  account.updatedAt = new Date().toISOString();
+
+  try {
+    saveData(appData);
+    showMessage("口座設定を保存しました。");
+  } catch (error) {
+    showMessage(error.message || "口座設定の保存に失敗しました。",true);
+  }
+
+  render();
+}
+
+/* ---------- 履歴表示 ---------- */
 
 function renderSnapshotRow(snapshot) {
   const row = el("div","snapshot-row");
@@ -238,189 +607,7 @@ function renderSnapshotRow(snapshot) {
   return row;
 }
 
-/* ---------- 履歴入力フォーム ---------- */
-
-function renderSnapshotForm(account) {
-  const existing = editingSnapshotId
-    ? appData.snapshots.find(s => s.id === editingSnapshotId)
-    : null;
-
-  const snapshots = getAccountSnapshots(appData,account.id);
-  const previous = !existing ? snapshots[0] || null : null;
-
-  const source = existing || previous || {};
-  const defaultDate = existing
-    ? existing.asOfDate
-    : previous
-      ? previous.asOfDate
-      : localDateString();
-
-  const category = getCategory(account);
-  const isBank = category === "bank";
-  const isFx = category === "fx";
-
-  const form = document.createElement("form");
-  form.id = "snapshot-form";
-  form.appendChild(el("h3","",existing ? "履歴を編集" : "評価額を追加"));
-
-  if (!existing && previous) {
-    form.appendChild(el(
-      "div",
-      "notice",
-      "前回の値を引き継ぎました。確認して変更してください。保存済みの履歴は変更されません。"
-    ));
-  }
-
-  const dateField = makeField("対象日","asOfDate",defaultDate,{
-    type:"date",
-    required:true,
-    help:"対象日：" + formatDateWithWeekday(defaultDate)
-  });
-  const dateInput = dateField.querySelector("input");
-  const dateHelp = dateField.querySelector(".help");
-
-  dateInput.addEventListener("change",() => {
-    dateHelp.textContent =
-      "対象日：" + formatDateWithWeekday(dateInput.value);
-  });
-
-  form.appendChild(dateField);
-
-  if (isBank) {
-    appendSnapshotInputField(
-      form,
-      "口座残高（円）",
-      "value",
-      source.value,
-      previous ? getSnapshotInputValue(previous,"value") : null,
-      {
-        required:true,
-        inputmode:"decimal",
-        showPreviousHint:Boolean(previous)
-      }
-    );
-  } else {
-    appendSnapshotInputField(
-      form,
-      "総資産（評価額・円）",
-      "value",
-      source.value,
-      previous ? getSnapshotInputValue(previous,"value") : null,
-      {
-        required:true,
-        inputmode:"decimal",
-        showPreviousHint:Boolean(previous)
-      }
-    );
-
-    appendSnapshotInputField(
-      form,
-      "累計投資元本（円）",
-      "cumulativeInvested",
-      getSnapshotInputValue(source,"cumulativeInvested"),
-      previous
-        ? getSnapshotInputValue(previous,"cumulativeInvested")
-        : null,
-      {inputmode:"decimal",showPreviousHint:Boolean(previous)}
-    );
-
-    appendSnapshotInputField(
-      form,
-      "有効元本（円）",
-      "effectivePrincipal",
-      getSnapshotInputValue(source,"effectivePrincipal"),
-      previous
-        ? getSnapshotInputValue(previous,"effectivePrincipal")
-        : null,
-      {inputmode:"decimal",showPreviousHint:Boolean(previous)}
-    );
-
-    appendSnapshotInputField(
-      form,
-      "評価損益（円）",
-      "pnl",
-      source.pnl,
-      previous ? getSnapshotInputValue(previous,"pnl") : null,
-      {inputmode:"decimal",showPreviousHint:Boolean(previous)}
-    );
-
-    if (!isFx) {
-      appendSnapshotInputField(
-        form,
-        "累積確定損益（円）",
-        "realizedPnlTotal",
-        source.realizedPnlTotal,
-        previous
-          ? getSnapshotInputValue(previous,"realizedPnlTotal")
-          : null,
-        {inputmode:"decimal",showPreviousHint:Boolean(previous)}
-      );
-    }
-
-    appendSnapshotInputField(
-      form,
-      "現金（円・任意）",
-      "cash",
-      source.cash,
-      previous ? getSnapshotInputValue(previous,"cash") : null,
-      {inputmode:"decimal",showPreviousHint:Boolean(previous)}
-    );
-
-    if (isFx) {
-      appendSnapshotInputField(
-        form,
-        "累計スワップ（円・任意）",
-        "swapTotal",
-        source.swapTotal,
-        previous ? getSnapshotInputValue(previous,"swapTotal") : null,
-        {inputmode:"decimal",showPreviousHint:Boolean(previous)}
-      );
-
-      appendSnapshotInputField(
-        form,
-        "必要証拠金（円・任意）",
-        "requiredMargin",
-        source.requiredMargin,
-        previous
-          ? getSnapshotInputValue(previous,"requiredMargin")
-          : null,
-        {inputmode:"decimal",showPreviousHint:Boolean(previous)}
-      );
-    }
-  }
-
-  appendSnapshotInputField(
-    form,
-    "メモ（任意）",
-    "memo",
-    source.memo || "",
-    previous && previous.memo ? previous.memo : null,
-    {
-      textarea:true,
-      showPreviousHint:Boolean(previous && previous.memo)
-    }
-  );
-
-  form.appendChild(el(
-    "div",
-    "help",
-    "口座番号・契約番号・暗証番号・ログイン情報は入力しないでください。"
-  ));
-
-  const actions = el("div","actions");
-  const save = document.createElement("button");
-  save.type = "submit";
-  save.textContent = existing ? "変更を保存" : "追加する";
-  actions.appendChild(save);
-
-  if (existing) {
-    actions.appendChild(makeButton("編集を中止","cancel-edit","secondary"));
-  }
-  form.appendChild(actions);
-
-  form.addEventListener("submit",handleSnapshotSubmit);
-  return form;
-}
+/* ---------- 口座詳細 ---------- */
 
 function renderAccountDetail() {
   const account = appData.accounts.find(a => a.id === selectedAccountId);
@@ -455,6 +642,8 @@ function renderAccountDetail() {
   const formCard = el("section","card");
   formCard.appendChild(renderSnapshotForm(account));
   app.appendChild(formCard);
+
+  app.appendChild(renderAccountSettings(account));
 
   const historyCard = el("section","card");
   historyCard.appendChild(el("h3","","評価額履歴"));
@@ -512,14 +701,20 @@ function handleSnapshotSubmit(event) {
     asOfDate,
     recordedAt:now,
     value,
-    cash:isBank ? null : toNumberOrNull(values.get("cash")),
+    cash:isBank
+      ? null
+      : isFx
+        ? previousSnapshot
+          ? previousSnapshot.cash ?? null
+          : null
+        : toNumberOrNull(values.get("cash")),
     pnl:isBank ? null : toNumberOrNull(values.get("pnl")),
     principal:previousSnapshot
       ? previousSnapshot.principal ?? null
       : null,
-    cumulativeInvested:isBank
-      ? null
-      : toNumberOrNull(values.get("cumulativeInvested")),
+    cumulativeInvested:previousSnapshot
+      ? previousSnapshot.cumulativeInvested ?? null
+      : null,
     effectivePrincipal:isBank
       ? null
       : toNumberOrNull(values.get("effectivePrincipal")),
