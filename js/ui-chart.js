@@ -303,9 +303,10 @@ function renderChartSvg(container,series) {
           formatChartDate(point.date) + "：" +
           formatChartAmount(point.value);
 
-        const detail = container.querySelector(
-          ".chart-point-detail"
-        );
+        const detail = container.parentElement
+          ? container.parentElement.querySelector(".chart-point-detail")
+          : null;
+
         if (detail) detail.textContent = chartSelectedPointText;
       };
 
@@ -577,7 +578,9 @@ function renderChartScreen() {
   );
 
   const chartCard = el("section","card");
-  chartCard.appendChild(el("h3","","推移グラフ"));
+  const chartTitle = el("h3","","推移グラフ");
+  chartTitle.appendChild(el("span","pill","目安"));
+  chartCard.appendChild(chartTitle);
 
   if (result.series.length) {
     chartCard.appendChild(renderChartLegend(result.series));
@@ -600,7 +603,11 @@ function renderChartScreen() {
   }
 
   app.appendChild(chartCard);
-  app.appendChild(renderChartStatistics(result.series));
+
+  const visibleStatistics = result.series.filter((item,index) =>
+    chartVisibleSeries[index] !== false
+  );
+  app.appendChild(renderChartStatistics(visibleStatistics));
 
   app.appendChild(el(
     "div",
