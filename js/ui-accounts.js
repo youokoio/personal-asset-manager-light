@@ -159,7 +159,6 @@ function updateSnapshotPreviousValues(form,account) {
     const field = wrapper.dataset.previousField;
     const hint = wrapper.querySelector(".previous-value-text");
     const apply = wrapper.querySelector(".previous-value-apply");
-    const input = wrapper.querySelector("input,textarea");
 
     const value = previous
       ? getSnapshotInputValue(previous,field)
@@ -175,6 +174,8 @@ function updateSnapshotPreviousValues(form,account) {
       hint.classList.add("hidden");
       apply.classList.add("hidden");
       apply.disabled = true;
+      delete wrapper.dataset.previousValue;
+      delete wrapper.dataset.hasPreviousValue;
       return;
     }
 
@@ -187,11 +188,8 @@ function updateSnapshotPreviousValues(form,account) {
     apply.classList.remove("hidden");
     apply.disabled = false;
 
-    apply.onclick = () => {
-      input.value = String(value);
-      input.dispatchEvent(new Event("input",{bubbles:true}));
-      input.dispatchEvent(new Event("change",{bubbles:true}));
-    };
+    wrapper.dataset.previousValue = String(value);
+    wrapper.dataset.hasPreviousValue = "true";
   });
 
   const dateHelp = form.querySelector(".snapshot-date-help");
@@ -227,6 +225,17 @@ function appendSnapshotInputField(
     "secondary small previous-value-apply hidden"
   );
   apply.disabled = true;
+
+  apply.addEventListener("click",() => {
+    if (wrapper.dataset.hasPreviousValue !== "true") return;
+
+    const input = wrapper.querySelector("input,textarea");
+    if (!input) return;
+
+    input.value = wrapper.dataset.previousValue;
+    input.dispatchEvent(new Event("input",{bubbles:true}));
+    input.dispatchEvent(new Event("change",{bubbles:true}));
+  });
 
   hintRow.append(hint,apply);
   wrapper.appendChild(hintRow);
