@@ -114,7 +114,7 @@ function normalizeBulkNumber(value) {
 
 function createBulkImportRow(rowNumber) {
   return {
-    id:"bulk-row-" + rowNumber,
+    id:"bulk-row-" + createId(),
     rowNumber,
     asOfDate:"",
     accountName:"",
