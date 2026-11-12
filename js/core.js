@@ -184,7 +184,7 @@ function getPreviousSnapshotForInput(
     .filter(snapshot =>
       snapshot.accountId === accountId &&
       snapshot.id !== excludeSnapshotId &&
-      snapshot.asOfDate <= targetDate
+      snapshot.asOfDate < targetDate
     )
     .sort((a,b) => {
       if (a.asOfDate !== b.asOfDate) {
