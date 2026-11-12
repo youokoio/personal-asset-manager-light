@@ -1,4 +1,4 @@
-```javascript
+javascript
 "use strict";
 
 /* ---------- 分類別口座一覧・詳細 ---------- */
