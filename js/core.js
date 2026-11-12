@@ -244,564 +244,114 @@ function compareSnapshots(a,b) {
   );
 }
 
-function getAccountSnapshots(data,accountId) {
+function getAccountSnapshots(data, accountId) {
+  const snapshots = data.snapshots.filter(
+    snapshot => snapshot.accountId === accountId
+  );
   const latestByDate = new Map();
 
-  for (const snapshot of data.snapshots) {
-    if (snapshot.accountId !== accountId) continue;
-
+  for (const snapshot of snapshots) {
     const current = latestByDate.get(snapshot.asOfDate);
     if (!current ||
         String(snapshot.recordedAt || "") >
         String(current.recordedAt || "")) {
-      latestByDate.set(snapshot.asOfDate,snapshot);
+      latestByDate.set(snapshot.asOfDate, snapshot);
     }
   }
 
   return Array.from(latestByDate.values()).sort(compareSnapshots);
 }
 
-function getLatestSnapshot(data,accountId) {
+function getLatestSnapshot(data, accountId) {
   return getAccountSnapshots(data,accountId)[0] || null;
 }
 
-/* ---------- 口座分類 ---------- */
-
-function getCategory(account) {
-  if (!account) return "other";
-  if (account.category && CATEGORY_LABELS[account.category]) {
-    return account.category;
-  }
-
-  if (account.type === "fx") return "fx";
-  if (["securities","ideco","dc"].includes(account.type)) return "stock";
-  if (account.type === "crypto") return "crypto";
-  if (account.type === "bank") return "bank";
-  return "other";
-}
-
-/* ---------- 集計 ---------- */
-
-function calculateCategoryTotals(data) {
-  const totals = {
-    fx:{
-      totalAssets:0,
-      effectivePrincipal:0,
-      pnl:0,
-      swapTotal:0,
-      accountCount:0
-    },
-    stock:{
-      totalAssets:0,
-      effectivePrincipal:0,
-      pnl:0,
-      realizedPnlTotal:0,
-      accountCount:0
-    },
-    crypto:{
-      totalAssets:0,
-      effectivePrincipal:0,
-      pnl:0,
-      accountCount:0
-    },
-    bank:{
-      bankBalance:0,
-      accountCount:0
-    }
-  };
-
-  for (const account of data.accounts) {
-    const category = getCategory(account);
-    const latest = getLatestSnapshot(data,account.id);
-    if (!latest || !totals[category]) continue;
-
-    const target = totals[category];
-    target.accountCount += 1;
-
-    if (category === "bank") {
-      if (isFiniteMetricValue(latest.value)) {
-        target.bankBalance += latest.value;
-      }
-      continue;
-    }
-
-    if (isFiniteMetricValue(latest.value)) {
-      target.totalAssets += latest.value;
-    }
-    if (isFiniteMetricValue(latest.effectivePrincipal)) {
-      target.effectivePrincipal += latest.effectivePrincipal;
-    }
-    if (isFiniteMetricValue(latest.pnl)) {
-      target.pnl += latest.pnl;
-    }
-
-    if (category === "fx" &&
-        isFiniteMetricValue(latest.swapTotal)) {
-      target.swapTotal += latest.swapTotal;
-    }
-
-    if (category === "stock" &&
-        isFiniteMetricValue(latest.realizedPnlTotal)) {
-      target.realizedPnlTotal += latest.realizedPnlTotal;
-    }
-  }
-
-  return totals;
-}
-
-/* ---------- 銀行の30日前比較 ---------- */
+/* ---------- 30日前からの差 ---------- */
 
 function subtractCalendarDays(dateString,days) {
+  if (typeof dateString !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    return null;
+  }
+
   const parts = dateString.split("-").map(Number);
-  const date = new Date(parts[0],parts[1] - 1,parts[2]);
-  date.setDate(date.getDate() - days);
-  return localDateString(date);
+  const timestamp = Date.UTC(parts[0],parts[1] - 1,parts[2]);
+  const sourceDate = new Date(timestamp);
+
+  if (sourceDate.getUTCFullYear() !== parts[0] ||
+      sourceDate.getUTCMonth() !== parts[1] - 1 ||
+      sourceDate.getUTCDate() !== parts[2]) {
+    return null;
+  }
+
+  const target = new Date(timestamp - days * 86400000);
+  const year = target.getUTCFullYear();
+  const month = String(target.getUTCMonth() + 1).padStart(2,"0");
+  const day = String(target.getUTCDate()).padStart(2,"0");
+
+  return `${year}-${month}-${day}`;
 }
 
 function calculateDiff30(data) {
-  const allLatestDates = data.snapshots
-    .map(snapshot => snapshot.asOfDate)
-    .filter(value => /^\d{4}-\d{2}-\d{2}$/.test(value))
-    .sort();
-
-  if (!allLatestDates.length) {
-    return {
-      baseDate:null,
-      comparisonDate:null,
-      difference:null,
-      comparedAccountCount:0,
-      excludedAccountCount:0,
-      isUnavailable:true,
-      accounts:[]
-    };
-  }
-
-  const latestDate = allLatestDates[allLatestDates.length - 1];
-  const baseDate = subtractCalendarDays(latestDate,30);
-
-  const accounts = [];
-  let difference = 0;
+  let differenceTotal = 0;
   let comparedAccountCount = 0;
-  let excludedAccountCount = 0;
+  const accountResults = [];
 
   for (const account of data.accounts) {
-    if (getCategory(account) !== "bank") continue;
+    const snapshots = getAccountSnapshots(data,account.id);
+    const current = snapshots[0] || null;
 
-    const current = getLatestSnapshot(data,account.id);
-    if (!current) continue;
+    let baseDate = null;
+    let comparison = null;
+    let difference = null;
+    let comparable = false;
 
-    const previousCandidates = getAccountSnapshots(data,account.id)
-      .filter(snapshot => snapshot.asOfDate <= baseDate);
+    if (current && isFiniteMetricValue(current.value)) {
+      baseDate = subtractCalendarDays(current.asOfDate,30);
 
-    const previous = previousCandidates[0] || null;
+      if (baseDate !== null) {
+        comparison = snapshots.find(snapshot =>
+          snapshot.asOfDate <= baseDate &&
+          isFiniteMetricValue(snapshot.value)
+        ) || null;
+      }
 
-    if (!previous ||
-        !isFiniteMetricValue(previous.value) ||
-        !isFiniteMetricValue(current.value)) {
-      excludedAccountCount += 1;
-      accounts.push({
-        accountId:account.id,
-        accountName:account.name,
-        comparable:false,
-        currentSnapshot:current,
-        comparisonSnapshot:previous,
-        difference:null
-      });
-      continue;
-    }
-
-    const accountDifference = current.value - previous.value;
-    difference += accountDifference;
-    comparedAccountCount += 1;
-
-    accounts.push({
-      accountId:account.id,
-      accountName:account.name,
-      comparable:true,
-      currentSnapshot:current,
-      comparisonSnapshot:previous,
-      comparisonDate:previous.asOfDate,
-      difference:accountDifference
-    });
-  }
-
-  return {
-    baseDate,
-    comparisonDate:baseDate,
-    difference:comparedAccountCount ? difference : null,
-    comparedAccountCount,
-    excludedAccountCount,
-    isUnavailable:comparedAccountCount === 0,
-    accounts
-  };
-}
-
-/* ---------- ホーム集計 ---------- */
-
-function calculateDashboard(data) {
-  const totals = calculateCategoryTotals(data);
-  const diff30 = calculateDiff30(data);
-
-  const investmentTotal =
-    totals.fx.totalAssets +
-    totals.stock.totalAssets +
-    totals.crypto.totalAssets;
-
-  const bankTotal = totals.bank.bankBalance;
-
-  return {
-    totals,
-    investmentTotal,
-    bankTotal,
-    grandTotal:investmentTotal + bankTotal,
-    difference30:diff30
-  };
-}
-
-/* ---------- 初期データ ---------- */
-
-function createInitialData() {
-  const now = new Date().toISOString();
-
-  return {
-    schemaVersion:SCHEMA_VERSION,
-    appVersion:APP_VERSION,
-    accounts:INITIAL_ACCOUNTS.map((item,index) => {
-      const fxSettings = FX_ACCOUNT_SETTINGS[item.name] || {};
-      const fieldLabels = DEFAULT_FX_FIELD_LABELS[item.name] || {};
-
-      return {
-        id:"account-" + (index + 1),
-        name:item.name,
-        type:item.type,
-        category:item.category,
-        sortOrder:index,
-        memo:"",
-        lossCutRatio:fxSettings.lossCutRatio ?? null,
-        marginRatePct:fxSettings.marginRatePct ?? null,
-        fieldLabels:{
-          value:fieldLabels.value || null,
-          effectivePrincipal:fieldLabels.effectivePrincipal || null,
-          pnl:fieldLabels.pnl || null,
-          swapTotal:fieldLabels.swapTotal || null
-        },
-        autoCalc:getDefaultAutoCalc(item),
-        createdAt:now,
-        updatedAt:now
-      };
-    }),
-    snapshots:[],
-    holdings:[],
-    fxPositions:[],
-    fxRates:[],
-    loans:[],
-    loanSnapshots:[],
-    fxSwapLedger:[],
-    settings:{
-      targetRatio:150
-    }
-  };
-}
-
-/* ---------- 初期口座の補完 ---------- */
-
-function addMissingInitialAccounts(accounts) {
-  const now = new Date().toISOString();
-
-  for (const item of INITIAL_ACCOUNTS) {
-    const exists = accounts.some(account => account.name === item.name);
-    if (exists) continue;
-
-    const fxSettings = FX_ACCOUNT_SETTINGS[item.name] || {};
-    const fieldLabels = DEFAULT_FX_FIELD_LABELS[item.name] || {};
-
-    accounts.push({
-      id:createId(),
-      name:item.name,
-      type:item.type,
-      category:item.category,
-      sortOrder:accounts.length,
-      memo:"",
-      lossCutRatio:fxSettings.lossCutRatio ?? null,
-      marginRatePct:fxSettings.marginRatePct ?? null,
-      fieldLabels:{
-        value:fieldLabels.value || null,
-        effectivePrincipal:fieldLabels.effectivePrincipal || null,
-        pnl:fieldLabels.pnl || null,
-        swapTotal:fieldLabels.swapTotal || null
-      },
-      autoCalc:getDefaultAutoCalc(item),
-      createdAt:now,
-      updatedAt:now
-    });
-  }
-
-  return accounts;
-}
-
-/* ---------- FX設定補完 ---------- */
-
-function migrateFxAccountSettings(data) {
-  for (const account of data.accounts) {
-    if (account.type !== "fx") continue;
-
-    const defaults = FX_ACCOUNT_SETTINGS[account.name];
-    if (!defaults) continue;
-
-    if (account.lossCutRatio === null ||
-        account.lossCutRatio === undefined) {
-      account.lossCutRatio = defaults.lossCutRatio;
-    }
-
-    if (account.marginRatePct === null ||
-        account.marginRatePct === undefined) {
-      account.marginRatePct = defaults.marginRatePct;
-    }
-
-    if (!account.fieldLabels) {
-      const labels = DEFAULT_FX_FIELD_LABELS[account.name] || {};
-      account.fieldLabels = {
-        value:labels.value || null,
-        effectivePrincipal:labels.effectivePrincipal || null,
-        pnl:labels.pnl || null,
-        swapTotal:labels.swapTotal || null
-      };
-    }
-
-    if (account.autoCalc === undefined) {
-      account.autoCalc = getDefaultAutoCalc(account);
-    }
-  }
-}
-
-/* ---------- v1からv2への移行 ---------- */
-
-function migrateDataV1ToV2(oldData) {
-  const data = structuredClone(oldData);
-
-  data.schemaVersion = 2;
-
-  if (!Array.isArray(data.accounts)) data.accounts = [];
-  if (!Array.isArray(data.snapshots)) data.snapshots = [];
-
-  for (const account of data.accounts) {
-    if (!account.category) {
-      account.category = getCategory(account);
-    }
-  }
-
-  for (const snapshot of data.snapshots) {
-    if (snapshot.principal !== undefined &&
-        snapshot.effectivePrincipal === undefined) {
-      snapshot.effectivePrincipal = snapshot.principal;
-    }
-    if (snapshot.effectivePrincipal === undefined) {
-      snapshot.effectivePrincipal = null;
-    }
-    if (snapshot.cumulativeInvested === undefined) {
-      snapshot.cumulativeInvested = null;
-    }
-    if (snapshot.pnl === undefined) snapshot.pnl = null;
-    if (snapshot.realizedPnlTotal === undefined) {
-      snapshot.realizedPnlTotal = null;
-    }
-  }
-
-  return data;
-}
-
-/* ---------- v2からv3への移行 ---------- */
-
-function migrateDataV2ToV3(oldData) {
-  const data = structuredClone(oldData);
-
-  data.schemaVersion = 3;
-
-  if (!Array.isArray(data.accounts)) data.accounts = [];
-  if (!Array.isArray(data.snapshots)) data.snapshots = [];
-
-  for (const key of [
-    "holdings",
-    "fxPositions",
-    "fxRates",
-    "loans",
-    "loanSnapshots",
-    "fxSwapLedger"
-  ]) {
-    if (!Array.isArray(data[key])) data[key] = [];
-  }
-
-  if (!data.settings || typeof data.settings !== "object") {
-    data.settings = {};
-  }
-  if (data.settings.targetRatio === undefined) {
-    data.settings.targetRatio = 150;
-  }
-
-  for (const account of data.accounts) {
-    if (!account.category) {
-      account.category = getCategory(account);
-    }
-
-    if (!account.fieldLabels || typeof account.fieldLabels !== "object") {
-      const defaults = DEFAULT_FX_FIELD_LABELS[account.name] || {};
-      account.fieldLabels = {
-        value:defaults.value || null,
-        effectivePrincipal:defaults.effectivePrincipal || null,
-        pnl:defaults.pnl || null,
-        swapTotal:defaults.swapTotal || null
-      };
-    } else {
-      for (const field of [
-        "value","effectivePrincipal","pnl","swapTotal"
-      ]) {
-        if (account.fieldLabels[field] === undefined) {
-          const defaults = DEFAULT_FX_FIELD_LABELS[account.name] || {};
-          account.fieldLabels[field] = defaults[field] || null;
-        }
+      if (comparison) {
+        difference = current.value - comparison.value;
+        differenceTotal += difference;
+        comparedAccountCount += 1;
+        comparable = true;
       }
     }
 
-    if (account.autoCalc === undefined) {
-      account.autoCalc = getDefaultAutoCalc(account);
-    }
-  }
-
-  for (const snapshot of data.snapshots) {
-    if (snapshot.effectivePrincipal === undefined) {
-      snapshot.effectivePrincipal =
-        snapshot.principal !== undefined
-          ? snapshot.principal
-          : null;
-    }
-    if (snapshot.cumulativeInvested === undefined) {
-      snapshot.cumulativeInvested = null;
-    }
-    if (snapshot.pnl === undefined) snapshot.pnl = null;
-    if (snapshot.realizedPnlTotal === undefined) {
-      snapshot.realizedPnlTotal = null;
-    }
-    if (snapshot.cash === undefined) snapshot.cash = null;
-    if (snapshot.swapTotal === undefined) snapshot.swapTotal = null;
-    if (snapshot.requiredMargin === undefined) {
-      snapshot.requiredMargin = null;
-    }
-  }
-
-  migrateFxAccountSettings(data);
-  addMissingInitialAccounts(data.accounts);
-
-  data.appVersion = APP_VERSION;
-
-  return data;
-}
-
-/* ---------- 読み込み前検証 ---------- */
-
-function validateData(data) {
-  if (!data || typeof data !== "object") {
-    throw new Error("データ形式が正しくありません。");
-  }
-  if (data.schemaVersion !== SCHEMA_VERSION) {
-    throw new Error("対応していないデータ形式です。");
-  }
-  if (!Array.isArray(data.accounts) ||
-      !Array.isArray(data.snapshots)) {
-    throw new Error("口座または履歴データがありません。");
-  }
-
-  const accountIds = new Set();
-  for (const account of data.accounts) {
-    if (!account.id || accountIds.has(account.id)) {
-      throw new Error("口座IDが不正または重複しています。");
-    }
-    accountIds.add(account.id);
-  }
-
-  for (const snapshot of data.snapshots) {
-    if (!snapshot.id || !accountIds.has(snapshot.accountId)) {
-      throw new Error("履歴データの参照先口座が不正です。");
-    }
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(snapshot.asOfDate || "")) {
-      throw new Error("履歴の対象日が不正です。");
-    }
-    if (!isFiniteMetricValue(snapshot.value)) {
-      throw new Error("履歴の金額が不正です。");
-    }
-  }
-
-  return true;
-}
-function migrateData(data) {
-  if (!data || typeof data !== "object") {
-    throw new Error("保存データを読み込めません。");
-  }
-
-  let migrated = structuredClone(data);
-
-  if (migrated.schemaVersion === 1) {
-    migrated = migrateDataV1ToV2(migrated);
-  }
-  if (migrated.schemaVersion === 2) {
-    migrated = migrateDataV2ToV3(migrated);
-  }
-
-  if (migrated.schemaVersion !== SCHEMA_VERSION) {
-    throw new Error("対応していないデータ形式です。");
-  }
-
-  validateData(migrated);
-  return migrated;
-}
-
-/* ---------- FXデータ読み替え ---------- */
-
-function getFxDataMappingTargets(data) {
-  const targets = [];
-
-  for (const snapshot of data.snapshots) {
-    const account = data.accounts.find(
-      item => item.id === snapshot.accountId
-    );
-    if (!account || getCategory(account) !== "fx") continue;
-
-    const hasEffectivePrincipal =
-      snapshot.effectivePrincipal !== null &&
-      snapshot.effectivePrincipal !== undefined;
-
-    if (hasEffectivePrincipal) continue;
-
-    if (snapshot.cash === null || snapshot.cash === undefined) continue;
-
-    targets.push({
-      snapshotId:snapshot.id,
+    accountResults.push({
       accountId:account.id,
       accountName:account.name,
-      asOfDate:snapshot.asOfDate,
-      cash:snapshot.cash
+      currentSnapshot:current,
+      currentValue:current && isFiniteMetricValue(current.value)
+        ? current.value
+        : null,
+      baseDate,
+      comparisonSnapshot:comparison,
+      comparisonDate:comparison ? comparison.asOfDate : null,
+      comparisonValue:comparison ? comparison.value : null,
+      difference,
+      comparable
     });
   }
 
-  return targets;
+  const excludedAccountCount =
+    data.accounts.length - comparedAccountCount;
+
+  return {
+    difference:comparedAccountCount > 0 ? differenceTotal : null,
+    comparedAccountCount,
+    excludedAccountCount,
+    isUnavailable:comparedAccountCount === 0,
+    accounts:accountResults
+  };
 }
 
-function applyFxDataMapping(data,targets) {
-  const result = structuredClone(data);
-  const targetIds = new Set(
-    targets.map(item => item.snapshotId)
-  );
-
-  for (const snapshot of result.snapshots) {
-    if (!targetIds.has(snapshot.id)) continue;
-
-    if (snapshot.effectivePrincipal === null ||
-        snapshot.effectivePrincipal === undefined) {
-      snapshot.effectivePrincipal = snapshot.cash;
-    }
-  }
-
-  return result;
-}
 /* ---------- 分類 ---------- */
 
 function getCategory(account) {
