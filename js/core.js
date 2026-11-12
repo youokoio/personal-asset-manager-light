@@ -2,7 +2,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S1f-v1";
+const APP_VERSION = "S1g-v1";
 const SPEC_VERSION = "v1.7";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
@@ -133,8 +133,20 @@ function formatDateWithWeekday(value) {
 
 function toNumberOrNull(value) {
   if (value === "" || value === null || value === undefined) return null;
-  const n = Number(value);
+  const normalized = String(value).replace(/,/g,"").trim();
+  if (!normalized) return null;
+  const n = Number(normalized);
   return Number.isFinite(n) ? n : null;
+}
+
+function formatInputNumber(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const number = toNumberOrNull(value);
+  if (number === null) return String(value);
+  return number.toLocaleString("ja-JP",{
+    useGrouping:true,
+    maximumFractionDigits:20
+  });
 }
 
 function formatYen(value) {
@@ -154,6 +166,57 @@ function formatSignedYen(value) {
 
 function isFiniteMetricValue(value) {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+/* ---------- 入力補助の計算 ---------- */
+
+function getPreviousSnapshotForInput(
+  data,
+  accountId,
+  targetDate,
+  excludeSnapshotId = null
+) {
+  if (!targetDate || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+    return null;
+  }
+
+  return data.snapshots
+    .filter(snapshot =>
+      snapshot.accountId === accountId &&
+      snapshot.id !== excludeSnapshotId &&
+      snapshot.asOfDate <= targetDate
+    )
+    .sort((a,b) => {
+      if (a.asOfDate !== b.asOfDate) {
+        return b.asOfDate.localeCompare(a.asOfDate);
+      }
+      return String(b.recordedAt || "").localeCompare(
+        String(a.recordedAt || "")
+      );
+    })[0] || null;
+}
+
+function calculateAutoCalcValue(account,values) {
+  if (!account || !values) return null;
+
+  if (account.autoCalc === "principal") {
+    if (!isFiniteMetricValue(values.value) ||
+        !isFiniteMetricValue(values.pnl)) {
+      return null;
+    }
+    return values.value - values.pnl;
+  }
+
+  if (account.autoCalc === "swap") {
+    if (!isFiniteMetricValue(values.value) ||
+        !isFiniteMetricValue(values.effectivePrincipal) ||
+        !isFiniteMetricValue(values.pnl)) {
+      return null;
+    }
+    return values.value - values.effectivePrincipal - values.pnl;
+  }
+
+  return null;
 }
 
 /* ---------- スナップショット ---------- */
