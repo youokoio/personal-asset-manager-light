@@ -401,6 +401,207 @@ function calculateChartStatistics(points) {
   };
 }
 
+/* ---------- S8b 年利換算 ---------- */
+
+function getChartElapsedDays(startDate,endDate) {
+  if (typeof startDate !== "string" ||
+      typeof endDate !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(startDate) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(endDate)) {
+    return null;
+  }
+
+  const startParts = startDate.split("-").map(Number);
+  const endParts = endDate.split("-").map(Number);
+  const startTime = Date.UTC(
+    startParts[0],
+    startParts[1] - 1,
+    startParts[2]
+  );
+  const endTime = Date.UTC(
+    endParts[0],
+    endParts[1] - 1,
+    endParts[2]
+  );
+  const startCheck = new Date(startTime);
+  const endCheck = new Date(endTime);
+
+  if (startCheck.getUTCFullYear() !== startParts[0] ||
+      startCheck.getUTCMonth() !== startParts[1] - 1 ||
+      startCheck.getUTCDate() !== startParts[2] ||
+      endCheck.getUTCFullYear() !== endParts[0] ||
+      endCheck.getUTCMonth() !== endParts[1] - 1 ||
+      endCheck.getUTCDate() !== endParts[2]) {
+    return null;
+  }
+
+  return Math.round((endTime - startTime) / 86400000);
+}
+
+function calculateChartAnnualizedReturn(data,targetValue,periodRange) {
+  const targetInfo = getChartTargetInfo(data,targetValue);
+  if (!targetInfo) {
+    return {
+      available:false,
+      reason:"対象が見つかりません。",
+      totalAssetsRate:null
+    };
+  }
+
+  const valuePoints = filterChartSeriesByPeriod(
+    createChartSeries(data,targetValue,"value"),
+    periodRange
+  ).points;
+
+  const totalAssetsRate = valuePoints.length >= 2 &&
+    valuePoints[0].value !== 0
+      ? (valuePoints[valuePoints.length - 1].value -
+          valuePoints[0].value) /
+        valuePoints[0].value * 100
+      : null;
+
+  const unavailable = reason => ({
+    available:false,
+    reason,
+    startDate:valuePoints[0]?.date || null,
+    endDate:valuePoints[valuePoints.length - 1]?.date || null,
+    days:null,
+    periodProfit:null,
+    baseAverage:null,
+    simpleAnnualRate:null,
+    compoundAnnualRate:null,
+    totalAssetsRate
+  });
+
+  if (valuePoints.length < 2) {
+    return unavailable("記録点が2点未満です。");
+  }
+
+  const startPoint = valuePoints[0];
+  const endPoint = valuePoints[valuePoints.length - 1];
+  const days = getChartElapsedDays(startPoint.date,endPoint.date);
+
+  if (days === null || days <= 0) {
+    return unavailable("期間日数を算出できません。");
+  }
+
+  if (targetInfo.accounts.every(account =>
+    getCategory(account) === "bank"
+  )) {
+    return {
+      ...unavailable("銀行口座は年利換算の対象外です。"),
+      days
+    };
+  }
+
+  const hasFxHistory = targetInfo.accounts.some(account =>
+    getCategory(account) === "fx" &&
+    data.snapshots.some(snapshot =>
+      snapshot.accountId === account.id &&
+      snapshot.asOfDate <= endPoint.date
+    )
+  );
+
+  if (hasFxHistory) {
+    return {
+      ...unavailable("FXの累積確定損益が未対応のため算出できません。"),
+      days
+    };
+  }
+
+  const totalPnlPoints = filterChartSeriesByPeriod(
+    createChartSeries(data,targetValue,"totalPnl"),
+    periodRange
+  ).points;
+  const principalPoints = filterChartSeriesByPeriod(
+    createChartSeries(data,targetValue,"effectivePrincipal"),
+    periodRange
+  ).points;
+
+  const startPnl = totalPnlPoints.find(point =>
+    point.date === startPoint.date
+  );
+  const endPnl = totalPnlPoints.find(point =>
+    point.date === endPoint.date
+  );
+  const startPrincipal = principalPoints.find(point =>
+    point.date === startPoint.date
+  );
+  const endPrincipal = principalPoints.find(point =>
+    point.date === endPoint.date
+  );
+
+  if (!startPnl || !endPnl) {
+    return {
+      ...unavailable("期間の始点または終点の通算損益が未入力です。"),
+      days
+    };
+  }
+
+  if (!startPrincipal || !endPrincipal) {
+    return {
+      ...unavailable("期間の始点または終点の有効元本が未入力です。"),
+      days
+    };
+  }
+
+  const validPrincipalPoints = principalPoints.filter(point =>
+    Number.isFinite(point.value)
+  );
+
+  if (!validPrincipalPoints.length) {
+    return {
+      ...unavailable("有効元本の記録がありません。"),
+      days
+    };
+  }
+
+  const baseAverage = validPrincipalPoints.reduce(
+    (sum,point) => sum + point.value,
+    0
+  ) / validPrincipalPoints.length;
+
+  if (!Number.isFinite(baseAverage) || baseAverage <= 0) {
+    return {
+      ...unavailable("有効元本の平均が0以下です。"),
+      days
+    };
+  }
+
+  const periodProfit = endPnl.value - startPnl.value;
+  const periodReturn = periodProfit / baseAverage;
+  const simpleAnnualRate = periodReturn * 365 / days;
+
+  if (!Number.isFinite(simpleAnnualRate)) {
+    return {
+      ...unavailable("年利（単純）を算出できません。"),
+      days
+    };
+  }
+
+  const compoundAnnualRate = periodReturn < -1
+    ? null
+    : Math.pow(1 + periodReturn,365 / days) - 1;
+
+  return {
+    available:true,
+    reason:null,
+    startDate:startPoint.date,
+    endDate:endPoint.date,
+    days,
+    periodProfit,
+    baseAverage,
+    periodReturn,
+    simpleAnnualRate,
+    compoundAnnualRate,
+    compoundReason:compoundAnnualRate === null
+      ? "期間収益率が−100%を下回るため算出できません。"
+      : null,
+    totalAssetsRate,
+    shortPeriod:days < 30
+  };
+}
+
 function buildChartData(data,seriesPreferences,period,startDate,endDate) {
   const periodRange = getChartPeriod(
     data,
@@ -431,7 +632,12 @@ function buildChartData(data,seriesPreferences,period,startDate,endDate) {
 
       return {
         ...filtered,
-        statistics:calculateChartStatistics(filtered.points)
+        statistics:calculateChartStatistics(filtered.points),
+        annualized:calculateChartAnnualizedReturn(
+          data,
+          item.target,
+          periodRange
+        )
       };
     });
 
