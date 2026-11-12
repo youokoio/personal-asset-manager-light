@@ -1,3 +1,4 @@
+```javascript
 "use strict";
 
 /* ---------- 分類別口座一覧・詳細 ---------- */
@@ -260,11 +261,17 @@ function setupSnapshotAutoCalculation(form,account) {
     return;
   }
 
+  const allowedValues = getAllowedAutoCalcValues(account);
+  if (!allowedValues.includes(account.autoCalc)) return;
+
   const target = form.elements.namedItem(targetField);
-  const status = form.querySelector(".auto-calc-status");
+  const status = Array.from(
+    form.querySelectorAll(".auto-calc-status")
+  ).find(item => item.dataset.target === targetField);
   if (!target || !status) return;
 
   let manualOverride = false;
+  let hasAutoCalculated = false;
 
   const update = () => {
     if (manualOverride) return;
@@ -277,11 +284,16 @@ function setupSnapshotAutoCalculation(form,account) {
 
     const calculated = calculateAutoCalcValue(account,values);
     if (calculated === null) {
+      if (hasAutoCalculated) {
+        target.value = "";
+        hasAutoCalculated = false;
+      }
       status.classList.add("hidden");
       return;
     }
 
     target.value = String(calculated);
+    hasAutoCalculated = true;
     status.classList.remove("hidden");
   };
 
@@ -490,15 +502,20 @@ function renderAccountSettings(account) {
     form.appendChild(wrapper);
   }
 
+  const allowedAutoCalcValues = getAllowedAutoCalcValues(account);
+  const autoCalcOptions = [
+    {value:"",label:"なし"},
+    {value:"swap",label:"累計スワップ（swap）"},
+    {value:"principal",label:"有効元本（principal）"}
+  ].filter(option => allowedAutoCalcValues.includes(option.value));
+
   const autoCalcField = makeSelectField(
     "自動計算",
     "autoCalc",
-    [
-      {value:"",label:"なし"},
-      {value:"swap",label:"累計スワップ（swap）"},
-      {value:"principal",label:"有効元本（principal）"}
-    ],
-    account.autoCalc || ""
+    autoCalcOptions,
+    allowedAutoCalcValues.includes(account.autoCalc)
+      ? account.autoCalc
+      : ""
   );
   form.appendChild(autoCalcField);
 
@@ -541,8 +558,8 @@ function handleAccountSettingsSubmit(event,accountId) {
   }
 
   const autoCalc = String(values.get("autoCalc") || "");
-  if (!["","swap","principal"].includes(autoCalc)) {
-    showMessage("自動計算の設定値が正しくありません。",true);
+  if (!getAllowedAutoCalcValues(account).includes(autoCalc)) {
+    showMessage("この口座では選択できない自動計算です。",true);
     render();
     return;
   }
