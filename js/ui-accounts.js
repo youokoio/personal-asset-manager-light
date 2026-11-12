@@ -192,10 +192,11 @@ function updateSnapshotPreviousValues(form,account) {
     wrapper.dataset.hasPreviousValue = "true";
   });
 
-  const dateHelp = form.querySelector(".snapshot-date-help");
-  if (dateHelp) {
-    dateHelp.textContent =
-      "対象日：" + formatDateWithWeekday(targetDate);
+  const dateWeekday = form.querySelector(".snapshot-date-weekday");
+  if (dateWeekday) {
+    dateWeekday.textContent = targetDate
+      ? formatDateWithWeekday(targetDate).slice(10)
+      : "";
   }
 }
 
@@ -335,12 +336,14 @@ function renderSnapshotForm(account) {
   });
   dateField.classList.add("snapshot-date-field");
   const dateInput = dateField.querySelector("input");
-  const dateHelp = el(
-    "div",
-    "help snapshot-date-help",
-    "対象日：" + formatDateWithWeekday(defaultDate)
+  const dateControl = el("div","snapshot-date-control");
+  const dateWeekday = el(
+    "span",
+    "snapshot-date-weekday",
+    formatDateWithWeekday(defaultDate).slice(10)
   );
-  dateField.appendChild(dateHelp);
+  dateControl.append(dateInput,dateWeekday);
+  dateField.appendChild(dateControl);
   form.appendChild(dateField);
 
   if (isBank) {
