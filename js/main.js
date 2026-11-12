@@ -37,6 +37,7 @@ function render() {
   } else if (["fx","stock","crypto","bank"].includes(currentTab)) {
     if (selectedAccountId) {
       renderAccountDetail();
+      renderAccountChartEntryButton();
     } else {
       renderCategoryAccountList(currentTab);
     }
@@ -60,6 +61,16 @@ function renderChartEntryButton() {
   card.appendChild(makeButton(
     "グラフを開く",
     "open-chart"
+  ));
+  app.appendChild(card);
+}
+
+function renderAccountChartEntryButton() {
+  const card = el("section","card chart-entry-card");
+  card.appendChild(el("h3","","この口座の推移"));
+  card.appendChild(makeButton(
+    "この口座のグラフを開く",
+    "open-account-chart"
   ));
   app.appendChild(card);
 }
@@ -91,6 +102,7 @@ headerMenu.addEventListener("click",event => {
     selectedAccountId = null;
     editingSnapshotId = null;
     deleteAllArmed = false;
+    chartWorkingPreferences = null;
     showMessage("");
     closeHeaderMenu();
     render();
@@ -100,6 +112,18 @@ headerMenu.addEventListener("click",event => {
     selectedAccountId = null;
     editingSnapshotId = null;
     deleteAllArmed = false;
+    chartWorkingPreferences = null;
+    showMessage("");
+    closeHeaderMenu();
+    render();
+    window.scrollTo(0,0);
+  } else if (button.dataset.menuAction === "open-chart") {
+    currentTab = "chart";
+    selectedAccountId = null;
+    chartWorkingPreferences = getChartPreferences();
+    chartVisibleSeries = {};
+    chartSelectedPointText =
+      "グラフ上の点を選択すると、日付と金額を表示します。";
     showMessage("");
     closeHeaderMenu();
     render();
@@ -153,6 +177,30 @@ app.addEventListener("click",event => {
     currentTab = "chart";
     selectedAccountId = null;
     chartWorkingPreferences = getChartPreferences();
+    chartVisibleSeries = {};
+    chartSelectedPointText =
+      "グラフ上の点を選択すると、日付と金額を表示します。";
+    showMessage("");
+    render();
+    window.scrollTo(0,0);
+  } else if (action === "open-account-chart") {
+    const accountId = selectedAccountId;
+    const account = appData.accounts.find(item =>
+      item.id === accountId
+    );
+
+    if (!account) return;
+
+    currentTab = "chart";
+    chartWorkingPreferences = {
+      series:[{
+        target:"account:" + account.id,
+        field:"value"
+      }],
+      period:"all",
+      startDate:"",
+      endDate:""
+    };
     chartVisibleSeries = {};
     chartSelectedPointText =
       "グラフ上の点を選択すると、日付と金額を表示します。";
