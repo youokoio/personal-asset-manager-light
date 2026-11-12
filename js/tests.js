@@ -756,7 +756,7 @@ function runAllTests() {
 
   runTest("S3b：全角数字・通貨記号・マイナスの数値正規化",() => {
     assert(
-      normalizeBulkNumber("１２３，４５６").value === null,
+      normalizeBulkNumber("１２３，４５６").error !== null,
       "仕様にない全角カンマを変換していません。"
     );
     assert(
