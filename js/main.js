@@ -9,6 +9,7 @@ let editingSnapshotId = null;
 let messageText = "";
 let errorText = "";
 let deleteAllArmed = false;
+let chartWorkingPreferences = null;
 
 try {
   appData = loadData();
@@ -32,17 +33,35 @@ function render() {
 
   if (currentTab === "home") {
     renderDashboard();
+    renderChartEntryButton();
   } else if (["fx","stock","crypto","bank"].includes(currentTab)) {
     if (selectedAccountId) {
       renderAccountDetail();
     } else {
       renderCategoryAccountList(currentTab);
     }
+  } else if (currentTab === "chart") {
+    renderChartScreen();
   } else if (currentTab === "data") {
     renderDataManagement();
   } else if (currentTab === "bulk") {
     renderBulkInput();
   }
+}
+
+function renderChartEntryButton() {
+  const card = el("section","card chart-entry-card");
+  card.appendChild(el("h3","","資産推移"));
+  card.appendChild(el(
+    "div",
+    "help",
+    "口座・分類・全体の履歴をグラフで確認します。"
+  ));
+  card.appendChild(makeButton(
+    "グラフを開く",
+    "open-chart"
+  ));
+  app.appendChild(card);
 }
 
 function closeHeaderMenu() {
@@ -101,6 +120,7 @@ document.querySelector(".bottom-nav").addEventListener("click",event => {
   selectedAccountId = null;
   editingSnapshotId = null;
   deleteAllArmed = false;
+  chartWorkingPreferences = null;
   showMessage("");
   closeHeaderMenu();
   render();
@@ -128,6 +148,58 @@ app.addEventListener("click",event => {
   } else if (action === "cancel-edit") {
     editingSnapshotId = null;
     showMessage("");
+    render();
+  } else if (action === "open-chart") {
+    currentTab = "chart";
+    selectedAccountId = null;
+    chartWorkingPreferences = getChartPreferences();
+    chartVisibleSeries = {};
+    chartSelectedPointText =
+      "グラフ上の点を選択すると、日付と金額を表示します。";
+    showMessage("");
+    render();
+    window.scrollTo(0,0);
+  } else if (action === "close-chart") {
+    currentTab = "home";
+    chartWorkingPreferences = null;
+    showMessage("");
+    render();
+    window.scrollTo(0,0);
+  } else if (action === "add-chart-series") {
+    if (chartWorkingPreferences &&
+        chartWorkingPreferences.series.length < 6) {
+      chartWorkingPreferences.series.push({
+        target:"all",
+        field:"value"
+      });
+      render();
+    }
+  } else if (action === "remove-chart-series") {
+    const index = Number(button.dataset.index);
+    if (chartWorkingPreferences &&
+        Number.isInteger(index) &&
+        index >= 0 &&
+        index < chartWorkingPreferences.series.length) {
+      chartWorkingPreferences.series.splice(index,1);
+      chartVisibleSeries = {};
+      render();
+    }
+  } else if (action === "save-chart-preferences") {
+    try {
+      saveChartPreferences(chartWorkingPreferences ||
+        getChartPreferences());
+      showMessage("グラフの選択内容を保存しました。");
+    } catch (error) {
+      showMessage(
+        error.message || "グラフの選択内容を保存できませんでした。",
+        true
+      );
+    }
+    render();
+  } else if (action === "toggle-chart-series") {
+    const index = Number(button.dataset.index);
+    chartVisibleSeries[index] =
+      chartVisibleSeries[index] === false;
     render();
   } else if (action === "export-json") {
     exportBackupJson().catch(error => {
@@ -196,9 +268,17 @@ async function runSelfDiagnosisAndRender() {
   render();
 }
 
+function appendChartCalculationTests(results) {
+  if (typeof runChartCalculationTests !== "function") {
+    return results;
+  }
+
+  return results.concat(runChartCalculationTests());
+}
+
 function runTestsAndRender() {
   if (typeof runAllTests === "function") {
-    dataTestResults = runAllTests();
+    dataTestResults = appendChartCalculationTests(runAllTests());
     dataTestLoading = false;
     render();
     return;
@@ -213,7 +293,7 @@ function runTestsAndRender() {
   script.onload = () => {
     dataTestLoading = false;
     if (typeof runAllTests === "function") {
-      dataTestResults = runAllTests();
+      dataTestResults = appendChartCalculationTests(runAllTests());
     } else {
       dataTestResults = [{
         name:"テスト関数の読み込み",
