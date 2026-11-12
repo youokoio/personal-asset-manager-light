@@ -74,25 +74,6 @@ function createChartSelect(options,selected,className) {
   return select;
 }
 
-function getChartFieldLabel(field) {
-  const item = CHART_FIELD_DEFINITIONS.find(
-    definition => definition.value === field
-  );
-  return item ? item.label : field;
-}
-
-function getChartPeriodLabel(period) {
-  const labels = {
-    all:"全期間",
-    "1m":"1か月",
-    "3m":"3か月",
-    "6m":"6か月",
-    "1y":"1年",
-    custom:"期間指定"
-  };
-  return labels[period] || "全期間";
-}
-
 function formatChartAmount(value) {
   if (!Number.isFinite(value)) return "未入力";
 
@@ -251,14 +232,13 @@ function renderChartSvg(container,series) {
   }
 
   if (axisRange.minimum <= 0 && axisRange.maximum >= 0) {
-    const zeroLine = createChartSvgElement("line",{
+    svg.appendChild(createChartSvgElement("line",{
       x1:padding.left,
       y1:yForValue(0),
       x2:width - padding.right,
       y2:yForValue(0),
       class:"chart-zero-line"
-    });
-    svg.appendChild(zeroLine);
+    }));
   }
 
   const firstDate = allPoints.reduce((value,point) =>
@@ -293,7 +273,7 @@ function renderChartSvg(container,series) {
     const color = CHART_SERIES_COLORS[originalIndex];
 
     if (item.points.length >= 2) {
-      const path = createChartSvgElement("path",{
+      svg.appendChild(createChartSvgElement("path",{
         d:createChartPointPath(
           item.points,
           xForDate,
@@ -301,8 +281,7 @@ function renderChartSvg(container,series) {
         ),
         stroke:color,
         class:"chart-series-line"
-      });
-      svg.appendChild(path);
+      }));
     }
 
     item.points.forEach(point => {
@@ -361,10 +340,11 @@ function renderChartSeriesSettings(preferences) {
 
   preferences.series.forEach((series,index) => {
     const row = el("div","chart-series-setting");
-    const title = el("div","chart-series-setting-title",
+    row.appendChild(el(
+      "div",
+      "chart-series-setting-title",
       "系列 " + (index + 1)
-    );
-    row.appendChild(title);
+    ));
 
     const targetSelect = createChartSelect(
       targetOptions,
@@ -425,7 +405,6 @@ function renderChartSeriesSettings(preferences) {
   });
 
   const actions = el("div","actions");
-
   const add = makeButton(
     "系列を追加",
     "add-chart-series",
@@ -507,8 +486,6 @@ function renderChartLegend(series) {
       "chart-legend-button"
     );
     button.dataset.index = String(index);
-    button.style.borderColor = CHART_SERIES_COLORS[index];
-    button.style.color = CHART_SERIES_COLORS[index];
 
     if (chartVisibleSeries[index] === false) {
       button.classList.add("chart-legend-hidden");
@@ -574,9 +551,13 @@ function renderChartStatistics(series) {
 function renderChartScreen() {
   clearApp();
   addMessage(app);
-  app.appendChild(heading("資産推移グラフ"));
 
-  const preferences = getChartPreferences();
+  if (!chartWorkingPreferences) {
+    chartWorkingPreferences = getChartPreferences();
+  }
+
+  const preferences = chartWorkingPreferences;
+  app.appendChild(heading("資産推移グラフ"));
 
   app.appendChild(renderChartSeriesSettings(preferences));
   app.appendChild(renderChartPeriodSettings(preferences));
