@@ -602,7 +602,301 @@ function calculateChartAnnualizedReturn(data,targetValue,periodRange) {
   };
 }
 
-function buildChartData(data,seriesPreferences,period,startDate,endDate) {
+/* ---------- S8b② 近似式・将来予測 ---------- */
+
+function addChartDays(dateString,days) {
+  if (!Number.isFinite(days)) return null;
+  const parts = String(dateString).split("-").map(Number);
+  if (parts.length !== 3) return null;
+  const timestamp = Date.UTC(parts[0],parts[1] - 1,parts[2]);
+  const sourceDate = new Date(timestamp);
+  if (sourceDate.getUTCFullYear() !== parts[0] ||
+      sourceDate.getUTCMonth() !== parts[1] - 1 ||
+      sourceDate.getUTCDate() !== parts[2]) {
+    return null;
+  }
+  const target = new Date(timestamp + Math.round(days) * 86400000);
+  return [
+    target.getUTCFullYear(),
+    String(target.getUTCMonth() + 1).padStart(2,"0"),
+    String(target.getUTCDate()).padStart(2,"0")
+  ].join("-");
+}
+
+function calculateChartLinearRegression(xValues,yValues) {
+  const count = xValues.length;
+  if (count < 2 || count !== yValues.length) return null;
+  const sumX = xValues.reduce((sum,value) => sum + value,0);
+  const sumY = yValues.reduce((sum,value) => sum + value,0);
+  const sumXX = xValues.reduce((sum,value) => sum + value * value,0);
+  const sumXY = xValues.reduce(
+    (sum,value,index) => sum + value * yValues[index],
+    0
+  );
+  const denominator = count * sumXX - sumX * sumX;
+  if (!Number.isFinite(denominator) || denominator === 0) return null;
+  const a = (count * sumXY - sumX * sumY) / denominator;
+  const b = (sumY - a * sumX) / count;
+  return Number.isFinite(a) && Number.isFinite(b) ? {a,b} : null;
+}
+
+function calculateChartQuadraticRegression(xValues,yValues) {
+  const count = xValues.length;
+  if (count < 3 || count !== yValues.length) return null;
+  const sums = [0,0,0,0,0];
+  let sumY = 0;
+  let sumXY = 0;
+  let sumXXY = 0;
+  for (let index = 0; index < count; index += 1) {
+    const x = xValues[index];
+    const y = yValues[index];
+    const x2 = x * x;
+    sums[0] += x2 * x2;
+    sums[1] += x2 * x;
+    sums[2] += x2;
+    sums[3] += x;
+    sums[4] += 1;
+    sumXXY += x2 * y;
+    sumXY += x * y;
+    sumY += y;
+  }
+  const matrix = [
+    [sums[0],sums[1],sums[2],sumXXY],
+    [sums[1],sums[2],sums[3],sumXY],
+    [sums[2],sums[3],sums[4],sumY]
+  ];
+  for (let column = 0; column < 3; column += 1) {
+    let pivot = column;
+    for (let row = column + 1; row < 3; row += 1) {
+      if (Math.abs(matrix[row][column]) >
+          Math.abs(matrix[pivot][column])) {
+        pivot = row;
+      }
+    }
+    if (Math.abs(matrix[pivot][column]) < 1e-12) return null;
+    [matrix[column],matrix[pivot]] = [matrix[pivot],matrix[column]];
+    const divisor = matrix[column][column];
+    for (let cell = column; cell < 4; cell += 1) {
+      matrix[column][cell] /= divisor;
+    }
+    for (let row = 0; row < 3; row += 1) {
+      if (row === column) continue;
+      const factor = matrix[row][column];
+      for (let cell = column; cell < 4; cell += 1) {
+        matrix[row][cell] -= factor * matrix[column][cell];
+      }
+    }
+  }
+  const result = {
+    a:matrix[0][3],
+    b:matrix[1][3],
+    c:matrix[2][3]
+  };
+  return Object.values(result).every(Number.isFinite) ? result : null;
+}
+
+function evaluateChartApproximation(model,xDays) {
+  if (!model || !Number.isFinite(xDays)) return null;
+  let value;
+  if (model.type === "linear") {
+    value = model.a * xDays + model.b;
+  } else if (model.type === "exponential") {
+    value = model.a * Math.exp(model.b * xDays);
+  } else if (model.type === "quadratic") {
+    const xYears = xDays / 365;
+    value = model.a * xYears * xYears +
+      model.b * xYears + model.c;
+  } else {
+    return null;
+  }
+  return Number.isFinite(value) ? value : null;
+}
+
+function calculateChartApproximation(points,type,horizon) {
+  const horizonMonths = {
+    "3m":3,
+    "1y":12,
+    "3y":36,
+    "5y":60,
+    "10y":120
+  }[horizon];
+  if (!horizonMonths) {
+    return {available:false,reason:"予測期間を選択してください。"};
+  }
+  const minimumPoints = type === "quadratic" ? 3 : 2;
+  if (!["linear","exponential","quadratic"].includes(type)) {
+    return {available:false,reason:"近似の種類が正しくありません。"};
+  }
+  const validPoints = Array.isArray(points)
+    ? points.filter(point =>
+        point &&
+        typeof point.date === "string" &&
+        Number.isFinite(point.value)
+      )
+    : [];
+  if (validPoints.length < minimumPoints) {
+    return {
+      available:false,
+      reason:type === "quadratic"
+        ? "2次多項式は3点以上の記録が必要です。"
+        : "近似には2点以上の記録が必要です。"
+    };
+  }
+  if (type === "exponential" &&
+      validPoints.some(point => point.value <= 0)) {
+    return {
+      available:false,
+      reason:"指数近似は、0以下の値を含む系列では選択できません。"
+    };
+  }
+
+  const firstDate = validPoints[0].date;
+  const lastDate = validPoints[validPoints.length - 1].date;
+  const fitDays = getChartElapsedDays(firstDate,lastDate);
+  if (fitDays === null || fitDays <= 0) {
+    return {available:false,reason:"近似に使う期間を算出できません。"};
+  }
+  const xDays = validPoints.map(point =>
+    getChartElapsedDays(firstDate,point.date)
+  );
+  if (xDays.some(value => value === null)) {
+    return {available:false,reason:"記録日を読み取れません。"};
+  }
+  const xValues = type === "quadratic"
+    ? xDays.map(value => value / 365)
+    : xDays;
+  const yValues = validPoints.map(point => point.value);
+  let model = {type};
+  let fittedValues = [];
+
+  if (type === "linear") {
+    const coefficients = calculateChartLinearRegression(xValues,yValues);
+    if (!coefficients) {
+      return {available:false,reason:"線形近似の係数を算出できません。"};
+    }
+    model = {...model,...coefficients};
+    fittedValues = xValues.map(x => model.a * x + model.b);
+  } else if (type === "exponential") {
+    const logValues = yValues.map(value => Math.log(value));
+    const coefficients = calculateChartLinearRegression(xValues,logValues);
+    if (!coefficients) {
+      return {available:false,reason:"指数近似の係数を算出できません。"};
+    }
+    model = {
+      ...model,
+      a:Math.exp(coefficients.b),
+      b:coefficients.a
+    };
+    fittedValues = xValues.map(x =>
+      Math.log(model.a) + model.b * x
+    );
+  } else {
+    const coefficients = calculateChartQuadraticRegression(xValues,yValues);
+    if (!coefficients) {
+      return {available:false,reason:"2次多項式の係数を算出できません。"};
+    }
+    model = {...model,...coefficients};
+    fittedValues = xValues.map(x =>
+      model.a * x * x + model.b * x + model.c
+    );
+  }
+
+  if (![model.a,model.b,model.c]
+      .filter(value => value !== undefined)
+      .every(Number.isFinite)) {
+    return {available:false,reason:"近似式の係数が有効範囲を超えています。"};
+  }
+
+  const comparisonValues = type === "exponential"
+    ? yValues.map(value => Math.log(value))
+    : yValues;
+  const mean = comparisonValues.reduce((sum,value) => sum + value,0) /
+    comparisonValues.length;
+  const totalSquares = comparisonValues.reduce(
+    (sum,value) => sum + Math.pow(value - mean,2),
+    0
+  );
+  const residualSquares = comparisonValues.reduce(
+    (sum,value,index) => sum + Math.pow(value - fittedValues[index],2),
+    0
+  );
+  const rSquared = totalSquares === 0
+    ? (residualSquares < 1e-12 ? 1 : null)
+    : 1 - residualSquares / totalSquares;
+
+  const forecastEndDate = shiftChartDate(lastDate,horizonMonths);
+  const forecastDays = getChartElapsedDays(lastDate,forecastEndDate);
+  if (forecastDays === null || forecastDays <= 0) {
+    return {available:false,reason:"予測終了日を算出できません。"};
+  }
+  const forecastEndX = fitDays + forecastDays;
+  const predictedValue = evaluateChartApproximation(model,forecastEndX);
+  if (predictedValue === null) {
+    return {available:false,reason:"予測値が有効範囲を超えています。"};
+  }
+
+  const curve = [];
+  const forecastCurve = [];
+  for (let index = 0; index <= 24; index += 1) {
+    const x = fitDays * index / 24;
+    const date = addChartDays(firstDate,x);
+    const value = evaluateChartApproximation(model,x);
+    if (date && value !== null) curve.push({date,value});
+  }
+  for (let index = 0; index <= 24; index += 1) {
+    const x = fitDays + forecastDays * index / 24;
+    const date = addChartDays(firstDate,x);
+    const value = evaluateChartApproximation(model,x);
+    if (date && value !== null) forecastCurve.push({date,value});
+  }
+
+  const warnings = [];
+  if (forecastDays > fitDays * 3) {
+    warnings.push("予測期間が近似に使った期間の3倍を超えています。");
+  }
+  if (type === "quadratic" || type === "exponential") {
+    warnings.push("2次・指数近似は、遠い将来に極端な値になりやすい方式です。");
+  }
+
+  return {
+    available:true,
+    type,
+    model,
+    pointCount:validPoints.length,
+    firstDate,
+    lastDate,
+    fitDays,
+    forecastEndDate,
+    forecastDays,
+    predictedValue,
+    latestValue:validPoints[validPoints.length - 1].value,
+    difference:predictedValue - validPoints[validPoints.length - 1].value,
+    rSquared:Number.isFinite(rSquared) ? rSquared : null,
+    curve,
+    forecastCurve,
+    warnings,
+    interpretation:type === "linear"
+      ? {kind:"annualIncrease",value:model.a * 365}
+      : type === "exponential"
+        ? {kind:"annualRate",value:Math.exp(model.b * 365) - 1}
+        : {kind:"quadratic"}
+  };
+}
+
+function getChartApproximationTypes(points) {
+  const values = Array.isArray(points) ? points.map(point => point.value) : [];
+  const types = [];
+  if (values.length >= 2) {
+    types.push("linear");
+    if (values.every(value => Number.isFinite(value) && value > 0)) {
+      types.push("exponential");
+    }
+  }
+  if (values.length >= 3) types.push("quadratic");
+  return types;
+}
+
+function buildChartData(data,seriesPreferences,period,startDate,endDate,approximationPreferences = null) {
   const periodRange = getChartPeriod(
     data,
     period,
@@ -641,9 +935,44 @@ function buildChartData(data,seriesPreferences,period,startDate,endDate) {
       };
     });
 
+  const requestedIndex = approximationPreferences &&
+    Number.isInteger(approximationPreferences.seriesIndex)
+      ? approximationPreferences.seriesIndex
+      : 0;
+  const approximationSeriesIndex = series[requestedIndex]
+    ? requestedIndex
+    : series.findIndex(item => item.points.length > 0);
+  const selectedApproximationSeries = approximationSeriesIndex >= 0
+    ? series[approximationSeriesIndex]
+    : null;
+  const supportedTypes = selectedApproximationSeries
+    ? getChartApproximationTypes(selectedApproximationSeries.points)
+    : [];
+  const requestedType = approximationPreferences &&
+    approximationPreferences.type || "linear";
+  const approximationType = supportedTypes.includes(requestedType)
+    ? requestedType
+    : supportedTypes[0] || null;
+  const approximation = selectedApproximationSeries && approximationType
+    ? calculateChartApproximation(
+        selectedApproximationSeries.points,
+        approximationType,
+        approximationPreferences && approximationPreferences.horizon ||
+          "3m"
+      )
+    : {
+        available:false,
+        reason:selectedApproximationSeries
+          ? "近似には2点以上、2次多項式には3点以上の記録が必要です。"
+          : "近似する系列を選択してください。"
+      };
+
   return {
     period:periodRange,
-    series
+    series,
+    approximation,
+    approximationSeriesIndex,
+    approximationType
   };
 }
 
