@@ -263,4 +263,252 @@ function registerFxTests(context) {
     assert(result.status === "計算済",
       "口座Aの計算状態が「計算済」ではありません。");
   });
+
+  runTest("S5a：建玉入力の正常値を受け入れる",() => {
+    const position = {
+      accountId:"fx-a",
+      pair:"TRY/JPY",
+      side:"買",
+      openDate:"2026-11-05T09:30",
+      quantity:200000,
+      openRate:3.12,
+      swap:1234
+    };
+
+    assert(validateFxPositionInput(position) === null,
+      "正常な建玉データがエラーになっています。");
+  });
+
+  runTest("S5a：建玉入力の不正な通貨ペアを拒否する",() => {
+    const position = {
+      accountId:"fx-a",
+      pair:"TRY/USD",
+      side:"買",
+      openDate:"2026-11-05",
+      quantity:10000,
+      openRate:3.12,
+      swap:0
+    };
+
+    assert(
+      validateFxPositionInput(position) ===
+        "通貨ペアは英大文字3文字/JPYで入力してください。",
+      "JPY以外の通貨ペアを正しく拒否できていません。"
+    );
+  });
+
+  runTest("S5a：建玉数量は正の整数だけを受け入れる",() => {
+    const base = {
+      accountId:"fx-a",
+      pair:"TRY/JPY",
+      side:"買",
+      openDate:"2026-11-05",
+      openRate:3.12,
+      swap:0
+    };
+
+    assert(
+      validateFxPositionInput({...base,quantity:10000}) === null,
+      "正の整数の数量が拒否されています。"
+    );
+    assert(
+      validateFxPositionInput({...base,quantity:0}) !== null,
+      "数量0が受け入れられています。"
+    );
+    assert(
+      validateFxPositionInput({...base,quantity:10000.5}) !== null,
+      "小数の数量が受け入れられています。"
+    );
+  });
+
+  runTest("S5a：建玉スワップは数値または空欄を受け入れる",() => {
+    const base = {
+      accountId:"fx-a",
+      pair:"TRY/JPY",
+      side:"買",
+      openDate:"2026-11-05",
+      quantity:10000,
+      openRate:3.12
+    };
+
+    assert(
+      validateFxPositionInput({...base,swap:0}) === null,
+      "スワップ0が拒否されています。"
+    );
+    assert(
+      validateFxPositionInput({...base,swap:null}) === null,
+      "スワップ未入力が拒否されています。"
+    );
+    assert(
+      validateFxPositionInput({...base,swap:"未入力"}) !== null,
+      "文字列のスワップが受け入れられています。"
+    );
+  });
+
+  runTest("S5a：CSV日付の解析と実在日チェック",() => {
+    assert(
+      parseFxCsvDate("2026/11/05") === "2026-11-05",
+      "YYYY/MM/DD形式の日付を変換できていません。"
+    );
+    assert(
+      parseFxCsvDate("26-11-05 09:30") === "2026-11-05T09:30",
+      "2桁年と時刻を含む日付を変換できていません。"
+    );
+    assert(
+      parseFxCsvDate("2026/02/30") === null,
+      "実在しない日付を拒否できていません。"
+    );
+    assert(
+      parseFxCsvDate("2026/11/05 25:00") === null,
+      "不正な時刻を拒否できていません。"
+    );
+  });
+
+  runTest("S5a：CSVの引用符・BOM・改行を解析",() => {
+    const source =
+      "\uFEFF口座名,通貨ペア,メモ\r\n" +
+      "\"架空FX口座A\",TRY/JPY,\"説明,追加\"\r\n" +
+      "\"架空\"\"FX\"\"口座B\",USD/JPY,通常";
+
+    const result = parseFxCsvText(source);
+
+    assert(result.error === null,
+      "正常なCSVで解析エラーが発生しています。");
+    assert(result.rows.length === 3,
+      "CSVの行数が3行になっていません。");
+    assert(result.rows[0][0] === "口座名",
+      "先頭のBOMを除去できていません。");
+    assert(result.rows[1][2] === "説明,追加",
+      "引用符内のカンマを正しく解析できていません。");
+    assert(result.rows[2][0] === "架空\"FX\"口座B",
+      "二重引用符を正しく解析できていません。");
+  });
+
+  runTest("S5a：閉じていないCSV引用符をエラーにする",() => {
+    const result = parseFxCsvText(
+      "口座名,通貨ペア\n\"架空FX口座A,TRY/JPY"
+    );
+
+    assert(result.error !== null,
+      "閉じていない引用符を検出できていません。");
+    assert(result.rows.length === 0,
+      "不正なCSVから行が返されています。");
+  });
+
+  runTest("S5a：CSV取込で口座・日時・数値を変換する",() => {
+    const accounts = [
+      makeAccount("fx-a","架空FX口座A","fx","fx")
+    ];
+
+    const source =
+      "口座名,通貨ペア,売買方向,約定日時,数量,約定レート,累計スワップ\n" +
+      "架空FX口座A,TRY/JPY,買,2026/11/05 09:30,200,000,3.12,1,234";
+
+    const result = parseFxPositionCsv(source,accounts);
+
+    assert(result.items.length === 1,
+      "CSVから建玉1件を取り込めていません。");
+    assert(result.errors.length === 0,
+      "正常なCSVにエラーが発生しています。");
+    assert(result.items[0].accountId === "fx-a",
+      "口座名から口座IDへ変換できていません。");
+    assert(result.items[0].openDate === "2026-11-05T09:30",
+      "約定日時を正しく変換できていません。");
+    assert(result.items[0].quantity === 200000,
+      "カンマ付き数量を正しく変換できていません。");
+    assert(result.items[0].openRate === 3.12,
+      "約定レートを正しく変換できていません。");
+    assert(result.items[0].swap === 1234,
+      "カンマ付きスワップを正しく変換できていません。");
+    assert(result.items[0].status === "保有中",
+      "取り込んだ建玉の状態が保有中ではありません。");
+  });
+
+  runTest("S5a：CSVの空欄スワップをnullとして取り込む",() => {
+    const accounts = [
+      makeAccount("fx-a","架空FX口座A","fx","fx")
+    ];
+
+    const source =
+      "口座名,通貨ペア,売買方向,約定日時,数量,約定レート,累計スワップ\n" +
+      "架空FX口座A,TRY/JPY,買,2026-11-05,10000,3.12,";
+
+    const result = parseFxPositionCsv(source,accounts);
+
+    assert(result.items.length === 1,
+      "スワップ空欄の建玉を取り込めていません。");
+    assert(result.items[0].swap === null,
+      "スワップ空欄がnullとして保持されていません。");
+  });
+
+  runTest("S5a：CSVの口座名・列見出しの誤りを検出",() => {
+    const accounts = [
+      makeAccount("fx-a","架空FX口座A","fx","fx")
+    ];
+
+    const unknownAccount =
+      "口座名,通貨ペア,売買方向,約定日時,数量,約定レート,累計スワップ\n" +
+      "存在しない口座,TRY/JPY,買,2026-11-05,10000,3.12,0";
+
+    const accountResult = parseFxPositionCsv(
+      unknownAccount,
+      accounts
+    );
+
+    assert(accountResult.items.length === 0,
+      "存在しない口座の建玉が取り込まれています。");
+    assert(accountResult.errors.length === 1,
+      "存在しない口座のエラー件数が1件ではありません。");
+
+    const wrongHeader =
+      "通貨ペア,口座名,売買方向,約定日時,数量,約定レート,累計スワップ\n" +
+      "TRY/JPY,架空FX口座A,買,2026-11-05,10000,3.12,0";
+
+    const headerResult = parseFxPositionCsv(
+      wrongHeader,
+      accounts
+    );
+
+    assert(headerResult.items.length === 0,
+      "列順が違うCSVを取り込めています。");
+    assert(headerResult.errors.length > 0,
+      "列順が違うCSVのエラーがありません。");
+  });
+
+  runTest("S5a：CSV41件をすべて解析できる",() => {
+    const accounts = [
+      makeAccount("fx-a","架空FX口座A","fx","fx")
+    ];
+
+    const header =
+      "口座名,通貨ペア,売買方向,約定日時,数量,約定レート,累計スワップ";
+
+    const rows = [];
+
+    for (let index = 0; index < 41; index += 1) {
+      rows.push([
+        "架空FX口座A",
+        "TRY/JPY",
+        "買",
+        "2026-11-05",
+        String(10000 + index),
+        "3.12",
+        "0"
+      ].join(","));
+    }
+
+    const result = parseFxPositionCsv(
+      [header,...rows].join("\n"),
+      accounts
+    );
+
+    assert(result.items.length === 41,
+      "CSVの41件すべてを取り込めていません。");
+    assert(result.errors.length === 0,
+      "正常な41件のCSVにエラーが発生しています。");
+    assert(result.items[0].quantity === 10000,
+      "1件目の数量が正しくありません。");
+    assert(result.items[40].quantity === 10040,
+      "41件目の数量が正しくありません。");
+  });
 }
