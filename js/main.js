@@ -324,7 +324,19 @@ function appendChartCalculationTests(results) {
   return results.concat(runChartCalculationTests());
 }
 
-function runTestsAndRender() {
+async function loadTestScript(src) {
+  await new Promise((resolve,reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.onload = resolve;
+    script.onerror = () => reject(
+      new Error(src + " を読み込めませんでした。")
+    );
+    document.head.appendChild(script);
+  });
+}
+
+async function runTestsAndRender() {
   if (typeof runAllTests === "function") {
     dataTestResults = appendChartCalculationTests(runAllTests());
     dataTestLoading = false;
@@ -336,10 +348,20 @@ function runTestsAndRender() {
   dataTestLoading = true;
   render();
 
-  const script = document.createElement("script");
-  script.src = "./js/tests.js";
-  script.onload = () => {
-    dataTestLoading = false;
+  const testScripts = [
+    "./js/tests-migration.js",
+    "./js/tests-summary.js",
+    "./js/tests-input.js",
+    "./js/tests-bulk.js",
+    "./js/tests-chart.js",
+    "./js/tests.js"
+  ];
+
+  try {
+    for (const src of testScripts) {
+      await loadTestScript(src);
+    }
+
     if (typeof runAllTests === "function") {
       dataTestResults = appendChartCalculationTests(runAllTests());
     } else {
@@ -349,18 +371,16 @@ function runTestsAndRender() {
         message:"runAllTests() が見つかりません。"
       }];
     }
-    render();
-  };
-  script.onerror = () => {
-    dataTestLoading = false;
+  } catch (error) {
     dataTestResults = [{
       name:"テストファイルの読み込み",
       success:false,
-      message:"js/tests.js を読み込めませんでした。"
+      message:error.message || "テストファイルを読み込めませんでした。"
     }];
-    render();
-  };
-  document.head.appendChild(script);
+  }
+
+  dataTestLoading = false;
+  render();
 }
 
 /* ---------- PWA ---------- */
