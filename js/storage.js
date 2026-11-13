@@ -173,6 +173,38 @@ function validateData(data) {
     }
   }
 
+  for (const holding of data.holdings) {
+    if (!holding ||
+        typeof holding.id !== "string" ||
+        typeof holding.accountId !== "string" ||
+        typeof holding.name !== "string" ||
+        !holding.name.trim() ||
+        !HOLDING_WRAPPERS.includes(holding.wrapper) ||
+        !HOLDING_KINDS.includes(holding.kind) ||
+        typeof holding.asOfDate !== "string" ||
+        formatDateWithWeekday(holding.asOfDate) === holding.asOfDate ||
+        typeof holding.recordedAt !== "string" ||
+        !Number.isFinite(holding.value) ||
+        typeof holding.memo !== "string" ||
+        typeof holding.createdAt !== "string" ||
+        typeof holding.updatedAt !== "string") {
+      throw new Error("商品別保有データに不正な項目があります。");
+    }
+
+    const account = data.accounts.find(item =>
+      item.id === holding.accountId
+    );
+    if (!isHoldingsAccount(account)) {
+      throw new Error("商品別保有の口座参照先が正しくありません。");
+    }
+
+    for (const field of ["quantity","costBasis","pnl"]) {
+      if (!isNullableNumber(holding[field])) {
+        throw new Error("商品別保有の " + field + " が正しくありません。");
+      }
+    }
+  }
+
   const settingNumberFields = [
     "taxRatePct",
     "fxYtdRealized",
