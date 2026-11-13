@@ -354,6 +354,7 @@ async function runTestsAndRender() {
     "./js/tests-input.js",
     "./js/tests-bulk.js",
     "./js/tests-chart.js",
+    "./js/tests-holdings.js",
     "./js/tests.js"
   ];
 
