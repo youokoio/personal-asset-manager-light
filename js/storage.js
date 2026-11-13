@@ -66,6 +66,25 @@ function isNullableNumber(value) {
     (typeof value === "number" && Number.isFinite(value));
 }
 
+function isValidFxPairForStorage(value) {
+  return typeof value === "string" &&
+    /^[A-Z]{3}\/JPY$/.test(value);
+}
+
+function isValidFxDateForStorage(value) {
+  if (typeof value !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const date = new Date(value + "T00:00:00");
+
+  return Number.isFinite(date.getTime()) &&
+    date.getFullYear() + "-" +
+    String(date.getMonth() + 1).padStart(2,"0") + "-" +
+    String(date.getDate()).padStart(2,"0") === value;
+}
+
 function validateData(data) {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new Error("保存データの形式が正しくありません。");
@@ -203,6 +222,42 @@ function validateData(data) {
         throw new Error("商品別保有の " + field + " が正しくありません。");
       }
     }
+  }
+
+  const fxRateKeys = new Set();
+
+  for (const rate of data.fxRates) {
+    if (!rate ||
+        typeof rate.id !== "string" ||
+        typeof rate.accountId !== "string" ||
+        !isValidFxPairForStorage(rate.pair) ||
+        !isNullableNumber(rate.rate) ||
+        (rate.rate !== null &&
+         rate.rate !== undefined &&
+         rate.rate <= 0) ||
+        (rate.asOfDate !== null &&
+         rate.asOfDate !== undefined &&
+         !isValidFxDateForStorage(rate.asOfDate)) ||
+        typeof rate.createdAt !== "string" ||
+        typeof rate.updatedAt !== "string") {
+      throw new Error("FX評価レートに不正な項目があります。");
+    }
+
+    const account = data.accounts.find(item =>
+      item.id === rate.accountId
+    );
+
+    if (!account || account.type !== "fx") {
+      throw new Error("FX評価レートの口座参照先が正しくありません。");
+    }
+
+    const key = JSON.stringify([rate.accountId,rate.pair]);
+
+    if (fxRateKeys.has(key)) {
+      throw new Error("同じFX口座・通貨ペアの評価レートが重複しています。");
+    }
+
+    fxRateKeys.add(key);
   }
 
   const settingNumberFields = [
