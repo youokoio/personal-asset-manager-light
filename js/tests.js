@@ -74,6 +74,7 @@ function runAllTests() {
   registerInputTests(context);
   registerBulkTests(context);
   registerChartTests(context);
+  registerHoldingsTests(context);
 
   return results;
 }
