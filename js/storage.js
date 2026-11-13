@@ -1,3 +1,4 @@
+
 "use strict";
 
 /* ---------- データ保存 ---------- */
@@ -273,6 +274,9 @@ function validateData(data) {
         !isValidFxPairForStorage(position.pair) ||
         !["買","売"].includes(position.side) ||
         !isValidFxDateTimeForStorage(position.openDate) ||
+        (position.asOfDate !== null &&
+         position.asOfDate !== undefined &&
+         !isValidFxDateForStorage(position.asOfDate)) ||
         !Number.isSafeInteger(position.quantity) ||
         position.quantity <= 0 ||
         typeof position.openRate !== "number" ||
