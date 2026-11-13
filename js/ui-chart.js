@@ -22,9 +22,20 @@ function getChartPreferences() {
       series:[],
       period:"all",
       startDate:"",
-      endDate:""
+      endDate:"",
+      approximation:{
+        seriesIndex:0,
+        type:"linear",
+        horizon:"3m"
+      }
     };
   }
+
+  const savedApproximation = saved.approximation &&
+    typeof saved.approximation === "object" &&
+    !Array.isArray(saved.approximation)
+      ? saved.approximation
+      : {};
 
   return {
     series:Array.isArray(saved.series)
@@ -41,7 +52,23 @@ function getChartPreferences() {
       : "",
     endDate:typeof saved.endDate === "string"
       ? saved.endDate
-      : ""
+      : "",
+    approximation:{
+      seriesIndex:Number.isInteger(savedApproximation.seriesIndex) &&
+        savedApproximation.seriesIndex >= 0
+          ? savedApproximation.seriesIndex
+          : 0,
+      type:["linear","exponential","quadratic"].includes(
+        savedApproximation.type
+      )
+        ? savedApproximation.type
+        : "linear",
+      horizon:["3m","1y","3y","5y","10y"].includes(
+        savedApproximation.horizon
+      )
+        ? savedApproximation.horizon
+        : "3m"
+    }
   };
 }
 
@@ -53,7 +80,12 @@ function saveChartPreferences(preferences) {
     })),
     period:preferences.period,
     startDate:preferences.startDate,
-    endDate:preferences.endDate
+    endDate:preferences.endDate,
+    approximation:{
+      seriesIndex:preferences.approximation.seriesIndex,
+      type:preferences.approximation.type,
+      horizon:preferences.approximation.horizon
+    }
   };
 
   saveData(appData);
@@ -114,10 +146,17 @@ function getChartPointTimestamp(dateString) {
   return Date.UTC(parts[0],parts[1] - 1,parts[2]);
 }
 
-function getChartAxisRange(series) {
+function getChartAxisRange(series,approximation = null) {
   const values = series.flatMap(item =>
     item.points.map(point => point.value)
   );
+
+  if (approximation && approximation.available) {
+    values.push(
+      ...approximation.curve.map(point => point.value),
+      ...approximation.forecastCurve.map(point => point.value)
+    );
+  }
 
   if (!values.length) return null;
 
@@ -152,7 +191,12 @@ function createChartPointPath(points,xForDate,yForValue) {
   }).join(" ");
 }
 
-function renderChartSvg(container,series) {
+function renderChartSvg(
+  container,
+  series,
+  approximation = null,
+  approximationSeriesIndex = -1
+) {
   const width = 340;
   const height = 230;
   const padding = {
@@ -176,8 +220,20 @@ function renderChartSvg(container,series) {
     chartVisibleSeries[index] !== false
   );
   const allPoints = visibleSeries.flatMap(item => item.points);
+  const canDrawApproximation = approximation &&
+    approximation.available &&
+    approximationSeriesIndex >= 0 &&
+    chartVisibleSeries[approximationSeriesIndex] !== false;
+  const plottedPoints = allPoints.slice();
 
-  if (!allPoints.length) {
+  if (canDrawApproximation) {
+    plottedPoints.push(
+      ...approximation.curve,
+      ...approximation.forecastCurve
+    );
+  }
+
+  if (!plottedPoints.length) {
     container.appendChild(el(
       "div",
       "empty",
@@ -186,12 +242,15 @@ function renderChartSvg(container,series) {
     return;
   }
 
-  const dates = allPoints.map(point =>
+  const dates = plottedPoints.map(point =>
     getChartPointTimestamp(point.date)
   );
   const firstTimestamp = Math.min(...dates);
   const lastTimestamp = Math.max(...dates);
-  const axisRange = getChartAxisRange(visibleSeries);
+  const axisRange = getChartAxisRange(
+    visibleSeries,
+    canDrawApproximation ? approximation : null
+  );
 
   const xForDate = date => {
     const timestamp = getChartPointTimestamp(date);
@@ -241,13 +300,13 @@ function renderChartSvg(container,series) {
     }));
   }
 
-  const firstDate = allPoints.reduce((value,point) =>
+  const firstDate = plottedPoints.reduce((value,point) =>
     point.date < value ? point.date : value,
-    allPoints[0].date
+    plottedPoints[0].date
   );
-  const lastDate = allPoints.reduce((value,point) =>
+  const lastDate = plottedPoints.reduce((value,point) =>
     point.date > value ? point.date : value,
-    allPoints[0].date
+    plottedPoints[0].date
   );
 
   const firstLabel = createChartSvgElement("text",{
@@ -282,6 +341,38 @@ function renderChartSvg(container,series) {
         stroke:color,
         class:"chart-series-line"
       }));
+    }
+
+    if (canDrawApproximation &&
+        originalIndex === approximationSeriesIndex) {
+      if (approximation.curve.length >= 2) {
+        svg.appendChild(createChartSvgElement("path",{
+          d:createChartPointPath(
+            approximation.curve,
+            xForDate,
+            yForValue
+          ),
+          stroke:color,
+          fill:"none",
+          "stroke-width":2,
+          class:"chart-approximation-line"
+        }));
+      }
+
+      if (approximation.forecastCurve.length >= 2) {
+        svg.appendChild(createChartSvgElement("path",{
+          d:createChartPointPath(
+            approximation.forecastCurve,
+            xForDate,
+            yForValue
+          ),
+          stroke:color,
+          fill:"none",
+          "stroke-width":2,
+          "stroke-dasharray":"5 4",
+          class:"chart-forecast-line"
+        }));
+      }
     }
 
     item.points.forEach(point => {
@@ -477,6 +568,127 @@ function renderChartPeriodSettings(preferences) {
   return card;
 }
 
+function renderChartApproximationSettings(preferences,result) {
+  const card = el("section","card");
+  card.appendChild(el("h3","","近似・将来予測の設定"));
+
+  if (!result.series.length) {
+    card.appendChild(el(
+      "div",
+      "empty",
+      "先にグラフの系列を追加してください。"
+    ));
+    return card;
+  }
+
+  if (!preferences.approximation ||
+      typeof preferences.approximation !== "object") {
+    preferences.approximation = {
+      seriesIndex:0,
+      type:"linear",
+      horizon:"3m"
+    };
+  }
+
+  const approximationPreferences = preferences.approximation;
+  const selectedIndex = Number.isInteger(
+    approximationPreferences.seriesIndex
+  ) && result.series[approximationPreferences.seriesIndex]
+    ? approximationPreferences.seriesIndex
+    : 0;
+
+  approximationPreferences.seriesIndex = selectedIndex;
+
+  const seriesOptions = result.series.map((item,index) => ({
+    value:String(index),
+    label:"系列 " + (index + 1) + "：" + item.label
+  }));
+
+  const seriesSelect = createChartSelect(
+    seriesOptions,
+    String(selectedIndex),
+    "chart-approximation-series-select"
+  );
+  seriesSelect.setAttribute("aria-label","近似する系列");
+  seriesSelect.addEventListener("change",() => {
+    approximationPreferences.seriesIndex = Number(seriesSelect.value);
+    const selectedSeries = result.series[approximationPreferences.seriesIndex];
+    const supportedTypes = getChartApproximationTypes(
+      selectedSeries ? selectedSeries.points : []
+    );
+    if (!supportedTypes.includes(approximationPreferences.type)) {
+      approximationPreferences.type = supportedTypes[0] || "linear";
+    }
+    render();
+  });
+
+  const selectedSeries = result.series[selectedIndex];
+  const supportedTypes = getChartApproximationTypes(
+    selectedSeries ? selectedSeries.points : []
+  );
+  const typeLabels = {
+    linear:"線形近似",
+    exponential:"指数近似",
+    quadratic:"2次多項式"
+  };
+  const typeOptions = supportedTypes.map(type => ({
+    value:type,
+    label:typeLabels[type]
+  }));
+
+  const typeSelect = createChartSelect(
+    typeOptions.length
+      ? typeOptions
+      : [{value:"linear",label:"記録不足"}],
+    supportedTypes.includes(approximationPreferences.type)
+      ? approximationPreferences.type
+      : supportedTypes[0] || "linear",
+    "chart-approximation-type-select"
+  );
+  typeSelect.setAttribute("aria-label","近似方式");
+  typeSelect.disabled = supportedTypes.length === 0;
+  typeSelect.addEventListener("change",() => {
+    approximationPreferences.type = typeSelect.value;
+    render();
+  });
+
+  const horizonOptions = [
+    {value:"3m",label:"3か月"},
+    {value:"1y",label:"1年"},
+    {value:"3y",label:"3年"},
+    {value:"5y",label:"5年"},
+    {value:"10y",label:"10年"}
+  ];
+
+  const horizonSelect = createChartSelect(
+    horizonOptions,
+    approximationPreferences.horizon,
+    "chart-approximation-horizon-select"
+  );
+  horizonSelect.setAttribute("aria-label","予測期間");
+  horizonSelect.addEventListener("change",() => {
+    approximationPreferences.horizon = horizonSelect.value;
+    render();
+  });
+
+  card.appendChild(el("label","chart-control-label","近似する系列"));
+  card.appendChild(seriesSelect);
+  card.appendChild(el("label","chart-control-label","近似方式"));
+  card.appendChild(typeSelect);
+  card.appendChild(el("label","chart-control-label","予測期間"));
+  card.appendChild(horizonSelect);
+
+  if (supportedTypes.length === 0) {
+    card.appendChild(el(
+      "div",
+      "help",
+      "線形・指数近似には2点以上、2次多項式には3点以上の記録が必要です。指数近似はすべての値が0より大きい場合に選択できます。"
+    ));
+  }
+
+  return card;
+}
+
 function renderChartLegend(series) {
   const legend = el("div","chart-legend");
 
@@ -501,6 +713,133 @@ function renderChartLegend(series) {
 function formatChartPercent(value) {
   if (!Number.isFinite(value)) return "算出不可";
   return (value > 0 ? "+" : "") + value.toFixed(2) + "%";
+}
+
+function formatChartCoefficient(value) {
+  if (!Number.isFinite(value)) return "算出不可";
+  return value.toPrecision(4);
+}
+
+function formatChartApproximationEquation(approximation) {
+  const model = approximation.model;
+
+  if (approximation.type === "linear") {
+    return "y = " +
+      formatChartCoefficient(model.a) + " × x + " +
+      formatChartCoefficient(model.b) +
+      "（x：経過日数）";
+  }
+
+  if (approximation.type === "exponential") {
+    return "y = " +
+      formatChartCoefficient(model.a) + " × e^(" +
+      formatChartCoefficient(model.b) + " × x)" +
+      "（x：経過日数）";
+  }
+
+  return "y = " +
+    formatChartCoefficient(model.a) + " × x² + " +
+    formatChartCoefficient(model.b) + " × x + " +
+    formatChartCoefficient(model.c) +
+    "（x：経過年数）";
+}
+
+function renderChartApproximationSummary(approximation,selectedSeries) {
+  const card = el("section","card");
+  card.appendChild(el("h3","","近似式・将来予測"));
+
+  if (!approximation || !approximation.available) {
+    card.appendChild(el(
+      "div",
+      "empty",
+      approximation && approximation.reason
+        ? approximation.reason
+        : "近似結果を表示できません。"
+    ));
+    return card;
+  }
+
+  const equationRow = el("div","chart-statistics-row");
+  equationRow.append(
+    el("span","chart-statistics-label","近似式"),
+    el("span","chart-statistics-value",
+      formatChartApproximationEquation(approximation))
+  );
+  card.appendChild(equationRow);
+
+  if (approximation.pointCount >= 3 &&
+      Number.isFinite(approximation.rSquared)) {
+    const rSquaredRow = el("div","chart-statistics-row");
+    rSquaredRow.append(
+      el("span","chart-statistics-label","決定係数 R²"),
+      el("span","chart-statistics-value",
+        approximation.rSquared.toFixed(4))
+    );
+    card.appendChild(rSquaredRow);
+  } else {
+    card.appendChild(el(
+      "div",
+      "help",
+      "R²は記録点が3点以上ある場合に表示します。"
+    ));
+  }
+
+  if (approximation.interpretation.kind === "annualIncrease") {
+    const interpretationRow = el("div","chart-statistics-row");
+    interpretationRow.append(
+      el("span","chart-statistics-label","1年あたりの増加額"),
+      el("span","chart-statistics-value",
+        formatChartAmount(approximation.interpretation.value))
+    );
+    card.appendChild(interpretationRow);
+  } else if (approximation.interpretation.kind === "annualRate") {
+    const interpretationRow = el("div","chart-statistics-row");
+    interpretationRow.append(
+      el("span","chart-statistics-label","年率"),
+      el("span","chart-statistics-value",
+        formatChartPercent(approximation.interpretation.value * 100))
+    );
+    card.appendChild(interpretationRow);
+  } else {
+    card.appendChild(el(
+      "div",
+      "help",
+      "2次近似のため、一定の年増加額・年率はありません。"
+    ));
+  }
+
+  const forecastRows = [
+    ["予測終了日",formatChartDate(approximation.forecastEndDate)],
+    ["予測終了値",formatChartAmount(approximation.predictedValue)],
+    ["最新記録との差",formatChartAmount(approximation.difference)]
+  ];
+
+  for (const [label,value] of forecastRows) {
+    const row = el("div","chart-statistics-row");
+    row.append(
+      el("span","chart-statistics-label",label),
+      el("span","chart-statistics-value",value)
+    );
+    card.appendChild(row);
+  }
+
+  const warnings = [
+    "外挿は将来の実績を保証するものではありません。"
+  ];
+
+  if (selectedSeries && selectedSeries.field === "value") {
+    warnings.push("総資産系列には入出金の傾向も含まれます。");
+  }
+
+  warnings.push(...(Array.isArray(approximation.warnings)
+    ? approximation.warnings
+    : []));
+
+  for (const warning of [...new Set(warnings)]) {
+    card.appendChild(el("div","notice",warning));
+  }
+
+  return card;
 }
 
 function appendChartAnnualizedSummary(section,annualized) {
@@ -640,22 +979,24 @@ function renderChartScreen() {
   const preferences = chartWorkingPreferences;
   app.appendChild(heading("資産推移グラフ"));
 
+  const result = buildChartData(
+    appData,
+    preferences.series,
+    preferences.period,
+    preferences.startDate,
+    preferences.endDate,
+    preferences.approximation
+  );
+
   app.appendChild(renderChartSeriesSettings(preferences));
   app.appendChild(renderChartPeriodSettings(preferences));
+  app.appendChild(renderChartApproximationSettings(preferences,result));
 
   const actions = el("div","actions");
   const save = makeButton("選択内容を保存","save-chart-preferences");
   const back = makeButton("ホームへ戻る","close-chart","secondary");
   actions.append(save,back);
   app.appendChild(actions);
-
-  const result = buildChartData(
-    appData,
-    preferences.series,
-    preferences.period,
-    preferences.startDate,
-    preferences.endDate
-  );
 
   const chartCard = el("section","card");
   const chartTitle = el("h3","","推移グラフ");
@@ -666,7 +1007,12 @@ function renderChartScreen() {
     chartCard.appendChild(renderChartLegend(result.series));
 
     const graph = el("div","chart-graph");
-    renderChartSvg(graph,result.series);
+    renderChartSvg(
+      graph,
+      result.series,
+      result.approximation,
+      result.approximationSeriesIndex
+    );
     chartCard.appendChild(graph);
 
     chartCard.appendChild(el(
@@ -683,6 +1029,15 @@ function renderChartScreen() {
   }
 
   app.appendChild(chartCard);
+
+  const selectedApproximationSeries =
+    result.approximationSeriesIndex >= 0
+      ? result.series[result.approximationSeriesIndex]
+      : null;
+  app.appendChild(renderChartApproximationSummary(
+    result.approximation,
+    selectedApproximationSeries
+  ));
 
   const visibleStatistics = result.series.filter((item,index) =>
     chartVisibleSeries[index] !== false
