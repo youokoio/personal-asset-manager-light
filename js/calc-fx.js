@@ -193,3 +193,309 @@ function getFxAccountPairs(data,accountId) {
     .slice()
     .sort((a,b) => a.pair.localeCompare(b.pair));
 }
+
+/* ---------- 建玉データ検証 ---------- */
+
+function isValidFxPositionDate(value) {
+  if (typeof value !== "string" || !value.trim()) return false;
+
+  const normalized = value.replace(" ","T");
+  const timestamp = Date.parse(normalized);
+
+  if (!Number.isFinite(timestamp)) return false;
+
+  const datePart = value.slice(0,10).replace(/\//g,"-");
+  const parts = datePart.split("-").map(Number);
+
+  if (parts.length !== 3 ||
+      !parts.every(Number.isFinite)) {
+    return false;
+  }
+
+  const date = new Date(
+    parts[0],
+    parts[1] - 1,
+    parts[2]
+  );
+
+  return date.getFullYear() === parts[0] &&
+    date.getMonth() === parts[1] - 1 &&
+    date.getDate() === parts[2];
+}
+
+function validateFxPositionInput(position) {
+  if (!position || typeof position !== "object") {
+    return "建玉データが正しくありません。";
+  }
+
+  if (typeof position.accountId !== "string" ||
+      !position.accountId) {
+    return "口座を選択してください。";
+  }
+
+  if (typeof position.pair !== "string" ||
+      !/^[A-Z]{3}\/JPY$/.test(position.pair)) {
+    return "通貨ペアは英大文字3文字/JPYで入力してください。";
+  }
+
+  if (!["買","売"].includes(position.side)) {
+    return "売買方向を選択してください。";
+  }
+
+  if (!isValidFxPositionDate(position.openDate)) {
+    return "約定日時を正しく入力してください。";
+  }
+
+  if (!Number.isSafeInteger(position.quantity) ||
+      position.quantity <= 0) {
+    return "数量は正の整数で入力してください。";
+  }
+
+  if (typeof position.openRate !== "number" ||
+      !Number.isFinite(position.openRate) ||
+      position.openRate <= 0) {
+    return "約定レートは0より大きい数値で入力してください。";
+  }
+
+  if (position.swap !== null &&
+      position.swap !== undefined &&
+      (typeof position.swap !== "number" ||
+       !Number.isFinite(position.swap))) {
+    return "累計スワップは数値または空欄にしてください。";
+  }
+
+  return null;
+}
+
+/* ---------- FX建玉CSV解析 ---------- */
+
+function parseFxCsvDate(value) {
+  const text = String(value || "").trim();
+  const match = text.match(
+    /^(\d{2}|\d{4})[\/-](\d{1,2})[\/-](\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?$/
+  );
+
+  if (!match) return null;
+
+  let year = Number(match[1]);
+  if (match[1].length === 2) year += 2000;
+
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = match[4] === undefined ? null : Number(match[4]);
+  const minute = match[5] === undefined ? null : Number(match[5]);
+
+  const date = new Date(year,month - 1,day);
+
+  if (date.getFullYear() !== year ||
+      date.getMonth() !== month - 1 ||
+      date.getDate() !== day ||
+      (hour !== null && (hour < 0 || hour > 23)) ||
+      (minute !== null && (minute < 0 || minute > 59))) {
+    return null;
+  }
+
+  const dateText =
+    String(year).padStart(4,"0") + "-" +
+    String(month).padStart(2,"0") + "-" +
+    String(day).padStart(2,"0");
+
+  return hour === null
+    ? dateText
+    : dateText + "T" +
+      String(hour).padStart(2,"0") + ":" +
+      String(minute).padStart(2,"0");
+}
+
+function parseFxCsvText(text) {
+  const rows = [];
+  let row = [];
+  let cell = "";
+  let quoted = false;
+
+  const source = String(text || "").replace(/^\uFEFF/,"");
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+
+    if (quoted) {
+      if (character === "\"" && source[index + 1] === "\"") {
+        cell += "\"";
+        index += 1;
+      } else if (character === "\"") {
+        quoted = false;
+      } else {
+        cell += character;
+      }
+      continue;
+    }
+
+    if (character === "\"" && cell === "") {
+      quoted = true;
+    } else if (character === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (character === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+    } else if (character !== "\r") {
+      cell += character;
+    }
+  }
+
+  if (quoted) {
+    return {
+      rows:[],
+      error:"CSVの引用符が閉じられていません。"
+    };
+  }
+
+  if (cell !== "" || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
+
+  return {
+    rows:rows.filter(items =>
+      items.some(value => String(value).trim() !== "")
+    ),
+    error:null
+  };
+}
+
+function parseFxPositionCsv(text,accounts) {
+  const parsed = parseFxCsvText(text);
+
+  if (parsed.error) {
+    return {items:[],errors:[parsed.error]};
+  }
+
+  if (parsed.rows.length < 2) {
+    return {
+      items:[],
+      errors:["ヘッダーとデータ行を含むCSVを入力してください。"]
+    };
+  }
+
+  const headers = parsed.rows[0].map(value =>
+    String(value).trim()
+  );
+
+  const requiredHeaders = [
+    "口座名",
+    "通貨ペア",
+    "売買方向",
+    "約定日時",
+    "数量",
+    "約定レート",
+    "累計スワップ"
+  ];
+
+  if (headers.length !== requiredHeaders.length ||
+      requiredHeaders.some((header,index) =>
+        headers[index] !== header
+      )) {
+    return {
+      items:[],
+      errors:[
+        "CSVの列順・見出しが正しくありません。",
+        "必要な列： " + requiredHeaders.join(",")
+      ]
+    };
+  }
+
+  const fxAccounts = accounts.filter(account =>
+    account.type === "fx"
+  );
+  const items = [];
+  const errors = [];
+
+  for (let index = 1; index < parsed.rows.length; index += 1) {
+    const values = parsed.rows[index];
+    const lineNumber = index + 1;
+
+    if (values.length !== requiredHeaders.length) {
+      errors.push(lineNumber + "行目：列数が正しくありません。");
+      continue;
+    }
+
+    const accountName = String(values[0]).trim();
+    const account = fxAccounts.find(item =>
+      item.name === accountName
+    );
+
+    const date = parseFxCsvDate(values[3]);
+    const quantityText = String(values[4]).replace(/,/g,"").trim();
+    const rateText = String(values[5]).replace(/,/g,"").trim();
+    const swapText = String(values[6]).replace(/,/g,"").trim();
+
+    const quantity = quantityText === ""
+      ? null
+      : Number(quantityText);
+    const openRate = rateText === ""
+      ? null
+      : Number(rateText);
+    const swap = swapText === ""
+      ? null
+      : Number(swapText);
+
+    const item = {
+      accountId:account ? account.id : "",
+      pair:String(values[1]).trim(),
+      side:String(values[2]).trim(),
+      openDate:date || "",
+      quantity,
+      openRate,
+      swap,
+      status:"保有中",
+      closeDate:null,
+      closeRate:null,
+      realizedPnl:null,
+      sourceRow:lineNumber
+    };
+
+    if (!account) {
+      errors.push(lineNumber + "行目：FX口座名が見つかりません。");
+      continue;
+    }
+
+    const validationError = validateFxPositionInput(item);
+    if (validationError) {
+      errors.push(lineNumber + "行目：" + validationError);
+      continue;
+    }
+
+    items.push(item);
+  }
+
+  return {items,errors};
+}
+
+/* ---------- スワップ調整 ---------- */
+
+function createFxSwapAdjustment(
+  position,
+  reason,
+  amount,
+  now = new Date().toISOString()
+) {
+  if (!position ||
+      !Number.isFinite(amount) ||
+      amount === 0) {
+    return null;
+  }
+
+  return {
+    id:createId(),
+    accountId:position.accountId,
+    pair:position.pair,
+    side:position.side,
+    asOfDate:localDateString(),
+    recordedAt:now,
+    amount,
+    reason,
+    positionId:position.id
+  };
+}
