@@ -2,7 +2,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S4-v4";
+const APP_VERSION = "S4-v5";
 const SPEC_VERSION = "v1.7";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
@@ -328,7 +328,7 @@ function getLatestHoldingsForAccount(data,accountId) {
 function getHoldingImportKey(item) {
   return JSON.stringify([
     item.accountId,
-    item.name,
+    typeof item.name === "string" ? item.name.trim() : item.name,
     item.wrapper,
     item.asOfDate
   ]);
