@@ -85,6 +85,43 @@ function isValidFxDateForStorage(value) {
     String(date.getDate()).padStart(2,"0") === value;
 }
 
+function isValidFxDateTimeForStorage(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return false;
+  }
+
+  const normalized = value.replace(" ","T");
+
+  if (!/^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2})?)?$/.test(normalized)) {
+    return false;
+  }
+
+  const datePart = normalized.slice(0,10);
+
+  if (!isValidFxDateForStorage(datePart)) {
+    return false;
+  }
+
+  if (normalized.length === 10) {
+    return true;
+  }
+
+  const timePart = normalized.slice(11).split(":").map(Number);
+
+  return timePart.length >= 2 &&
+    timePart.length <= 3 &&
+    Number.isInteger(timePart[0]) &&
+    timePart[0] >= 0 &&
+    timePart[0] <= 23 &&
+    Number.isInteger(timePart[1]) &&
+    timePart[1] >= 0 &&
+    timePart[1] <= 59 &&
+    (timePart.length === 2 ||
+      (Number.isInteger(timePart[2]) &&
+       timePart[2] >= 0 &&
+       timePart[2] <= 59));
+}
+
 function validateData(data) {
   if (!data || typeof data !== "object" || Array.isArray(data)) {
     throw new Error("保存データの形式が正しくありません。");
@@ -224,6 +261,77 @@ function validateData(data) {
     }
   }
 
+  /* ---------- FX建玉検証 ---------- */
+
+  const fxPositionIds = new Set();
+
+  for (const position of data.fxPositions) {
+    if (!position ||
+        typeof position.id !== "string" ||
+        !position.id ||
+        typeof position.accountId !== "string" ||
+        !isValidFxPairForStorage(position.pair) ||
+        !["買","売"].includes(position.side) ||
+        !isValidFxDateTimeForStorage(position.openDate) ||
+        !Number.isSafeInteger(position.quantity) ||
+        position.quantity <= 0 ||
+        typeof position.openRate !== "number" ||
+        !Number.isFinite(position.openRate) ||
+        position.openRate <= 0 ||
+        !isNullableNumber(position.swap) ||
+        !["保有中","決済済"].includes(position.status) ||
+        typeof position.recordedAt !== "string") {
+      throw new Error("FX建玉データに不正な項目があります。");
+    }
+
+    if (fxPositionIds.has(position.id)) {
+      throw new Error("FX建玉IDが重複しています。");
+    }
+    fxPositionIds.add(position.id);
+
+    const account = data.accounts.find(item =>
+      item.id === position.accountId
+    );
+
+    if (!account || account.type !== "fx") {
+      throw new Error("FX建玉の口座参照先が正しくありません。");
+    }
+
+    if (position.status === "保有中") {
+      if (position.closeDate !== null &&
+          position.closeDate !== undefined &&
+          position.closeDate !== "") {
+        throw new Error("保有中の建玉に決済日を設定できません。");
+      }
+
+      if (position.closeRate !== null &&
+          position.closeRate !== undefined) {
+        throw new Error("保有中の建玉に決済レートを設定できません。");
+      }
+
+      if (position.realizedPnl !== null &&
+          position.realizedPnl !== undefined) {
+        throw new Error("保有中の建玉に確定損益を設定できません。");
+      }
+    } else {
+      if (!isValidFxDateForStorage(position.closeDate) ||
+          typeof position.realizedPnl !== "number" ||
+          !Number.isFinite(position.realizedPnl)) {
+        throw new Error("決済済み建玉の決済日または確定損益が正しくありません。");
+      }
+
+      if (position.closeRate !== null &&
+          position.closeRate !== undefined &&
+          (typeof position.closeRate !== "number" ||
+           !Number.isFinite(position.closeRate) ||
+           position.closeRate <= 0)) {
+        throw new Error("決済済み建玉の決済レートが正しくありません。");
+      }
+    }
+  }
+
+  /* ---------- FX評価レート検証 ---------- */
+
   const fxRateKeys = new Set();
 
   for (const rate of data.fxRates) {
@@ -258,6 +366,55 @@ function validateData(data) {
     }
 
     fxRateKeys.add(key);
+  }
+
+  /* ---------- FXスワップ履歴検証 ---------- */
+
+  for (const ledger of data.fxSwapLedger) {
+    if (!ledger ||
+        typeof ledger.id !== "string" ||
+        typeof ledger.accountId !== "string" ||
+        !isValidFxPairForStorage(ledger.pair) ||
+        !["買","売"].includes(ledger.side) ||
+        !isValidFxDateForStorage(ledger.asOfDate) ||
+        typeof ledger.recordedAt !== "string") {
+      throw new Error("FXスワップ履歴の共通項目が正しくありません。");
+    }
+
+    const account = data.accounts.find(item =>
+      item.id === ledger.accountId
+    );
+
+    if (!account || account.type !== "fx") {
+      throw new Error("FXスワップ履歴の口座参照先が正しくありません。");
+    }
+
+    if (Object.prototype.hasOwnProperty.call(ledger,"total")) {
+      if (!Number.isSafeInteger(ledger.total) ||
+          !Number.isSafeInteger(ledger.baseline) ||
+          !Number.isSafeInteger(ledger.increase) ||
+          !["基準","配分済","未配分"].includes(ledger.status) ||
+          typeof ledger.reason !== "string" ||
+          !Array.isArray(ledger.allocations)) {
+        throw new Error("FX集計スワップ登録の内容が正しくありません。");
+      }
+
+      for (const allocation of ledger.allocations) {
+        if (!allocation ||
+            typeof allocation.positionId !== "string" ||
+            !Number.isSafeInteger(allocation.amount)) {
+          throw new Error("FXスワップ配分の内容が正しくありません。");
+        }
+      }
+    } else if (Object.prototype.hasOwnProperty.call(ledger,"amount")) {
+      if (!Number.isSafeInteger(ledger.amount) ||
+          !["決済","削除","追加","移動"].includes(ledger.reason) ||
+          typeof ledger.positionId !== "string") {
+        throw new Error("FXスワップ調整の内容が正しくありません。");
+      }
+    } else {
+      throw new Error("FXスワップ履歴の種別を判定できません。");
+    }
   }
 
   const settingNumberFields = [
