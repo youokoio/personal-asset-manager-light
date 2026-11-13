@@ -402,7 +402,7 @@ function registerFxTests(context) {
 
     const source =
       "口座名,通貨ペア,売買方向,約定日時,数量,約定レート,累計スワップ\n" +
-      "架空FX口座A,TRY/JPY,買,2026/11/05 09:30,200,000,3.12,1,234";
+      "架空FX口座A,TRY/JPY,買,2026/11/05 09:30,\"200,000\",3.12,\"1,234\"";
 
     const result = parseFxPositionCsv(source,accounts);
 
