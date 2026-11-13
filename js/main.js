@@ -38,8 +38,16 @@ function render() {
     if (selectedAccountId) {
       renderAccountDetail();
       renderAccountChartEntryButton();
+
+      if (currentTab === "fx") {
+        renderFxManagementSection(selectedAccountId);
+      }
     } else {
       renderCategoryAccountList(currentTab);
+
+      if (currentTab === "fx") {
+        renderFxManagementSection();
+      }
     }
   } else if (currentTab === "chart") {
     renderChartScreen();
@@ -355,6 +363,7 @@ async function runTestsAndRender() {
     "./js/tests-bulk.js",
     "./js/tests-chart.js",
     "./js/tests-holdings.js",
+    "./js/tests-fx.js",
     "./js/tests.js"
   ];
 
