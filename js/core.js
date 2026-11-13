@@ -2,7 +2,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S8b-v3";
+const APP_VERSION = "S4-v1";
 const SPEC_VERSION = "v1.7";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
@@ -266,6 +266,112 @@ function getLatestSnapshot(data, accountId) {
   return getAccountSnapshots(data,accountId)[0] || null;
 }
 
+/* ---------- 商品別保有 ---------- */
+
+const HOLDING_WRAPPERS = [
+  "NISAつみたて",
+  "NISA成長",
+  "旧つみたてNISA",
+  "特定",
+  "iDeCo",
+  "企業型DC",
+  "なし"
+];
+
+const HOLDING_KINDS = [
+  "投信",
+  "国内株",
+  "元本確保型",
+  "暗号資産",
+  "その他"
+];
+
+function isHoldingsAccount(account) {
+  if (!account) return false;
+
+  const category = getCategory(account);
+  if (category === "stock") {
+    return ["securities","ideco","dc"].includes(account.type);
+  }
+
+  return category === "crypto" && account.type === "crypto";
+}
+
+function getLatestHoldingsForAccount(data,accountId) {
+  const accountHoldings = data.holdings.filter(item =>
+    item.accountId === accountId
+  );
+
+  if (!accountHoldings.length) {
+    return {asOfDate:null,holdings:[]};
+  }
+
+  const latest = accountHoldings.reduce((current,item) => {
+    if (!current || item.asOfDate > current.asOfDate) return item;
+    if (item.asOfDate === current.asOfDate &&
+        String(item.recordedAt || "") > String(current.recordedAt || "")) {
+      return item;
+    }
+    return current;
+  },null);
+
+  const asOfDate = latest.asOfDate;
+  return {
+    asOfDate,
+    holdings:accountHoldings
+      .filter(item => item.asOfDate === asOfDate)
+      .sort((a,b) => a.name.localeCompare(b.name,"ja") ||
+        a.wrapper.localeCompare(b.wrapper,"ja"))
+  };
+}
+
+function getHoldingImportKey(item) {
+  return JSON.stringify([
+    item.accountId,
+    item.name,
+    item.wrapper,
+    item.asOfDate
+  ]);
+}
+
+function calculateHoldingsSummary(data,accountId) {
+  const latest = getLatestHoldingsForAccount(data,accountId);
+  const wrapperTotals = {};
+
+  for (const wrapper of HOLDING_WRAPPERS) {
+    wrapperTotals[wrapper] = 0;
+  }
+
+  let total = 0;
+  let hasValue = false;
+
+  for (const item of latest.holdings) {
+    if (!isFiniteMetricValue(item.value)) continue;
+    total += item.value;
+    wrapperTotals[item.wrapper] =
+      (wrapperTotals[item.wrapper] || 0) + item.value;
+    hasValue = true;
+  }
+
+  const accountSnapshot = getLatestSnapshot(data,accountId);
+  const accountValue = accountSnapshot &&
+    isFiniteMetricValue(accountSnapshot.value)
+      ? accountSnapshot.value
+      : null;
+  const holdingsTotal = hasValue ? total : null;
+
+  return {
+    asOfDate:latest.asOfDate,
+    holdings:latest.holdings,
+    wrapperTotals,
+    total:holdingsTotal,
+    accountValue,
+    difference:holdingsTotal !== null && accountValue !== null
+      ? accountValue - holdingsTotal
+      : null
+  };
+}
+
 /* ---------- 30日前からの差 ---------- */
 
 function subtractCalendarDays(dateString,days) {
@@ -459,17 +565,27 @@ function calculateCategoryTotals(data) {
     totals.accountCount += 1;
 
     const latest = getLatestSnapshot(data,account.id);
-    if (!latest) continue;
-    totals.inputAccountCount += 1;
+    if (latest) {
+      totals.inputAccountCount += 1;
 
-    if (isFiniteMetricValue(latest.value)) {
-      totals.totalAssets += latest.value;
-      totals.counts.totalAssets += 1;
-      if (category === "bank") {
-        totals.bankBalance += latest.value;
-        totals.counts.bankBalance += 1;
+      if (isFiniteMetricValue(latest.value)) {
+        totals.totalAssets += latest.value;
+        totals.counts.totalAssets += 1;
+        if (category === "bank") {
+          totals.bankBalance += latest.value;
+          totals.counts.bankBalance += 1;
+        }
+      }
+    } else if (isHoldingsAccount(account)) {
+      const holdingsSummary = calculateHoldingsSummary(data,account.id);
+      if (isFiniteMetricValue(holdingsSummary.total)) {
+        totals.inputAccountCount += 1;
+        totals.totalAssets += holdingsSummary.total;
+        totals.counts.totalAssets += 1;
       }
     }
+
+    if (!latest) continue;
 
     for (const field of [
       "effectivePrincipal","pnl","realizedPnlTotal"
@@ -521,10 +637,19 @@ function calculateDashboard(data) {
 
   for (const account of data.accounts) {
     const latest = getLatestSnapshot(data,account.id);
-    if (!latest || !isFiniteMetricValue(latest.value)) continue;
+    if (latest && isFiniteMetricValue(latest.value)) {
+      total += latest.value;
+      includedAccountCount += 1;
+      continue;
+    }
 
-    total += latest.value;
-    includedAccountCount += 1;
+    if (!latest && isHoldingsAccount(account)) {
+      const holdingsSummary = calculateHoldingsSummary(data,account.id);
+      if (isFiniteMetricValue(holdingsSummary.total)) {
+        total += holdingsSummary.total;
+        includedAccountCount += 1;
+      }
+    }
   }
 
   return {
