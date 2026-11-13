@@ -1201,6 +1201,70 @@ function runAllTests() {
       "FXの総資産増減率（入出金を含む）が表示できません。");
   });
 
+  /* ---------- S8b② 近似式・将来予測テスト ---------- */
+
+  runTest("S8b：仕様書11-5の線形近似と1年予測",() => {
+    const result = calculateChartApproximation([
+      {date:"2026-01-01",value:1000},
+      {date:"2026-01-31",value:1300},
+      {date:"2026-03-02",value:1600}
+    ],"linear","1y");
+
+    assert(result.available === true,"線形近似が算出できません。");
+    assert(Math.abs(result.model.a - 10) < 1e-10,
+      "線形近似の傾きが10ではありません。");
+    assert(Math.abs(result.model.b - 1000) < 1e-10,
+      "線形近似の切片が1,000ではありません。");
+    assert(result.rSquared === 1,"線形近似のR²が1ではありません。");
+    assert(result.forecastEndDate === "2027-03-02",
+      "1年予測の終了日が正しくありません。");
+    assert(Math.abs(result.predictedValue - 5250) < 1e-8,
+      "x=425日の予測値が5,250ではありません。");
+  });
+
+  runTest("S8b：仕様書11-5の指数近似と年率",() => {
+    const result = calculateChartApproximation([
+      {date:"2026-01-01",value:100},
+      {date:"2027-01-01",value:110}
+    ],"exponential","1y");
+
+    assert(result.available === true,"指数近似が算出できません。");
+    assert(Math.abs(result.model.a - 100) < 1e-10,
+      "指数近似の係数aが100ではありません。");
+    assert(Math.abs(Math.exp(result.model.b * 365) - 1 - 0.1) < 1e-10,
+      "指数近似の年率が10%ではありません。");
+    assert(result.rSquared === 1,"指数近似のR²が1ではありません。");
+    assert(Math.abs(result.interpretation.value - 0.1) < 1e-10,
+      "表示用の年率が10%ではありません。");
+  });
+
+  runTest("S8b：仕様書11-5の2次多項式",() => {
+    const result = calculateChartApproximation([
+      {date:"2026-01-01",value:0},
+      {date:"2027-01-01",value:1},
+      {date:"2028-01-01",value:4}
+    ],"quadratic","3m");
+
+    assert(result.available === true,"2次多項式を算出できません。");
+    assert(Math.abs(result.model.a - 1) < 1e-10,
+      "2次多項式の係数aが1ではありません。");
+    assert(Math.abs(result.model.b) < 1e-10,
+      "2次多項式の係数bが0ではありません。");
+    assert(Math.abs(result.model.c) < 1e-10,
+      "2次多項式の係数cが0ではありません。");
+    assert(result.rSquared === 1,"2次多項式のR²が1ではありません。");
+  });
+
+  runTest("S8b：線形近似は2点でも算出できる",() => {
+    const result = calculateChartApproximation([
+      {date:"2026-01-01",value:100},
+      {date:"2026-02-01",value:110}
+    ],"linear","3m");
+
+    assert(result.available === true,"2点の線形近似が算出できません。");
+    assert(result.pointCount === 2,"記録点数が2点ではありません。");
+  });
+
   return results;
 }
 
