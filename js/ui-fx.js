@@ -1023,6 +1023,53 @@ function renderFxCsvImportForm(accountId) {
   return form;
 }
 
+/* ---------- 建玉の直接登録画面 ---------- */
+
+function makeFxPositionEntryButton(account) {
+  const button = makeButton(
+    "建玉を手入力・CSV取込",
+    "open-fx-position-entry",
+    "secondary"
+  );
+
+  button.addEventListener("click",() => {
+    renderFxPositionEntryScreen(account.id);
+  });
+
+  return button;
+}
+
+function renderFxPositionEntryScreen(accountId) {
+  const account = appData.accounts.find(item =>
+    item.id === accountId && item.type === "fx"
+  );
+
+  if (!account) {
+    showMessage("FX口座が見つかりません。",true);
+    render();
+    return;
+  }
+
+  app.replaceChildren();
+
+  const section = el("section","card");
+  section.appendChild(heading(account.name + " ／ 建玉登録"));
+
+  const back = makeButton(
+    "FX一覧へ戻る",
+    "back-fx-aggregate",
+    "secondary"
+  );
+  back.addEventListener("click",() => render());
+  section.appendChild(back);
+
+  const form = renderFxPositionForm(accountId,"","");
+  if (form) section.appendChild(form);
+
+  section.appendChild(renderFxCsvImportForm(accountId));
+  app.appendChild(section);
+}
+
 /* ---------- FX口座別管理 ---------- */
 
 function renderFxRateManagement(account) {
@@ -1062,6 +1109,11 @@ function renderFxManagementSection(accountId = null) {
 
     app.appendChild(renderFxAggregateSection(account.id));
     app.appendChild(renderFxRateManagement(account));
+
+    const entrySection = el("section","card");
+    entrySection.appendChild(heading("建玉の登録"));
+    entrySection.appendChild(makeFxPositionEntryButton(account));
+    app.appendChild(entrySection);
     return;
   }
 
@@ -1101,6 +1153,7 @@ function renderFxManagementSection(accountId = null) {
     });
 
     section.appendChild(open);
+    section.appendChild(makeFxPositionEntryButton(account));
     app.appendChild(section);
   }
 }
