@@ -1,3 +1,4 @@
+
 "use strict";
 
 /* ---------- FX集計 ---------- */
@@ -194,6 +195,150 @@ function getFxAccountPairs(data,accountId) {
     .sort((a,b) => a.pair.localeCompare(b.pair));
 }
 
+/* ---------- FX建玉入力補助 ---------- */
+
+const FX_STANDARD_PAIRS = [
+  "TRY/JPY",
+  "ZAR/JPY",
+  "USD/JPY",
+  "EUR/JPY",
+  "AUD/JPY"
+];
+
+const FX_OTHER_PAIR_OPTION = "その他（入力）";
+
+function buildPairOptions(data,accountId) {
+  const pairs = new Set(FX_STANDARD_PAIRS);
+
+  for (const rate of data.fxRates) {
+    if (rate.accountId === accountId &&
+        typeof rate.pair === "string") {
+      pairs.add(rate.pair);
+    }
+  }
+
+  for (const position of data.fxPositions) {
+    if (position.accountId === accountId &&
+        typeof position.pair === "string") {
+      pairs.add(position.pair);
+    }
+  }
+
+  return [
+    ...pairs,
+    FX_OTHER_PAIR_OPTION
+  ];
+}
+
+function convertFxQuantityInput(value,unit) {
+  const factors = {
+    "通貨":1,
+    "千通貨":1000,
+    "万通貨":10000
+  };
+
+  if (typeof value !== "string" ||
+      !value.trim()) {
+    return {
+      quantity:null,
+      error:"数量を入力してください。"
+    };
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(factors,unit)) {
+    return {
+      quantity:null,
+      error:"数量の単位を選択してください。"
+    };
+  }
+
+  const text = value.trim();
+
+  if (!/^\d+(?:\.\d+)?$/.test(text)) {
+    return {
+      quantity:null,
+      error:"数量は0より大きい数値で入力してください。"
+    };
+  }
+
+  const parts = text.split(".");
+  const integerPart = parts[0];
+  const decimalPart = parts[1] || "";
+  const factor = BigInt(factors[unit]);
+  const denominator = 10n ** BigInt(decimalPart.length);
+  const numerator =
+    BigInt(integerPart) * denominator +
+    BigInt(decimalPart || "0");
+
+  const convertedNumerator = numerator * factor;
+
+  if (convertedNumerator % denominator !== 0n) {
+    return {
+      quantity:null,
+      error:"数量の最小単位は1通貨です。"
+    };
+  }
+
+  const converted = convertedNumerator / denominator;
+
+  if (converted <= 0n ||
+      converted > BigInt(Number.MAX_SAFE_INTEGER)) {
+    return {
+      quantity:null,
+      error:"数量は正の安全な整数で入力してください。"
+    };
+  }
+
+  return {
+    quantity:Number(converted),
+    error:null
+  };
+}
+
+function getFxQuantityInputParts(quantity) {
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+    return {
+      value:"",
+      unit:"万通貨"
+    };
+  }
+
+  if (quantity % 10000 === 0) {
+    return {
+      value:String(quantity / 10000),
+      unit:"万通貨"
+    };
+  }
+
+  if (quantity % 1000 === 0) {
+    return {
+      value:String(quantity / 1000),
+      unit:"千通貨"
+    };
+  }
+
+  return {
+    value:String(quantity),
+    unit:"通貨"
+  };
+}
+
+function formatFxQuantity(quantity) {
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) {
+    return "—";
+  }
+
+  if (quantity % 10000 === 0) {
+    return (quantity / 10000).toLocaleString("ja-JP") + "万通貨";
+  }
+
+  if (quantity % 1000 === 0) {
+    return (quantity / 1000).toLocaleString("ja-JP") + "千通貨";
+  }
+
+  return quantity.toLocaleString("ja-JP") + "通貨";
+}
+
 /* ---------- 建玉データ検証 ---------- */
 
 function isValidFxPositionDate(value) {
@@ -244,6 +389,12 @@ function validateFxPositionInput(position) {
 
   if (!isValidFxPositionDate(position.openDate)) {
     return "約定日時を正しく入力してください。";
+  }
+
+  if (position.asOfDate !== null &&
+      position.asOfDate !== undefined &&
+      !isValidFxPositionDate(position.asOfDate)) {
+    return "データ確認日を正しく入力してください。";
   }
 
   if (!Number.isSafeInteger(position.quantity) ||
@@ -393,7 +544,14 @@ function parseFxPositionCsv(text,accounts) {
     "累計スワップ"
   ];
 
-  if (headers.length !== requiredHeaders.length ||
+  const optionalHeader = "データ確認日";
+
+  const hasAsOfDateColumn =
+    headers.length === requiredHeaders.length + 1 &&
+    headers[requiredHeaders.length] === optionalHeader;
+
+  if ((!hasAsOfDateColumn &&
+       headers.length !== requiredHeaders.length) ||
       requiredHeaders.some((header,index) =>
         headers[index] !== header
       )) {
@@ -401,10 +559,16 @@ function parseFxPositionCsv(text,accounts) {
       items:[],
       errors:[
         "CSVの列順・見出しが正しくありません。",
-        "必要な列： " + requiredHeaders.join(",")
+        "必要な列： " +
+          requiredHeaders.concat([optionalHeader]).join(",") +
+          "（最後のデータ確認日は省略できます）"
       ]
     };
   }
+
+  const expectedColumnCount = hasAsOfDateColumn
+    ? requiredHeaders.length + 1
+    : requiredHeaders.length;
 
   const fxAccounts = accounts.filter(account =>
     account.type === "fx"
@@ -416,7 +580,7 @@ function parseFxPositionCsv(text,accounts) {
     const values = parsed.rows[index];
     const lineNumber = index + 1;
 
-    if (values.length !== requiredHeaders.length) {
+    if (values.length !== expectedColumnCount) {
       errors.push(lineNumber + "行目：列数が正しくありません。");
       continue;
     }
@@ -430,6 +594,13 @@ function parseFxPositionCsv(text,accounts) {
     const quantityText = String(values[4]).replace(/,/g,"").trim();
     const rateText = String(values[5]).replace(/,/g,"").trim();
     const swapText = String(values[6]).replace(/,/g,"").trim();
+    const asOfDateText = hasAsOfDateColumn
+      ? String(values[7]).trim()
+      : "";
+
+    const asOfDate = asOfDateText === ""
+      ? null
+      : parseFxCsvDate(asOfDateText);
 
     const quantity = quantityText === ""
       ? null
@@ -446,6 +617,7 @@ function parseFxPositionCsv(text,accounts) {
       pair:String(values[1]).trim(),
       side:String(values[2]).trim(),
       openDate:date || "",
+      asOfDate,
       quantity,
       openRate,
       swap,
@@ -458,6 +630,11 @@ function parseFxPositionCsv(text,accounts) {
 
     if (!account) {
       errors.push(lineNumber + "行目：FX口座名が見つかりません。");
+      continue;
+    }
+
+    if (asOfDateText !== "" && asOfDate === null) {
+      errors.push(lineNumber + "行目：データ確認日を正しく入力してください。");
       continue;
     }
 
