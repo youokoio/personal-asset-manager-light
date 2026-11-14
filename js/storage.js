@@ -1,4 +1,3 @@
-
 "use strict";
 
 /* ---------- データ保存 ---------- */
@@ -31,6 +30,12 @@ function createInitialAccount(item,index,now) {
     marginRatePct:fxSettings ? fxSettings.marginRatePct : null,
     fieldLabels:createDefaultFieldLabels(item),
     autoCalc:getDefaultAutoCalc(item),
+    ...(item.type === "fx"
+      ? {
+          realizedBaseAmount:null,
+          realizedBaseDate:null
+        }
+      : {}),
     createdAt:now,
     updatedAt:now
   };
@@ -189,6 +194,24 @@ function validateData(data) {
 
     if (![null,"swap","principal"].includes(account.autoCalc)) {
       throw new Error("口座の autoCalc が正しくありません。");
+    }
+
+    const hasRealizedBaseAmount =
+      account.realizedBaseAmount !== null &&
+      account.realizedBaseAmount !== undefined;
+    const hasRealizedBaseDate =
+      account.realizedBaseDate !== null &&
+      account.realizedBaseDate !== undefined;
+
+    if (account.type === "fx") {
+      if (!isNullableNumber(account.realizedBaseAmount) ||
+          (hasRealizedBaseDate &&
+           !isValidFxDateForStorage(account.realizedBaseDate)) ||
+          hasRealizedBaseAmount !== hasRealizedBaseDate) {
+        throw new Error("FX口座の累積確定損益の基準額・基準日が正しくありません。");
+      }
+    } else if (hasRealizedBaseAmount || hasRealizedBaseDate) {
+      throw new Error("累積確定損益の基準額・基準日はFX口座だけに設定できます。");
     }
   }
 
