@@ -2,7 +2,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S5a-v5";
+const APP_VERSION = "S5b-v1";
 const SPEC_VERSION = "v1.11";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
@@ -542,6 +542,7 @@ function calculateCategoryTotals(data) {
       pnl:0,
       totalAssets:0,
       realizedPnlTotal:0,
+      realizedBaseUnsetAccountCount:0,
       bankBalance:0,
       bankChange:null,
       bankComparedAccountCount:0,
@@ -585,15 +586,28 @@ function calculateCategoryTotals(data) {
       }
     }
 
-    if (!latest) continue;
-
-    for (const field of [
-      "effectivePrincipal","pnl","realizedPnlTotal"
-    ]) {
-      if (isFiniteMetricValue(latest[field])) {
-        totals[field] += latest[field];
-        totals.counts[field] += 1;
+    if (latest) {
+      for (const field of ["effectivePrincipal","pnl"]) {
+        if (isFiniteMetricValue(latest[field])) {
+          totals[field] += latest[field];
+          totals.counts[field] += 1;
+        }
       }
+    }
+
+    if (category === "fx") {
+      const realized = calculateFxAccountRealizedPnl(data,account.id);
+      if (realized && isFiniteMetricValue(realized.value)) {
+        totals.realizedPnlTotal += realized.value;
+        totals.counts.realizedPnlTotal += 1;
+        if (realized.baseUnset) {
+          totals.realizedBaseUnsetAccountCount += 1;
+        }
+      }
+    } else if (latest &&
+               isFiniteMetricValue(latest.realizedPnlTotal)) {
+      totals.realizedPnlTotal += latest.realizedPnlTotal;
+      totals.counts.realizedPnlTotal += 1;
     }
   }
 
