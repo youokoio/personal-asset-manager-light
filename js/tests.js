@@ -184,6 +184,49 @@ function registerFxSettlementTests(context) {
       "基準日後の決済済み建玉だけを集計する必要があります。");
   });
 
+  runTest("FX累積確定損益グラフは基準日・決済日ごとに累計",() => {
+    const account = makeAccount("fx-chart","架空FX口座","fx","fx");
+    account.realizedBaseAmount = 10000;
+    account.realizedBaseDate = "2026-10-01";
+    const data = {
+      accounts:[account],
+      snapshots:[],
+      fxPositions:[
+        {
+          accountId:account.id,
+          status:"決済済",
+          closeDate:"2026-10-02",
+          realizedPnl:1200
+        },
+        {
+          accountId:account.id,
+          status:"決済済",
+          closeDate:"2026-09-30",
+          realizedPnl:500
+        },
+        {
+          accountId:account.id,
+          status:"保有中",
+          closeDate:null,
+          realizedPnl:null
+        }
+      ]
+    };
+    const result = createChartSeries(
+      data,
+      "account:" + account.id,
+      "realizedPnlTotal"
+    );
+    assert(result.points.length === 2,
+      "基準日と基準日後の決済日の2点が必要です。");
+    assert(result.points[0].date === "2026-10-01" &&
+      result.points[0].value === 10000,
+      "基準日の累積確定損益は基準額10,000円である必要があります。");
+    assert(result.points[1].date === "2026-10-02" &&
+      result.points[1].value === 11200,
+      "決済日後は基準額10,000円＋確定損益1,200円＝11,200円である必要があります。");
+  });
+
   runTest("FX決済入力エラー時の元データ保護",() => {
     const account = makeAccount("fx-3","LIGHT FX","fx","fx");
     const position = {
