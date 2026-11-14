@@ -1,3 +1,4 @@
+
 "use strict";
 
 /* ---------- 分類別口座一覧・詳細 ---------- */
@@ -107,7 +108,13 @@ function renderCategoryAccountList(category) {
       );
 
       if (category === "fx") {
-        appendAccountMetric(card,"累積確定損益","後続段階で対応");
+        const realized = calculateFxAccountRealizedPnl(appData,account.id);
+        appendAccountMetric(
+          card,
+          "累積確定損益",
+          realized ? formatSignedYen(realized.value) : "未計算",
+          realized && realized.baseUnset ? "基準額未設定" : ""
+        );
         appendAccountMetric(
           card,
           getAccountFieldLabel(account,"swapTotal","累計スワップ"),
@@ -538,6 +545,31 @@ function renderAccountSettings(account) {
   );
   form.appendChild(autoCalcField);
 
+  if (account.type === "fx") {
+    const baseAmountField = el("div","field");
+    const baseAmountLabel = document.createElement("label");
+    baseAmountLabel.textContent = "累積確定損益の基準額（円・任意）";
+    const baseAmountInput = document.createElement("input");
+    baseAmountInput.type = "number";
+    baseAmountInput.step = "1";
+    baseAmountInput.name = "realizedBaseAmount";
+    baseAmountInput.value = account.realizedBaseAmount ?? "";
+    baseAmountLabel.appendChild(baseAmountInput);
+    baseAmountField.appendChild(baseAmountLabel);
+    form.appendChild(baseAmountField);
+
+    const baseDateField = el("div","field");
+    const baseDateLabel = document.createElement("label");
+    baseDateLabel.textContent = "累積確定損益の基準日（任意）";
+    const baseDateInput = document.createElement("input");
+    baseDateInput.type = "date";
+    baseDateInput.name = "realizedBaseDate";
+    baseDateInput.value = account.realizedBaseDate || "";
+    baseDateLabel.appendChild(baseDateInput);
+    baseDateField.appendChild(baseDateLabel);
+    form.appendChild(baseDateField);
+  }
+
   form.appendChild(el(
     "div",
     "help",
@@ -583,8 +615,29 @@ function handleAccountSettingsSubmit(event,accountId) {
     return;
   }
 
+  let realizedBaseAmount = null;
+  let realizedBaseDate = null;
+  if (account.type === "fx") {
+    const amountText = String(values.get("realizedBaseAmount") || "").trim();
+    const dateText = String(values.get("realizedBaseDate") || "").trim();
+    realizedBaseAmount = amountText === "" ? null : toNumberOrNull(amountText);
+    realizedBaseDate = dateText || null;
+
+    if ((amountText === "") !== (dateText === "") ||
+        (amountText !== "" && realizedBaseAmount === null) ||
+        (dateText !== "" && !isValidFxPositionAsOfDate(dateText))) {
+      showMessage("累積確定損益の基準額と基準日を両方正しく入力してください。",true);
+      render();
+      return;
+    }
+  }
+
   account.fieldLabels = fieldLabels;
   account.autoCalc = autoCalc || null;
+  if (account.type === "fx") {
+    account.realizedBaseAmount = realizedBaseAmount;
+    account.realizedBaseDate = realizedBaseDate;
+  }
   account.updatedAt = new Date().toISOString();
 
   try {
