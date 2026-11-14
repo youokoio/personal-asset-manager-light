@@ -1,3 +1,4 @@
+
 "use strict";
 
 function registerFxTests(context) {
@@ -511,4 +512,127 @@ function registerFxTests(context) {
     assert(result.items[40].quantity === 10040,
       "41件目の数量が正しくありません。");
   });
+
+  runTest("S5a追補：標準通貨ペアと口座固有ペアの候補",() => {
+    const data = makeData([],[
+      makeRate("fx-a","GBP/JPY",190),
+      makeRate("fx-b","CAD/JPY",110)
+    ]);
+    data.fxPositions.push(
+      makePosition("custom-position","fx-a","NZD/JPY","買",1000,90,0)
+    );
+    const options = buildPairOptions(data,"fx-a");
+    for (const pair of [
+      "TRY/JPY","ZAR/JPY","USD/JPY","EUR/JPY","AUD/JPY",
+      "GBP/JPY","NZD/JPY",FX_OTHER_PAIR_OPTION
+    ]) {
+      assert(options.includes(pair),pair + "が候補にありません。");
+    }
+    assert(!options.includes("CAD/JPY"),
+      "別口座の通貨ペアが候補に混入しています。");
+  });
+
+  runTest("S5a追補：数量単位を通貨数量へ変換",() => {
+    const cases = [
+      ["20","万通貨",200000],
+      ["0.5","万通貨",5000],
+      ["1.5","千通貨",1500],
+      ["1.1","万通貨",11000],
+      ["0.07","万通貨",700],
+      ["1","通貨",1]
+    ];
+    for (const [value,unit,expected] of cases) {
+      const result = convertFxQuantityInput(value,unit);
+      assert(result.error === null,value + unit + "の変換でエラーになりました。");
+      assert(result.quantity === expected,
+        value + unit + "の変換結果が" + expected + "ではありません。");
+    }
+  });
+
+  runTest("S5a追補：不正な数量入力を拒否",() => {
+    for (const [value,unit] of [
+      ["0.5","通貨"],["0","通貨"],["-1","通貨"],
+      ["","万通貨"],["abc","万通貨"],["0.00001","万通貨"]
+    ]) {
+      const result = convertFxQuantityInput(value,unit);
+      assert(result.error !== null,value + unit + "を拒否できていません。");
+      assert(result.quantity === null,
+        value + unit + "の不正値に数量が設定されています。");
+    }
+  });
+
+  runTest("S5a追補：数量表示と編集時の単位復元",() => {
+    assert(formatFxQuantity(200000) === "20万通貨",
+      "200,000通貨が20万通貨と表示されていません。");
+    assert(formatFxQuantity(5000) === "5千通貨",
+      "5,000通貨が5千通貨と表示されていません。");
+    assert(formatFxQuantity(10000) === "1万通貨",
+      "10,000通貨が1万通貨と表示されていません。");
+    assert(formatFxQuantity(1500) === "1,500通貨",
+      "1,500通貨が1,500通貨と表示されていません。");
+    const parts = getFxQuantityInputParts(15000);
+    assert(parts.value === "15" && parts.unit === "千通貨",
+      "15,000通貨の編集時入力が15千通貨になっていません。");
+  });
+
+  runTest("S5a追補：建玉データ確認日の任意入力",() => {
+    const base = {
+      accountId:"fx-a",pair:"TRY/JPY",side:"買",
+      openDate:"2026-11-05",quantity:10000,openRate:3.12,swap:0
+    };
+    assert(validateFxPositionInput(base) === null,
+      "データ確認日がない既存形式の建玉を受け入れていません。");
+    assert(validateFxPositionInput({...base,asOfDate:null}) === null,
+      "データ確認日nullを受け入れていません。");
+    assert(validateFxPositionInput({...base,asOfDate:"2026-11-14"}) === null,
+      "正しいデータ確認日を受け入れていません。");
+    assert(validateFxPositionInput({...base,asOfDate:"2026-02-30"}) !== null,
+      "実在しないデータ確認日を拒否できていません。");
+  });
+
+  runTest("S5a追補：旧7列CSVはデータ確認日nullで取り込む",() => {
+    const accounts = [makeAccount("fx-a","架空FX口座A","fx","fx")];
+    const source =
+      "口座名,通貨ペア,売買方向,約定日時,数量,約定レート,累計スワップ\n" +
+      "架空FX口座A,TRY/JPY,買,2026-11-05,10000,3.12,0";
+    const result = parseFxPositionCsv(source,accounts);
+    assert(result.errors.length === 0,"従来7列CSVにエラーが発生しています。");
+    assert(result.items.length === 1,"従来7列CSVから建玉を取り込めていません。");
+    assert(result.items[0].asOfDate === null,
+      "従来7列CSVのデータ確認日がnullではありません。");
+  });
+
+  runTest("S5a追補：8列CSVのデータ確認日を解析",() => {
+    const accounts = [makeAccount("fx-a","架空FX口座A","fx","fx")];
+    const header =
+      "口座名,通貨ペア,売買方向,約定日時,数量,約定レート,累計スワップ,データ確認日";
+    const source = [
+      header,
+      "架空FX口座A,TRY/JPY,買,2026-11-05,10000,3.12,0,2026/11/14",
+      "架空FX口座A,ZAR/JPY,売,2026-11-06,20000,1.80,0,"
+    ].join("\n");
+    const result = parseFxPositionCsv(source,accounts);
+    assert(result.errors.length === 0,"正常な8列CSVにエラーが発生しています。");
+    assert(result.items.length === 2,"8列CSVから2件を取り込めていません。");
+    assert(result.items[0].asOfDate === "2026-11-14",
+      "スラッシュ区切りのデータ確認日を変換できていません。");
+    assert(result.items[1].asOfDate === null,
+      "空欄のデータ確認日がnullになっていません。");
+  });
+
+  runTest("S5a追補：8列CSVの不正なデータ確認日を拒否",() => {
+    const accounts = [makeAccount("fx-a","架空FX口座A","fx","fx")];
+    const header =
+      "口座名,通貨ペア,売買方向,約定日時,数量,約定レート,累計スワップ,データ確認日";
+    for (const invalidDate of ["2026/02/30","2026-11-14T09:30"]) {
+      const source = header + "\n" +
+        "架空FX口座A,TRY/JPY,買,2026-11-05,10000,3.12,0," +
+        invalidDate;
+      const result = parseFxPositionCsv(source,accounts);
+      assert(result.items.length === 0,
+        invalidDate + "を含むCSVが取り込まれています。");
+      assert(result.errors.length > 0,invalidDate + "のエラーがありません。");
+    }
+  });
+
 }
