@@ -1,3 +1,4 @@
+
 "use strict";
 
 /* ---------- S8a グラフ系列の計算 ---------- */
@@ -93,16 +94,16 @@ function getChartFieldOptions(targetInfo) {
   if (targetInfo.type === "account" &&
       targetInfo.category === "fx") {
     return CHART_FIELD_DEFINITIONS.filter(
-      field => ["value","effectivePrincipal","pnl","swapTotal"]
-        .includes(field.value)
+      field => ["value","effectivePrincipal","pnl",
+        "realizedPnlTotal","swapTotal"].includes(field.value)
     );
   }
 
   if (targetInfo.type === "category" &&
       targetInfo.category === "fx") {
     return CHART_FIELD_DEFINITIONS.filter(
-      field => ["value","effectivePrincipal","pnl","swapTotal"]
-        .includes(field.value)
+      field => ["value","effectivePrincipal","pnl",
+        "realizedPnlTotal","swapTotal"].includes(field.value)
     );
   }
 
@@ -195,6 +196,88 @@ function getChartTargetDates(data,accounts) {
   return Array.from(dates).sort();
 }
 
+function getChartFxRealizedPnlAtDate(data,account,date) {
+  const hasBase = isFiniteMetricValue(account.realizedBaseAmount) &&
+    isValidFxPositionAsOfDate(account.realizedBaseDate);
+  const baseDate = hasBase ? account.realizedBaseDate : null;
+  if (hasBase && date < baseDate) return null;
+  const settledPositions = data.fxPositions.filter(position =>
+    position.accountId === account.id &&
+    position.status === "決済済" &&
+    typeof position.closeDate === "string" &&
+    position.closeDate <= date &&
+    (!hasBase || position.closeDate > baseDate) &&
+    isFiniteMetricValue(position.realizedPnl)
+  );
+
+  if (!hasBase && settledPositions.length === 0) return null;
+
+  return (hasBase ? account.realizedBaseAmount : 0) +
+    settledPositions.reduce(
+      (sum,position) => sum + position.realizedPnl,
+      0
+    );
+}
+
+function createFxRealizedPnlChartSeries(data,targetInfo,targetValue,field) {
+  const dates = new Set(getChartTargetDates(data,targetInfo.accounts));
+
+  for (const account of targetInfo.accounts) {
+    if (account.type !== "fx") continue;
+    if (isFiniteMetricValue(account.realizedBaseAmount) &&
+        isValidFxPositionAsOfDate(account.realizedBaseDate)) {
+      dates.add(account.realizedBaseDate);
+    }
+    for (const position of data.fxPositions) {
+      if (position.accountId === account.id &&
+          position.status === "決済済" &&
+          isValidFxPositionAsOfDate(position.closeDate)) {
+        dates.add(position.closeDate);
+      }
+    }
+  }
+
+  const points = [];
+  for (const date of Array.from(dates).sort()) {
+    let total = 0;
+    let includedCount = 0;
+
+    for (const account of targetInfo.accounts) {
+      let value = null;
+      if (account.type === "fx") {
+        value = getChartFxRealizedPnlAtDate(data,account,date);
+      } else {
+        const snapshot = getChartSnapshotAtDate(
+          getChartAccountSnapshots(data,account.id),
+          date
+        );
+        value = snapshot && isFiniteMetricValue(snapshot.realizedPnlTotal)
+          ? snapshot.realizedPnlTotal
+          : null;
+      }
+
+      if (value === null) continue;
+      total += value;
+      includedCount += 1;
+    }
+
+    if (includedCount > 0) {
+      points.push({date,value:total,includedCount});
+    }
+  }
+
+  const fieldLabel = CHART_FIELD_DEFINITIONS.find(
+    item => item.value === field
+  )?.label || field;
+
+  return {
+    target:targetValue,
+    field,
+    label:targetInfo.label + "／" + fieldLabel,
+    points
+  };
+}
+
 function createChartSeries(data,targetValue,field) {
   const targetInfo = getChartTargetInfo(data,targetValue);
   if (!targetInfo) {
@@ -216,6 +299,12 @@ function createChartSeries(data,targetValue,field) {
       label:targetInfo.label + "／対象外項目",
       points:[]
     };
+  }
+
+  if (field === "realizedPnlTotal") {
+    return createFxRealizedPnlChartSeries(
+      data,targetInfo,targetValue,field
+    );
   }
 
   const accounts = targetInfo.accounts;
@@ -309,8 +398,14 @@ function shiftChartDate(dateString,months) {
 function getChartPeriod(data,period,startDate,endDate) {
   const dates = data.snapshots
     .map(snapshot => snapshot.asOfDate)
-    .filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date))
-    .sort();
+    .filter(date => /^\d{4}-\d{2}-\d{2}$/.test(date));
+  for (const position of data.fxPositions || []) {
+    if (position.status === "決済済" &&
+        isValidFxPositionAsOfDate(position.closeDate)) {
+      dates.push(position.closeDate);
+    }
+  }
+  dates.sort();
 
   const latestDate = dates.length
     ? dates[dates.length - 1]
