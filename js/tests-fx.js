@@ -1,4 +1,3 @@
-
 "use strict";
 
 function registerFxTests(context) {
@@ -514,7 +513,7 @@ function registerFxTests(context) {
   });
 
   runTest("S5a追補：標準通貨ペアと口座固有ペアの候補",() => {
-    const data = makeData([],[
+    const data = makeData([],[ 
       makeRate("fx-a","GBP/JPY",190),
       makeRate("fx-b","CAD/JPY",110)
     ]);
@@ -632,6 +631,108 @@ function registerFxTests(context) {
       assert(result.items.length === 0,
         invalidDate + "を含むCSVが取り込まれています。");
       assert(result.errors.length > 0,invalidDate + "のエラーがありません。");
+    }
+  });
+
+  runTest("S5a追補：建玉フォーム（新規）の描画",() => {
+    const originalAppData = appData;
+
+    try {
+      appData = makeData([],[]);
+
+      const form = renderFxPositionForm("fx-a","TRY/JPY","買");
+
+      assert(form && form.tagName === "FORM",
+        "新規建玉フォームが描画されていません。");
+
+      const pair = form.querySelector('select[name="pairChoice"]');
+      const side = form.querySelector('select[name="side"]');
+      const openDate = form.querySelector('[name="openDate"]');
+      const asOfDate = form.querySelector('[name="asOfDate"]');
+      const quantity = form.querySelector('[name="quantity"]');
+      const quantityUnit = form.querySelector('select[name="quantityUnit"]');
+
+      assert(pair && pair.value === "TRY/JPY",
+        "新規フォームの通貨ペアが選択されていません。");
+      assert(side && side.value === "買",
+        "新規フォームの売買方向が選択されていません。");
+      assert(openDate && openDate.type === "date",
+        "新規フォームの約定日が日付入力ではありません。");
+      assert(asOfDate && asOfDate.type === "date",
+        "新規フォームのデータ確認日が日付入力ではありません。");
+      assert(asOfDate.value === localDateString(),
+        "新規フォームのデータ確認日が本日になっていません。");
+      assert(quantity && quantity.value === "",
+        "新規フォームの数量初期値が空欄ではありません。");
+      assert(quantityUnit && quantityUnit.value === "万通貨",
+        "新規フォームの数量単位初期値が万通貨ではありません。");
+    } finally {
+      appData = originalAppData;
+    }
+  });
+
+  runTest("S5a追補：建玉フォーム（編集）の保存値描画",() => {
+    const originalAppData = appData;
+
+    try {
+      const position = {
+        id:"edit-position",
+        accountId:"fx-a",
+        pair:"GBP/JPY",
+        side:"売",
+        openDate:"2025-04-29T00:00:00.000Z",
+        asOfDate:"2026-11-14",
+        quantity:200000,
+        openRate:3.7,
+        swap:1234,
+        status:"保有中",
+        recordedAt:"2026-11-07T00:00:00.000Z",
+        createdAt:"2026-11-07T00:00:00.000Z",
+        updatedAt:"2026-11-07T00:00:00.000Z"
+      };
+
+      appData = makeData(
+        [position],
+        [makeRate("fx-a","GBP/JPY",3.15)]
+      );
+
+      const form = renderFxPositionForm(
+        "fx-a",
+        "GBP/JPY",
+        "売",
+        position
+      );
+
+      assert(form && form.tagName === "FORM",
+        "編集建玉フォームが描画されていません。");
+
+      const pair = form.querySelector('select[name="pairChoice"]');
+      const side = form.querySelector('select[name="side"]');
+      const openDate = form.querySelector('[name="openDate"]');
+      const asOfDate = form.querySelector('[name="asOfDate"]');
+      const quantity = form.querySelector('[name="quantity"]');
+      const quantityUnit = form.querySelector('select[name="quantityUnit"]');
+      const rate = form.querySelector('[name="openRate"]');
+      const swap = form.querySelector('[name="swap"]');
+
+      assert(pair && pair.value === "GBP/JPY",
+        "編集フォームに保存済みの通貨ペアが表示されていません。");
+      assert(side && side.value === "売",
+        "編集フォームに保存済みの売買方向が表示されていません。");
+      assert(openDate && openDate.value === "2025-04-29",
+        "編集フォームに保存済みの約定日が表示されていません。");
+      assert(asOfDate && asOfDate.value === "2026-11-14",
+        "編集フォームに保存済みのデータ確認日が表示されていません。");
+      assert(quantity && quantity.value === "20",
+        "編集フォームの数量が20になっていません。");
+      assert(quantityUnit && quantityUnit.value === "万通貨",
+        "編集フォームの数量単位が万通貨になっていません。");
+      assert(rate && rate.value === "3.7",
+        "編集フォームに保存済みの約定レートが表示されていません。");
+      assert(swap && swap.value === "1234",
+        "編集フォームに保存済みの累計スワップが表示されていません。");
+    } finally {
+      appData = originalAppData;
     }
   });
 
