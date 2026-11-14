@@ -1,3 +1,4 @@
+
 "use strict";
 
 /* ---------- FX表示補助 ---------- */
@@ -390,6 +391,37 @@ function renderFxPairRateCard(account,rateRecord) {
 
 /* ---------- FX建玉の入力 ---------- */
 
+function makeFxSelectField(label,name,value,options,required = false) {
+  const field = makeField(label,name,value || "",{type:"text"});
+  const oldInput = field.querySelector("input");
+  const select = document.createElement("select");
+  select.name = name;
+  select.required = required;
+  if (oldInput) {
+    select.className = oldInput.className;
+    oldInput.replaceWith(select);
+  } else {
+    field.appendChild(select);
+  }
+
+  if (!value) {
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "選択してください";
+    select.appendChild(placeholder);
+  }
+
+  for (const optionValue of options) {
+    const option = document.createElement("option");
+    option.value = optionValue;
+    option.textContent = optionValue;
+    select.appendChild(option);
+  }
+
+  select.value = value || "";
+  return field;
+}
+
 function getFxPreviousPosition(data,accountId,pair,side,excludeId = null) {
   return data.fxPositions
     .filter(position =>
@@ -441,31 +473,76 @@ function renderFxPositionForm(accountId,pair,side,position = null) {
     isEdit ? "建玉を編集" : "建玉を追加"
   ));
 
-  const pairField = makeField(
+  const selectedPair = position ? position.pair : pair;
+  const pairOptions = buildPairOptions(appData,accountId);
+  const pairField = makeFxSelectField(
     "通貨ペア",
-    "pair",
-    position ? position.pair : pair,
-    {type:"text",required:true}
+    "pairChoice",
+    selectedPair || "",
+    pairOptions,
+    true
   );
   form.appendChild(pairField);
 
-  const sideField = makeField(
+  const customPairField = makeField(
+    "その他の通貨ペア",
+    "customPair",
+    "",
+    {
+      type:"text",
+      placeholder:"例：USD/JPY"
+    }
+  );
+  const customPairInput = customPairField.querySelector("input");
+  if (customPairInput) customPairInput.autocomplete = "off";
+  customPairField.hidden = false;
+  form.appendChild(customPairField);
+
+  const pairSelect = pairField.querySelector("select");
+  const customPairInputElement = customPairField.querySelector("input");
+
+  function updateCustomPairVisibility() {
+    const showCustom = pairSelect &&
+      pairSelect.value === FX_OTHER_PAIR_OPTION;
+    customPairField.hidden = !showCustom;
+    if (customPairInputElement) {
+      customPairInputElement.required = Boolean(showCustom);
+    }
+  }
+
+  if (pairSelect) {
+    pairSelect.addEventListener("change",updateCustomPairVisibility);
+  }
+  updateCustomPairVisibility();
+
+  const sideField = makeFxSelectField(
     "売買方向",
     "side",
     position ? position.side : side,
-    {type:"text",required:true}
+    ["買","売"],
+    true
   );
   form.appendChild(sideField);
 
   const dateField = makeField(
-    "約定日時",
+    "約定日",
     "openDate",
     position
-      ? position.openDate.replace(" ","T")
+      ? String(position.openDate).slice(0,10)
       : "",
-    {type:"datetime-local",required:true}
+    {type:"date",required:true}
   );
   form.appendChild(dateField);
+
+  const asOfDateField = makeField(
+    "データ確認日",
+    "asOfDate",
+    position
+      ? position.asOfDate || ""
+      : localDateString(),
+    {type:"date"}
+  );
+  form.appendChild(asOfDateField);
 
   const previous = getFxPreviousPosition(
     appData,
@@ -475,17 +552,30 @@ function renderFxPositionForm(accountId,pair,side,position = null) {
     position ? position.id : null
   );
 
-  const quantityField = makeNumericField(
-    "数量（通貨）",
-    "quantity",
+  const quantityParts = getFxQuantityInputParts(
     position
-      ? String(position.quantity)
+      ? position.quantity
       : previous
-        ? String(previous.quantity)
-        : "",
+        ? previous.quantity
+        : 0
+  );
+
+  const quantityField = makeNumericField(
+    "数量",
+    "quantity",
+    quantityParts.value,
     {required:true}
   );
   form.appendChild(quantityField);
+
+  const quantityUnitField = makeFxSelectField(
+    "数量単位",
+    "quantityUnit",
+    quantityParts.unit,
+    ["通貨","千通貨","万通貨"],
+    true
+  );
+  form.appendChild(quantityUnitField);
 
   const rateField = makeNumericField(
     "約定レート",
@@ -539,14 +629,32 @@ function renderFxPositionForm(accountId,pair,side,position = null) {
     const rawSwap = String(values.get("swap") || "").trim();
     const rawQuantity = String(values.get("quantity") || "").trim();
     const rawRate = String(values.get("openRate") || "").trim();
+    const quantityResult = convertFxQuantityInput(
+      rawQuantity,
+      String(values.get("quantityUnit") || "")
+    );
+    const pairChoice = String(values.get("pairChoice") || "").trim();
+    const selectedCustomPair = String(
+      values.get("customPair") || ""
+    ).trim();
+    const finalPair = pairChoice === FX_OTHER_PAIR_OPTION
+      ? selectedCustomPair
+      : pairChoice;
+    const rawAsOfDate = String(values.get("asOfDate") || "").trim();
+
+    if (quantityResult.error) {
+      showMessage(quantityResult.error,true);
+      return;
+    }
 
     const nextPosition = {
       id:position ? position.id : createId(),
       accountId,
-      pair:String(values.get("pair") || "").trim(),
+      pair:finalPair,
       side:String(values.get("side") || "").trim(),
       openDate:String(values.get("openDate") || "").trim(),
-      quantity:toNumberOrNull(rawQuantity),
+      asOfDate:rawAsOfDate === "" ? null : rawAsOfDate,
+      quantity:quantityResult.quantity,
       openRate:toNumberOrNull(rawRate),
       swap:rawSwap === "" ? null : toNumberOrNull(rawSwap),
       status:"保有中",
@@ -723,7 +831,15 @@ function renderFxPositionRow(position) {
   appendAccountMetric(
     card,
     "数量",
-    formatInputNumber(position.quantity)
+    formatFxQuantity(position.quantity)
+  );
+
+  appendAccountMetric(
+    card,
+    "データ確認日",
+    position.asOfDate
+      ? formatDateWithWeekday(position.asOfDate)
+      : "未入力"
   );
 
   appendAccountMetric(
@@ -846,7 +962,7 @@ function renderFxCsvImportForm(accountId) {
   form.appendChild(el(
     "div",
     "help",
-    "CSVの列順：口座名,通貨ペア,売買方向,約定日時,数量,約定レート,累計スワップ"
+    "CSVの列順：口座名,通貨ペア,売買方向,約定日時,数量,約定レート,累計スワップ（末尾にデータ確認日を追加可能）"
   ));
 
   const fileField = document.createElement("input");
