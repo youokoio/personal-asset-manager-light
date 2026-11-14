@@ -1,4 +1,3 @@
-
 "use strict";
 
 /* ---------- FX集計 ---------- */
@@ -368,6 +367,24 @@ function isValidFxPositionDate(value) {
     date.getDate() === parts[2];
 }
 
+function isValidFxPositionAsOfDate(value) {
+  if (typeof value !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const parts = value.split("-").map(Number);
+  const date = new Date(
+    parts[0],
+    parts[1] - 1,
+    parts[2]
+  );
+
+  return date.getFullYear() === parts[0] &&
+    date.getMonth() === parts[1] - 1 &&
+    date.getDate() === parts[2];
+}
+
 function validateFxPositionInput(position) {
   if (!position || typeof position !== "object") {
     return "建玉データが正しくありません。";
@@ -393,7 +410,7 @@ function validateFxPositionInput(position) {
 
   if (position.asOfDate !== null &&
       position.asOfDate !== undefined &&
-      !isValidFxPositionDate(position.asOfDate)) {
+      !isValidFxPositionAsOfDate(position.asOfDate)) {
     return "データ確認日を正しく入力してください。";
   }
 
@@ -633,7 +650,9 @@ function parseFxPositionCsv(text,accounts) {
       continue;
     }
 
-    if (asOfDateText !== "" && asOfDate === null) {
+    if (asOfDateText !== "" &&
+        (asOfDate === null ||
+         !isValidFxPositionAsOfDate(asOfDate))) {
       errors.push(lineNumber + "行目：データ確認日を正しく入力してください。");
       continue;
     }
