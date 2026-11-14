@@ -105,9 +105,19 @@ function renderDashboard() {
       appendHomeMetric(card,"評価損益",
         formatSignedYen(item.pnl));
       appendHomeMetric(card,"累積確定損益",
-        category === "fx" ? "後続段階で対応" :
+        category === "fx" ? formatSignedYen(item.realizedPnlTotal) :
           formatSignedYen(item.realizedPnlTotal)
       );
+
+      if (category === "fx" &&
+          item.realizedBaseUnsetAccountCount > 0) {
+        card.appendChild(el(
+          "div",
+          "help",
+          "累積確定損益の基準額・基準日が未設定の口座：" +
+            item.realizedBaseUnsetAccountCount + "口座"
+        ));
+      }
     }
 
     app.appendChild(card);
