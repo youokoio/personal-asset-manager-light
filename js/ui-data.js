@@ -75,6 +75,19 @@ function runDataSelfDiagnosis(data,serviceWorkerRegistered) {
 
         for (const account of data.accounts) {
           if (getCategory(account) !== category) continue;
+
+          if (totalField === "realizedPnlTotal" &&
+              getCategory(account) === "fx") {
+            const realized = calculateFxAccountRealizedPnl(
+              data,
+              account.id
+            );
+            if (!realized || !isFiniteMetricValue(realized.value)) continue;
+            expectedTotal += realized.value;
+            includedCount += 1;
+            continue;
+          }
+
           const latest = getLatestSnapshot(data,account.id);
           if (!latest || !isFiniteMetricValue(latest[snapshotField])) continue;
           expectedTotal += latest[snapshotField];
