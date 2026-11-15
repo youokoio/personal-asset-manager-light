@@ -2,7 +2,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S5b-v1";
+const APP_VERSION = "S5b-v2";
 const SPEC_VERSION = "v1.11";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
@@ -542,6 +542,7 @@ function calculateCategoryTotals(data) {
       pnl:0,
       totalAssets:0,
       realizedPnlTotal:0,
+      totalPnl:0,
       realizedBaseUnsetAccountCount:0,
       bankBalance:0,
       bankChange:null,
@@ -552,6 +553,7 @@ function calculateCategoryTotals(data) {
         pnl:0,
         totalAssets:0,
         realizedPnlTotal:0,
+        totalPnl:0,
         bankBalance:0
       }
     };
@@ -604,10 +606,44 @@ function calculateCategoryTotals(data) {
           totals.realizedBaseUnsetAccountCount += 1;
         }
       }
+
+      const fxData = {
+        ...data,
+        fxPositions:Array.isArray(data.fxPositions)
+          ? data.fxPositions
+          : []
+      };
+      const fxRows = calculateFxAggregateRows(fxData).filter(row =>
+        row.accountId === account.id
+      );
+      const exchangeProfit = fxRows.length === 0
+        ? 0
+        : fxRows.every(row => isFiniteMetricValue(row.exchangeProfit))
+          ? fxRows.reduce((sum,row) => sum + row.exchangeProfit,0)
+          : null;
+      const swapTotal = fxRows.length === 0
+        ? 0
+        : fxRows.every(row => isFiniteMetricValue(row.swapTotal))
+          ? fxRows.reduce((sum,row) => sum + row.swapTotal,0)
+          : null;
+
+      if (isFiniteMetricValue(exchangeProfit) &&
+          isFiniteMetricValue(swapTotal) &&
+          realized &&
+          isFiniteMetricValue(realized.value)) {
+        totals.totalPnl +=
+          exchangeProfit + swapTotal + realized.value;
+        totals.counts.totalPnl += 1;
+      }
     } else if (latest &&
                isFiniteMetricValue(latest.realizedPnlTotal)) {
       totals.realizedPnlTotal += latest.realizedPnlTotal;
       totals.counts.realizedPnlTotal += 1;
+
+      if (isFiniteMetricValue(latest.pnl)) {
+        totals.totalPnl += latest.pnl + latest.realizedPnlTotal;
+        totals.counts.totalPnl += 1;
+      }
     }
   }
 
@@ -634,7 +670,7 @@ function calculateCategoryTotals(data) {
   for (const totals of Object.values(result)) {
     for (const field of [
       "effectivePrincipal","pnl","totalAssets",
-      "realizedPnlTotal","bankBalance"
+      "realizedPnlTotal","totalPnl","bankBalance"
     ]) {
       if (totals.counts[field] === 0) totals[field] = null;
     }
