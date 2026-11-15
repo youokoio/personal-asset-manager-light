@@ -1,4 +1,3 @@
-
 "use strict";
 
 /* ---------- S8a グラフ系列の計算 ---------- */
@@ -201,7 +200,10 @@ function getChartFxRealizedPnlAtDate(data,account,date) {
     isValidFxPositionAsOfDate(account.realizedBaseDate);
   const baseDate = hasBase ? account.realizedBaseDate : null;
   if (hasBase && date < baseDate) return null;
-  const settledPositions = data.fxPositions.filter(position =>
+  const fxPositions = Array.isArray(data.fxPositions)
+    ? data.fxPositions
+    : [];
+  const settledPositions = fxPositions.filter(position =>
     position.accountId === account.id &&
     position.status === "決済済" &&
     typeof position.closeDate === "string" &&
@@ -228,7 +230,9 @@ function createFxRealizedPnlChartSeries(data,targetInfo,targetValue,field) {
         isValidFxPositionAsOfDate(account.realizedBaseDate)) {
       dates.add(account.realizedBaseDate);
     }
-    for (const position of data.fxPositions) {
+    for (const position of (Array.isArray(data.fxPositions)
+      ? data.fxPositions
+      : [])) {
       if (position.accountId === account.id &&
           position.status === "決済済" &&
           isValidFxPositionAsOfDate(position.closeDate)) {
