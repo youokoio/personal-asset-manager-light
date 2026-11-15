@@ -108,6 +108,8 @@ function renderDashboard() {
         category === "fx" ? formatSignedYen(item.realizedPnlTotal) :
           formatSignedYen(item.realizedPnlTotal)
       );
+      appendHomeMetric(card,"トータル損益",
+        formatSignedYen(item.totalPnl));
 
       if (category === "fx" &&
           item.realizedBaseUnsetAccountCount > 0) {
