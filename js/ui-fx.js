@@ -157,6 +157,100 @@ function addFxLedgerOnlyRows(rows,accountId = null) {
   return rows;
 }
 
+function renderFxSwapEstimateCard(accountId) {
+  const card = el("section","card");
+  const account = appData.accounts.find(item =>
+    item.id === accountId && item.type === "fx"
+  );
+  if (!account) return card;
+
+  card.appendChild(heading(account.name + " ／ スワップ推定"));
+  const initial = calculateFxSwapEstimates(appData,accountId);
+  const dateField = makeField(
+    "推定対象日",
+    "targetDate",
+    initial.baseDate || "",
+    {type:"date"}
+  );
+  const dateInput = dateField.querySelector("input");
+  card.appendChild(dateField);
+  const resultArea = el("div","fx-swap-estimate-results");
+  card.appendChild(resultArea);
+
+  function updateEstimate() {
+    resultArea.replaceChildren();
+    const result = calculateFxSwapEstimates(
+      appData,
+      accountId,
+      dateInput ? dateInput.value : null
+    );
+    if (result.status !== "計算済") {
+      resultArea.appendChild(el(
+        "div",
+        result.status === "入力エラー" ? "error" : "help",
+        result.reason || "スワップを推定できません。"
+      ));
+      return;
+    }
+
+    appendAccountMetric(resultArea,"基準日",result.baseDate);
+    appendAccountMetric(
+      resultArea,
+      "口座累計スワップ",
+      formatSignedYen(Math.trunc(result.accountTotal))
+    );
+    appendAccountMetric(
+      resultArea,
+      "建玉入力済みスワップ合計",
+      formatSignedYen(Math.trunc(result.positionInputTotal))
+    );
+    appendAccountMetric(
+      resultArea,
+      "口座との差額",
+      formatSignedYen(Math.trunc(result.accountDifference))
+    );
+    appendAccountMetric(
+      resultArea,
+      "指定日の推定合計",
+      result.totalAtDate === null
+        ? "算出できません"
+        : formatSignedYen(Math.trunc(result.totalAtDate))
+    );
+
+    if (result.unallocatedDifference !== 0) {
+      appendAccountMetric(
+        resultArea,
+        "未配分差額",
+        formatSignedYen(Math.trunc(result.unallocatedDifference))
+      );
+    }
+
+    resultArea.appendChild(el(
+      "div",
+      "help",
+      "口座との差額には決済済み建玉分が含まれる可能性があります。推定値は表示のみで、保存されません。"
+    ));
+
+    for (const position of result.positions) {
+      const label = position.pair + " ／ " + position.side +
+        (position.isEstimated ? " ／ 推定" : "");
+      appendAccountMetric(
+        resultArea,
+        label,
+        position.targetSwap === null
+          ? "算出できません"
+          : formatSignedYen(Math.trunc(position.targetSwap))
+      );
+    }
+  }
+
+  if (dateInput) {
+    dateInput.addEventListener("change",updateEstimate);
+  }
+  updateEstimate();
+  return card;
+}
+
 /* ---------- FX集計一覧 ---------- */
 
 function renderFxAggregateCard(row) {
@@ -259,6 +353,14 @@ function renderFxAggregateSection(accountId = null) {
     for (const account of appData.accounts.filter(item => item.type === "fx")) {
       appendFxSwapAccountWarning(section,account.id);
     }
+  }
+
+  const estimateAccounts = appData.accounts.filter(item =>
+    item.type === "fx" &&
+    (accountId === null || item.id === accountId)
+  );
+  for (const account of estimateAccounts) {
+    section.appendChild(renderFxSwapEstimateCard(account.id));
   }
 
   if (accountId !== null) {
@@ -820,7 +922,7 @@ function renderFxPositionForm(accountId,pair,side,position = null) {
     }
 
     const nextData = JSON.parse(JSON.stringify(appData));
-    const oldPosition = position
+    const oldPosition = isEdit
       ? nextData.fxPositions.find(item => item.id === position.id)
       : null;
 
