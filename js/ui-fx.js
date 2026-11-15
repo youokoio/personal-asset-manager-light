@@ -28,6 +28,135 @@ function getFxRateInputValue(value) {
     : String(value);
 }
 
+function renderFxSwapRegistrationForm(row) {
+  const form = document.createElement("form");
+  form.className = "fx-swap-registration-form";
+  form.appendChild(el("h4","","集計スワップ登録"));
+  form.appendChild(makeNumericField("累計スワップ（円）","total","",{placeholder:"整数で入力"}));
+  form.appendChild(makeField("登録日","asOfDate","",{type:"date",required:true}));
+  form.appendChild(el("div","help","初回登録は基準額として保存します。2回目以降は前回基準額との差額を、保有中の建玉数量に応じて配分します。"));
+  const previewButton = document.createElement("button");
+  previewButton.type = "button";
+  previewButton.textContent = "配分を試算";
+  form.appendChild(previewButton);
+  const previewArea = el("div","fx-swap-preview");
+  form.appendChild(previewArea);
+  let currentPreview = null;
+  previewButton.addEventListener("click",() => {
+    const values = new FormData(form);
+    const rawTotal = String(values.get("total") || "").trim();
+    const rawDate = String(values.get("asOfDate") || "").trim();
+    const total = toNumberOrNull(rawTotal);
+    if (rawTotal === "" || total === null || !Number.isSafeInteger(total)) {
+      showMessage("累計スワップは整数の円で入力してください。",true);
+      return;
+    }
+    if (!isValidFxPositionAsOfDate(rawDate)) {
+      showMessage("登録日を正しく入力してください。",true);
+      return;
+    }
+    try {
+      currentPreview = calculateFxSwapRegistrationPreview(appData,row.accountId,row.pair,row.side,total,rawDate);
+      previewArea.replaceChildren();
+      appendAccountMetric(previewArea,"前回基準額",formatSignedYen(currentPreview.baseline));
+      appendAccountMetric(previewArea,"今回増加額",formatSignedYen(currentPreview.increase));
+      appendAccountMetric(previewArea,"配分状態",currentPreview.status,currentPreview.reason || "");
+      for (const allocation of currentPreview.allocations) {
+        const position = appData.fxPositions.find(item => item.id === allocation.positionId);
+        appendAccountMetric(previewArea,position ? "建玉 " + position.id : "建玉",formatSignedYen(allocation.amount));
+      }
+      const allocationTotal = currentPreview.allocations.reduce((sum,item) => sum + item.amount,0);
+      appendAccountMetric(previewArea,"配分合計",formatSignedYen(allocationTotal));
+      const saveButton = document.createElement("button");
+      saveButton.type = "submit";
+      saveButton.textContent = "この内容で登録";
+      previewArea.appendChild(saveButton);
+      showMessage("配分プレビューを作成しました。");
+    } catch (error) {
+      currentPreview = null;
+      previewArea.replaceChildren();
+      showMessage(error.message || "配分を試算できませんでした。",true);
+    }
+  });
+  form.addEventListener("submit",event => {
+    event.preventDefault();
+    if (!currentPreview) {
+      showMessage("先に配分を試算してください。",true);
+      return;
+    }
+    try {
+      const values = new FormData(form);
+      const total = toNumberOrNull(String(values.get("total") || "").trim());
+      const asOfDate = String(values.get("asOfDate") || "").trim();
+      const freshPreview = calculateFxSwapRegistrationPreview(appData,row.accountId,row.pair,row.side,total,asOfDate);
+      if (JSON.stringify(freshPreview) !== JSON.stringify(currentPreview)) {
+        currentPreview = null;
+        previewArea.replaceChildren();
+        throw new Error("入力内容または建玉がプレビュー後に変わりました。もう一度試算してください。");
+      }
+      const nextData = buildFxSwapRegistrationData(appData,freshPreview);
+      validateData(nextData);
+      const storedData = localStorage.getItem("pam2");
+      if (storedData === null) {
+        throw new Error("保存データが見つからないため、登録を中止しました。");
+      }
+      localStorage.setItem("pam2_pre_fxswap",storedData);
+      saveData(nextData);
+      appData = nextData;
+      showMessage("集計スワップを登録しました。");
+      render();
+    } catch (error) {
+      showMessage(error.message || "集計スワップを登録できませんでした。",true);
+    }
+  });
+  return form;
+}
+
+function appendFxSwapGroupWarning(container,row) {
+  const result = calculateFxSwapGroupReconciliation(appData,row.accountId,row.pair,row.side);
+  if (result && result.warning) {
+    container.appendChild(el("div","warning","建玉スワップ合計と集計スワップに " + formatSignedYen(result.difference) + " の差があります。自動修正はしていません。"));
+  }
+}
+
+function appendFxSwapAccountWarning(container,accountId) {
+  const result = calculateFxSwapAccountReconciliation(appData,accountId);
+  if (result && result.warning) {
+    container.appendChild(el("div","warning","口座スワップ合計と通貨ペア別集計に " + formatSignedYen(result.difference) + " の差があります。自動修正はしていません。"));
+  }
+}
+
+function addFxLedgerOnlyRows(rows,accountId = null) {
+  const existing = new Set(rows.map(row => JSON.stringify([row.accountId,row.pair,row.side])));
+  const groups = new Map();
+  for (const ledger of appData.fxSwapLedger) {
+    if (!Object.prototype.hasOwnProperty.call(ledger,"total") || (accountId !== null && ledger.accountId !== accountId)) continue;
+    const key = JSON.stringify([ledger.accountId,ledger.pair,ledger.side]);
+    if (!groups.has(key)) groups.set(key,{accountId:ledger.accountId,pair:ledger.pair,side:ledger.side});
+  }
+  for (const group of groups.values()) {
+    const key = JSON.stringify([group.accountId,group.pair,group.side]);
+    if (existing.has(key)) continue;
+    const latest = getLatestFxSwapRegistration(appData,group.accountId,group.pair,group.side);
+    if (!latest) continue;
+    rows.push({
+      accountId:group.accountId,
+      accountName:getFxAccountName(group.accountId),
+      pair:group.pair,
+      side:group.side,
+      quantity:0,
+      positionCount:0,
+      averageOpenRate:null,
+      evaluationRate:null,
+      evaluationRateDate:null,
+      exchangeProfit:null,
+      swapTotal:latest.total,
+      evaluationPnl:null
+    });
+  }
+  return rows;
+}
+
 /* ---------- FX集計一覧 ---------- */
 
 function renderFxAggregateCard(row) {
@@ -76,6 +205,12 @@ function renderFxAggregateCard(row) {
       : formatSignedYen(row.swapTotal)
   );
 
+  const latestSwap = getLatestFxSwapRegistration(appData,row.accountId,row.pair,row.side);
+  if (latestSwap && latestSwap.status === "未配分") {
+    appendAccountMetric(card,"未配分",formatSignedYen(latestSwap.increase),latestSwap.reason || "");
+  }
+  appendFxSwapGroupWarning(card,row);
+
   appendAccountMetric(
     card,
     "評価損益",
@@ -95,6 +230,7 @@ function renderFxAggregateCard(row) {
   });
 
   card.appendChild(open);
+  card.appendChild(renderFxSwapRegistrationForm(row));
 
   return card;
 }
@@ -103,8 +239,11 @@ function renderFxAggregateSection(accountId = null) {
   const section = el("section","card");
   section.appendChild(heading("通貨ペア別建玉集計"));
 
-  const rows = calculateFxAggregateRows(appData).filter(row =>
-    accountId === null || row.accountId === accountId
+  const rows = addFxLedgerOnlyRows(
+    calculateFxAggregateRows(appData).filter(row =>
+      accountId === null || row.accountId === accountId
+    ),
+    accountId
   );
 
   if (!rows.length) {
@@ -117,9 +256,13 @@ function renderFxAggregateSection(accountId = null) {
     for (const row of rows) {
       section.appendChild(renderFxAggregateCard(row));
     }
+    for (const account of appData.accounts.filter(item => item.type === "fx")) {
+      appendFxSwapAccountWarning(section,account.id);
+    }
   }
 
   if (accountId !== null) {
+    appendFxSwapAccountWarning(section,accountId);
     const summary = calculateFxAccountAggregateSummary(
       appData,
       accountId
