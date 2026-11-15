@@ -333,9 +333,9 @@ function registerFxSwapAllocationTests(context) {
 
   runTest("14-6-3 新規建玉を含めて次回増加額を配分",() => {
     let data = makeData([
-      makePosition("L1",200000,5000,"2026-09-01"),
-      makePosition("L2",200000,6000,"2026-09-02"),
-      makePosition("L3",100000,2500,"2026-09-03")
+      makePosition("L1",200000,1000,"2026-09-01"),
+      makePosition("L2",200000,2000,"2026-09-02"),
+      makePosition("L3",100000,500,"2026-09-03")
     ]);
     data = build(data,3500,"2026-10-31");
     data = build(data,13500,"2026-11-05");
@@ -367,13 +367,13 @@ function registerFxSwapAllocationTests(context) {
 
   runTest("14-6-5 決済調整を次回基準額へ反映",() => {
     let data = makeData([
-      makePosition("L1",200000,6667,"2026-09-01"),
-      makePosition("L2",200000,7667,"2026-09-02"),
-      makePosition("L3",100000,3333,"2026-09-03"),
-      makePosition("L4",100000,833,"2026-11-06")
+      makePosition("L1",200000,1000,"2026-09-01"),
+      makePosition("L2",200000,2000,"2026-09-02"),
+      makePosition("L3",100000,500,"2026-09-03"),
     ]);
     data = build(data,3500,"2026-10-31");
     data = build(data,13500,"2026-11-05");
+    data.fxPositions.push(makePosition("L4",100000,0,"2026-11-06"));
     data = build(data,18500,"2026-11-07");
     const settled = buildFxSettlementData(data,[{
       positionId:"L3",quantity:100000,realizedPnl:0,closeRate:3.2
@@ -395,23 +395,29 @@ function registerFxSwapAllocationTests(context) {
 
   runTest("14-6-6 手動修正差額は警告し自動補正しない",() => {
     let data = makeData([
-      makePosition("L1",200000,6667,"2026-09-01"),
-      makePosition("L2",200000,7667,"2026-09-02"),
-      makePosition("L3",100000,3333,"2026-09-03"),
-      makePosition("L4",100000,833,"2026-11-06")
+      makePosition("L1",200000,1000,"2026-09-01"),
+      makePosition("L2",200000,2000,"2026-09-02"),
+      makePosition("L3",100000,500,"2026-09-03"),
     ]);
     data = build(data,3500,"2026-10-31");
     data = build(data,13500,"2026-11-05");
+    data.fxPositions.push(makePosition("L4",100000,0,"2026-11-06"));
     data = build(data,18500,"2026-11-07");
+    data = buildFxSettlementData(data,[{
+      positionId:"L3",quantity:100000,realizedPnl:0,closeRate:3.2
+    }],"2026-11-08",{
+      idFactory:() => "L3-closed",now:"2026-11-08T12:00:00.000Z"
+    });
+    data = build(data,16167,"2026-11-09");
     data.fxPositions.find(item => item.id === "L2").swap = 8167;
     const before = calculateFxSwapGroupReconciliation(data,"fx-swap-test","TRY/JPY","買");
     assert(before.warning && before.difference === 100,
       "手動修正後は100円の照合警告が必要です。");
-    const next = build(data,17167,"2026-11-09");
+    const next = build(data,17167,"2026-11-10");
     const byId = Object.fromEntries(next.fxPositions.map(item => [item.id,item]));
     const after = calculateFxSwapGroupReconciliation(next,"fx-swap-test","TRY/JPY","買");
-    assert(byId.L1.swap === 7067 && byId.L2.swap === 8567 &&
-      byId.L4.swap === 1033,
+    assert(byId.L1.swap === 7467 && byId.L2.swap === 8567 &&
+      byId.L4.swap === 1233,
       "今回増加額1,000円を400円・400円・200円加算する必要があります。");
     assert(after.warning && after.difference === 100,
       "既存の100円差は自動補正されず警告として残る必要があります。");
@@ -491,11 +497,11 @@ if (document.body && document.body.dataset.testRunner === "true") {
 
   for (const result of results) {
     const item = document.createElement("li");
-    item.textContent = \`\${result.success ? "合格" : "不合格"}：\${result.name} — \${result.message}\`;
+    item.textContent = `${result.success ? "合格" : "不合格"}：${result.name} — ${result.message}`;
     resultsElement.appendChild(item);
   }
 
   const passed = results.filter(result => result.success).length;
   const failed = results.length - passed;
-  summaryElement.textContent = \`\${passed}件合格 / \${failed}件不合格（全\${results.length}件）\`;
+  summaryElement.textContent = `${passed}件合格 / ${failed}件不合格（全${results.length}件）`;
 }
