@@ -1,3 +1,4 @@
+
 "use strict";
 
 /* ---------- FX集計 ---------- */
@@ -897,7 +898,11 @@ function calculateFxAccountRealizedPnl(data,accountId) {
   const baseAmount = hasBase ? account.realizedBaseAmount : 0;
   const baseDate = hasBase ? account.realizedBaseDate : null;
 
-  const settledPositions = data.fxPositions.filter(position =>
+  const fxPositions = Array.isArray(data.fxPositions)
+    ? data.fxPositions
+    : [];
+
+  const settledPositions = fxPositions.filter(position =>
     position.accountId === accountId &&
     position.status === "決済済" &&
     (!hasBase || position.closeDate > baseDate) &&
