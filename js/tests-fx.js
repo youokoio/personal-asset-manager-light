@@ -226,7 +226,7 @@ function registerFxTests(context) {
     assert(rows[0].positionCount === 1,
       "決済済み建玉が件数に含まれています。");
     assert(rows[0].exchangeProfit === 10000,
-      "保有中建玉だけの為替差損益が10,000円ではありません。");
+      "保有中建玉だけの為替差益が10,000円ではありません。");
   });
 
   runTest("S5a：口座別集計は対象口座だけを合算",() => {
@@ -635,10 +635,12 @@ function registerFxTests(context) {
   });
 
   runTest("S5a追補：建玉フォーム（新規）の描画",() => {
-    const originalAppData = appData;
+    const hasLexicalAppData = typeof appData !== "undefined";
+    const originalAppData = hasLexicalAppData ? appData : globalThis.appData;
 
     try {
-      appData = makeData([],[]);
+      if (hasLexicalAppData) appData = makeData([] ,[]);
+      else globalThis.appData = makeData([],[]);
 
       const form = renderFxPositionForm("fx-a","TRY/JPY","買");
 
@@ -667,12 +669,15 @@ function registerFxTests(context) {
       assert(quantityUnit && quantityUnit.value === "万通貨",
         "新規フォームの数量単位初期値が万通貨ではありません。");
     } finally {
-      appData = originalAppData;
+      if (hasLexicalAppData) appData = originalAppData;
+      else if (originalAppData === undefined) delete globalThis.appData;
+      else globalThis.appData = originalAppData;
     }
   });
 
   runTest("S5a追補：建玉フォーム（編集）の保存値描画",() => {
-    const originalAppData = appData;
+    const hasLexicalAppData = typeof appData !== "undefined";
+    const originalAppData = hasLexicalAppData ? appData : globalThis.appData;
 
     try {
       const position = {
@@ -691,10 +696,12 @@ function registerFxTests(context) {
         updatedAt:"2026-11-07T00:00:00.000Z"
       };
 
-      appData = makeData(
+      const fixtureData = makeData(
         [position],
         [makeRate("fx-a","GBP/JPY",3.15)]
       );
+      if (hasLexicalAppData) appData = fixtureData;
+      else globalThis.appData = fixtureData;
 
       const form = renderFxPositionForm(
         "fx-a",
@@ -732,7 +739,9 @@ function registerFxTests(context) {
       assert(swap && swap.value === "1234",
         "編集フォームに保存済みの累計スワップが表示されていません。");
     } finally {
-      appData = originalAppData;
+      if (hasLexicalAppData) appData = originalAppData;
+      else if (originalAppData === undefined) delete globalThis.appData;
+      else globalThis.appData = originalAppData;
     }
   });
 
