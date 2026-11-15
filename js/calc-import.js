@@ -338,14 +338,6 @@ function classifyBulkImportRows(rows,accounts,snapshots) {
       }
     }
 
-    if (account && account.type === "fx" &&
-        row.realizedPnlTotal !== null &&
-        row.realizedPnlTotal !== "") {
-      row.reasons.push(
-        "FX口座では累積確定損益を入力できません。"
-      );
-    }
-
     const canCheckDuplicate =
       row.accountId && row.asOfDate &&
       !row.parseErrors.asOfDate;
