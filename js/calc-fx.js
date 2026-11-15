@@ -1141,6 +1141,188 @@ function calculateFxSwapAccountReconciliation(data,accountId) {
   return {warning:difference !== 0,difference,accountTotal,aggregateTotal};
 }
 
+
+function getFxCalendarDayDifference(startDate,endDate) {
+  if (!isValidFxPositionAsOfDate(startDate) ||
+      !isValidFxPositionAsOfDate(endDate)) {
+    return null;
+  }
+  const start = startDate.split("-").map(Number);
+  const end = endDate.split("-").map(Number);
+  const startTime = Date.UTC(start[0],start[1] - 1,start[2]);
+  const endTime = Date.UTC(end[0],end[1] - 1,end[2]);
+  return Math.round((endTime - startTime) / 86400000);
+}
+
+function calculateFxSwapEstimates(data,accountId,targetDate = null) {
+  if (!data ||
+      !Array.isArray(data.accounts) ||
+      !Array.isArray(data.snapshots) ||
+      !Array.isArray(data.fxPositions)) {
+    return {status:"未計算",reason:"FXデータの形式が正しくありません。"};
+  }
+
+  const account = data.accounts.find(item =>
+    item.id === accountId && item.type === "fx"
+  );
+  if (!account) {
+    return {status:"未計算",reason:"FX口座が見つかりません。"};
+  }
+
+  const snapshots = data.snapshots.filter(snapshot =>
+    snapshot.accountId === accountId &&
+    isValidFxPositionAsOfDate(snapshot.asOfDate)
+  ).slice().sort((a,b) => {
+    const dateDifference = String(b.asOfDate).localeCompare(String(a.asOfDate));
+    return dateDifference !== 0
+      ? dateDifference
+      : String(b.recordedAt || "").localeCompare(String(a.recordedAt || ""));
+  });
+  const latestSnapshot = snapshots[0] || null;
+  if (!latestSnapshot ||
+      typeof latestSnapshot.swapTotal !== "number" ||
+      !Number.isFinite(latestSnapshot.swapTotal)) {
+    return {
+      status:"未計算",
+      reason:"口座の最新スワップが入力されていません。",
+      baseDate:latestSnapshot ? latestSnapshot.asOfDate : null
+    };
+  }
+
+  const baseDate = latestSnapshot.asOfDate;
+  const estimateDate = targetDate === null || targetDate === ""
+    ? baseDate
+    : targetDate;
+  if (!isValidFxPositionAsOfDate(estimateDate)) {
+    return {
+      status:"入力エラー",
+      reason:"推定日を正しく入力してください。",
+      baseDate
+    };
+  }
+
+  const positions = data.fxPositions.filter(position =>
+    position.accountId === accountId &&
+    ["保有中","決済済"].includes(position.status) &&
+    isValidFxPositionAsOfDate(position.openDate)
+  );
+
+  const knownSwapTotal = positions.reduce((sum,position) =>
+    typeof position.swap === "number" && Number.isFinite(position.swap)
+      ? sum + position.swap
+      : sum,
+    0
+  );
+  const accountDifference = latestSnapshot.swapTotal - knownSwapTotal;
+  const missingPositions = positions.filter(position =>
+    position.swap === null || position.swap === undefined
+  );
+
+  const weightedPositions = missingPositions.map(position => {
+    const endDate = position.status === "決済済" &&
+      isValidFxPositionAsOfDate(position.closeDate)
+        ? position.closeDate
+        : baseDate;
+    const holdingDays = Math.max(
+      0,
+      getFxCalendarDayDifference(position.openDate,endDate) ?? 0
+    );
+    const weight = Number.isFinite(position.quantity) && position.quantity > 0
+      ? position.quantity * holdingDays
+      : 0;
+    return {position,holdingDays,weight};
+  });
+  const totalWeight = weightedPositions.reduce(
+    (sum,item) => sum + item.weight,
+    0
+  );
+
+  const estimatedById = new Map();
+  for (const item of weightedPositions) {
+    estimatedById.set(
+      item.position.id,
+      totalWeight > 0
+        ? accountDifference * item.weight / totalWeight
+        : null
+    );
+  }
+
+  const estimatedPositions = positions.map(position => {
+    const isEstimated = position.swap === null ||
+      position.swap === undefined;
+    const currentSwap = isEstimated
+      ? estimatedById.get(position.id) ?? null
+      : position.swap;
+    const elapsedDays = getFxCalendarDayDifference(
+      position.openDate,
+      estimateDate
+    );
+    const baseDays = getFxCalendarDayDifference(
+      position.openDate,
+      baseDate
+    );
+    let targetSwap = null;
+
+    if (currentSwap !== null && elapsedDays !== null && baseDays !== null) {
+      if (elapsedDays < 0) {
+        targetSwap = 0;
+      } else if (baseDays <= 0) {
+        targetSwap = currentSwap;
+      } else {
+        targetSwap = currentSwap * elapsedDays / baseDays;
+      }
+    }
+
+    const endDate = position.status === "決済済" &&
+      isValidFxPositionAsOfDate(position.closeDate)
+        ? position.closeDate
+        : baseDate;
+    return {
+      positionId:position.id,
+      pair:position.pair,
+      side:position.side,
+      status:position.status,
+      quantity:position.quantity,
+      openDate:position.openDate,
+      closeDate:position.closeDate ?? null,
+      holdingDays:Math.max(
+        0,
+        getFxCalendarDayDifference(position.openDate,endDate) ?? 0
+      ),
+      isEstimated,
+      currentSwap,
+      targetSwap
+    };
+  });
+
+  const totalAtDate = estimatedPositions.every(item =>
+    item.targetSwap !== null && Number.isFinite(item.targetSwap)
+  )
+    ? estimatedPositions.reduce((sum,item) => sum + item.targetSwap,0)
+    : null;
+
+  return {
+    status:"計算済",
+    accountId,
+    accountName:account.name,
+    baseDate,
+    targetDate:estimateDate,
+    accountTotal:latestSnapshot.swapTotal,
+    positionInputTotal:knownSwapTotal,
+    accountDifference,
+    estimatedPositionTotal:estimatedPositions.every(item =>
+      item.currentSwap !== null && Number.isFinite(item.currentSwap)
+    )
+      ? estimatedPositions.reduce((sum,item) => sum + item.currentSwap,0)
+      : null,
+    unallocatedDifference:missingPositions.length > 0 && totalWeight <= 0
+      ? accountDifference
+      : 0,
+    positions:estimatedPositions,
+    totalAtDate
+  };
+}
+
 function calculateFxAccountRealizedPnl(data,accountId) {
   const account = data.accounts.find(item =>
     item.id === accountId && item.type === "fx"
