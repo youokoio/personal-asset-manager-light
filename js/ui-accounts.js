@@ -1,4 +1,3 @@
-
 "use strict";
 
 /* ---------- 分類別口座一覧・詳細 ---------- */
@@ -120,7 +119,30 @@ function renderCategoryAccountList(category) {
           getAccountFieldLabel(account,"swapTotal","累計スワップ"),
           formatYen(latest.swapTotal)
         );
-        appendAccountMetric(card,"為替差益","後続段階で対応");
+
+        const fxRows = calculateFxAggregateRows(appData).filter(row =>
+          row.accountId === account.id
+        );
+        const fxExchangeProfit = fxRows.length === 0
+          ? 0
+          : fxRows.every(row => isFiniteMetricValue(row.exchangeProfit))
+            ? fxRows.reduce((sum,row) => sum + row.exchangeProfit,0)
+            : null;
+        const fxSwapTotal = fxRows.length === 0
+          ? 0
+          : fxRows.every(row => isFiniteMetricValue(row.swapTotal))
+            ? fxRows.reduce((sum,row) => sum + row.swapTotal,0)
+            : null;
+        const totalPnl = realized &&
+          isFiniteMetricValue(fxExchangeProfit) &&
+          isFiniteMetricValue(fxSwapTotal)
+            ? fxExchangeProfit + fxSwapTotal + realized.value
+            : null;
+        appendAccountMetric(
+          card,
+          "トータル損益",
+          totalPnl === null ? "算出不可" : formatSignedYen(totalPnl)
+        );
       } else {
         appendAccountMetric(card,"累積確定損益",
           formatSignedYen(latest.realizedPnlTotal));
