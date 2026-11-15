@@ -441,14 +441,22 @@ function registerFxSwapAllocationTests(context) {
   });
 
   runTest("14-6-8 配分不能状態を保存",() => {
-    const empty = makeData([]);
+    let empty = makeData([]);
+    empty = build(empty,0,"2026-10-31");
     const noPositions = calculateFxSwapRegistrationPreview(
       empty,"fx-swap-test","TRY/JPY","買",100,"2026-11-05"
     );
     assert(noPositions.status === "未配分" &&
       noPositions.reason === "配分対象なし",
       "配分対象がない場合は未配分・配分対象なしである必要があります。");
-    const nullSwap = makeData([makePosition("L-null",100000,null)]);
+    const savedEmpty = build(empty,100,"2026-11-05");
+    assert(savedEmpty.fxSwapLedger[1].status === "未配分" &&
+      savedEmpty.fxSwapLedger[1].reason === "配分対象なし" &&
+      savedEmpty.fxSwapLedger[1].total === 100,
+      "配分対象がない場合も累計額100円を未配分として保存する必要があります。");
+
+    let nullSwap = makeData([makePosition("L-null",100000,null)]);
+    nullSwap = build(nullSwap,0,"2026-10-31");
     const missing = calculateFxSwapRegistrationPreview(
       nullSwap,"fx-swap-test","TRY/JPY","買",100,"2026-11-05"
     );
@@ -456,8 +464,9 @@ function registerFxSwapAllocationTests(context) {
       missing.reason === "建玉スワップ未入力",
       "建玉スワップ未入力なら未配分にする必要があります。");
     const next = build(nullSwap,100,"2026-11-05");
-    assert(next.fxSwapLedger[0].status === "未配分" &&
-      next.fxSwapLedger[0].total === 100,
+    assert(next.fxSwapLedger[1].status === "未配分" &&
+      next.fxSwapLedger[1].reason === "建玉スワップ未入力" &&
+      next.fxSwapLedger[1].total === 100,
       "未配分でも今回の累計額を登録し、次回基準にする必要があります。");
   });
 
