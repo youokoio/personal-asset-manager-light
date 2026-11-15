@@ -635,14 +635,10 @@ function registerFxTests(context) {
   });
 
   runTest("S5a追補：建玉フォーム（新規）の描画",() => {
-    const hadAppData = Object.prototype.hasOwnProperty.call(
-      globalThis,
-      "appData"
-    );
-    const originalAppData = globalThis.appData;
+    const originalAppData = appData;
 
     try {
-      globalThis.appData = makeData([],[]);
+      appData = makeData([],[]);
 
       const form = renderFxPositionForm("fx-a","TRY/JPY","買");
 
@@ -671,20 +667,12 @@ function registerFxTests(context) {
       assert(quantityUnit && quantityUnit.value === "万通貨",
         "新規フォームの数量単位初期値が万通貨ではありません。");
     } finally {
-      if (hadAppData) {
-        globalThis.appData = originalAppData;
-      } else {
-        delete globalThis.appData;
-      }
+      appData = originalAppData;
     }
   });
 
   runTest("S5a追補：建玉フォーム（編集）の保存値描画",() => {
-    const hadAppData = Object.prototype.hasOwnProperty.call(
-      globalThis,
-      "appData"
-    );
-    const originalAppData = globalThis.appData;
+    const originalAppData = appData;
 
     try {
       const position = {
@@ -703,7 +691,7 @@ function registerFxTests(context) {
         updatedAt:"2026-11-07T00:00:00.000Z"
       };
 
-      globalThis.appData = makeData(
+      appData = makeData(
         [position],
         [makeRate("fx-a","GBP/JPY",3.15)]
       );
@@ -744,11 +732,7 @@ function registerFxTests(context) {
       assert(swap && swap.value === "1234",
         "編集フォームに保存済みの累計スワップが表示されていません。");
     } finally {
-      if (hadAppData) {
-        globalThis.appData = originalAppData;
-      } else {
-        delete globalThis.appData;
-      }
+      appData = originalAppData;
     }
   });
 
