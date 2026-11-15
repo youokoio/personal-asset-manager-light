@@ -426,12 +426,33 @@ function validateData(data) {
         throw new Error("FX集計スワップ登録の内容が正しくありません。");
       }
 
+      const allocationIds = new Set();
+      let allocationTotal = 0;
+
       for (const allocation of ledger.allocations) {
         if (!allocation ||
             typeof allocation.positionId !== "string" ||
-            !Number.isSafeInteger(allocation.amount)) {
+            !allocation.positionId ||
+            !Number.isSafeInteger(allocation.amount) ||
+            allocationIds.has(allocation.positionId)) {
           throw new Error("FXスワップ配分の内容が正しくありません。");
         }
+        allocationIds.add(allocation.positionId);
+        allocationTotal += allocation.amount;
+      }
+
+      if (!Number.isSafeInteger(ledger.baseline + ledger.increase) ||
+          ledger.total !== ledger.baseline + ledger.increase ||
+          (ledger.status === "基準" &&
+           (ledger.increase !== 0 ||
+            ledger.baseline !== ledger.total ||
+            ledger.allocations.length !== 0)) ||
+          (ledger.status === "配分済" &&
+           (!Number.isSafeInteger(allocationTotal) ||
+            allocationTotal !== ledger.increase)) ||
+          (ledger.status === "未配分" &&
+           ledger.allocations.length !== 0)) {
+        throw new Error("FXスワップ登録の配分合計または状態が正しくありません。");
       }
     } else if (Object.prototype.hasOwnProperty.call(ledger,"amount")) {
       if (!Number.isSafeInteger(ledger.amount) ||
