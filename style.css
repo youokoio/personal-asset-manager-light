@@ -796,6 +796,126 @@ button.chart-legend-button.chart-legend-hidden {
   overflow-wrap:anywhere;
 }
 
+/* ---------- S5d 建玉の一括編集 ---------- */
+.fx-edit-table-wrap {
+  width:100%;
+  max-width:100%;
+  overflow-x:auto;
+  overflow-y:visible;
+  margin-top:12px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:#fff;
+  -webkit-overflow-scrolling:touch;
+}
+
+.fx-edit-table {
+  width:max-content;
+  min-width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  font-size:12px;
+}
+
+.fx-edit-table th,
+.fx-edit-table td {
+  min-width:110px;
+  padding:7px;
+  border-right:1px solid var(--border);
+  border-bottom:1px solid var(--border);
+  background:#fff;
+  vertical-align:top;
+}
+
+.fx-edit-table th {
+  position:sticky;
+  top:0;
+  z-index:2;
+  background:#edf3f7;
+  color:var(--navy);
+  text-align:left;
+  white-space:nowrap;
+}
+
+.fx-edit-table tr:last-child td {
+  border-bottom:0;
+}
+
+.fx-edit-table td input,
+.fx-edit-table td select {
+  display:block;
+  width:100%;
+  min-width:100px;
+  min-height:38px;
+  padding:7px;
+  border:1px solid #cbd5de;
+  border-radius:6px;
+  background:#fff;
+  color:var(--text);
+  font-size:14px;
+}
+
+.fx-edit-table td input[type="date"] {
+  min-width:145px;
+}
+
+.fx-edit-table td input[type="number"] {
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+}
+
+.fx-edit-table .fx-edit-delete-cell {
+  min-width:72px;
+  text-align:center;
+}
+
+.fx-edit-table .fx-edit-delete-cell button {
+  white-space:nowrap;
+}
+
+.fx-edit-settled-toggle {
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin:12px 0;
+  font-size:13px;
+}
+
+.fx-edit-settled-toggle input {
+  width:18px;
+  height:18px;
+  margin:0;
+}
+
+.fx-edit-settled-row td {
+  background:#f5f7f9;
+  color:var(--muted);
+}
+
+.fx-edit-errors {
+  margin:10px 0;
+  padding:10px;
+  border:1px solid #e7baba;
+  border-radius:8px;
+  background:#fff0f0;
+  color:#9e2828;
+  font-size:12px;
+  line-height:1.5;
+}
+
+.fx-edit-cell-invalid {
+  border-color:var(--red) !important;
+  background:#fff5f5 !important;
+}
+
+.fx-edit-cell-error {
+  margin-top:4px;
+  color:var(--red);
+  font-size:11px;
+  line-height:1.4;
+  overflow-wrap:anywhere;
+}
+
 @media (max-width:370px) {
   .bottom-nav button { font-size:10px; }
   .metric-grid { gap:7px; }
