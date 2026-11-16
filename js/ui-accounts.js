@@ -129,6 +129,7 @@ function renderCategoryAccountList(category) {
             : "未入力",
           realizedBaseLabel
         );
+        appendFxRealizedWarnings(card,realized);
         appendAccountMetric(
           card,
           getAccountFieldLabel(account,"swapTotal","累計スワップ"),
@@ -304,6 +305,61 @@ function appendSnapshotInputField(
   form.appendChild(wrapper);
 }
 
+function updateFxDailyPnlHint(form,account) {
+  const dateInput = form.elements.namedItem("asOfDate");
+  const dailyInput = form.elements.namedItem("realizedPnlDaily");
+  const hint = form.querySelector(".fx-settled-pnl-hint");
+  const apply = form.querySelector('[data-action="apply-settled-pnl"]');
+  if (!dateInput || !dailyInput || !hint || !apply) return;
+  const result = getFxSettledPnlForDate(appData,account.id,dateInput.value);
+  if (!result) {
+    hint.textContent = "";
+    hint.classList.add("hidden");
+    apply.classList.add("hidden");
+    apply.disabled = true;
+    delete apply.dataset.value;
+    return;
+  }
+  hint.textContent = "同日の決済建玉合計：" + formatSignedYen(result.value) +
+    "（" + result.count + "件）";
+  hint.classList.remove("hidden");
+  apply.classList.remove("hidden");
+  apply.disabled = false;
+  apply.dataset.value = String(result.value);
+}
+function appendFxDailyPnlInputField(form,account,value) {
+  const wrapper = makeNumericField("その日の確定損益（円・任意）","realizedPnlDaily",value,{});
+  const hintRow = el("div","previous-value-row");
+  const hint = el("span","previous-value-text fx-settled-pnl-hint hidden");
+  const apply = makeButton("反映","apply-settled-pnl","secondary small");
+  apply.dataset.action = "apply-settled-pnl";
+  apply.disabled = true;
+  apply.classList.add("hidden");
+  apply.addEventListener("click",() => {
+    if (apply.dataset.value === undefined) return;
+    const input = form.elements.namedItem("realizedPnlDaily");
+    if (!input) return;
+    input.value = apply.dataset.value;
+    input.dispatchEvent(new Event("input",{bubbles:true}));
+    input.dispatchEvent(new Event("change",{bubbles:true}));
+  });
+  hintRow.append(hint,apply);
+  wrapper.appendChild(hintRow);
+  form.appendChild(wrapper);
+  updateFxDailyPnlHint(form,account);
+}
+function appendFxRealizedWarnings(container,realized) {
+  if (!realized || !Array.isArray(realized.warnings) || realized.warnings.length === 0) return;
+  for (const warning of realized.warnings) {
+    container.appendChild(el("div","help",
+      "確定損益の差異：" + formatDateWithWeekday(warning.date) +
+      " ／ 日次 " + formatSignedYen(warning.dailyPnl) +
+      " ／ 決済建玉合計 " + formatSignedYen(warning.settledPnl) +
+      " ／ 差 " + formatSignedYen(warning.difference)
+    ));
+  }
+}
+
 function getSnapshotFieldLabel(account,field,fallback) {
   return getAccountFieldLabel(account,field,fallback);
 }
@@ -456,10 +512,16 @@ function renderSnapshotForm(account) {
         {}
       );
 
+      appendFxDailyPnlInputField(
+        form,
+        account,
+        existing ? existing.realizedPnlDaily ?? "" : ""
+      );
+
       appendSnapshotInputField(
         form,
         account,
-        "累積確定損益（円・任意）",
+        "累積確定損益 基準値（初回・補正用）（円・任意）",
         "realizedPnlTotal",
         existing ? existing.realizedPnlTotal : "",
         {}
@@ -534,6 +596,7 @@ function renderSnapshotForm(account) {
 
   dateInput.addEventListener("change",() => {
     updateSnapshotPreviousValues(form,account);
+    if (isFx) updateFxDailyPnlHint(form,account);
   });
 
   form.addEventListener("submit",handleSnapshotSubmit);
@@ -721,9 +784,14 @@ function renderSnapshotRow(snapshot) {
              snapshot.principal !== undefined) {
     metaParts.push("元本 " + formatYen(snapshot.principal));
   }
+  if (snapshot.realizedPnlDaily !== null &&
+      snapshot.realizedPnlDaily !== undefined) {
+    metaParts.push("その日の確定損益 " +
+      formatSignedYen(snapshot.realizedPnlDaily));
+  }
   if (snapshot.realizedPnlTotal !== null &&
       snapshot.realizedPnlTotal !== undefined) {
-    metaParts.push("累積確定損益 " +
+    metaParts.push("累積確定損益 基準値 " +
       formatSignedYen(snapshot.realizedPnlTotal));
   }
   if (snapshot.swapTotal !== null && snapshot.swapTotal !== undefined) {
@@ -1191,6 +1259,7 @@ function renderAccountDetail() {
       baseLabel = "基準額未設定（決済損益のみ）";
     }
     realizedCard.appendChild(el("div","metric-sub",baseLabel));
+    appendFxRealizedWarnings(realizedCard,realized);
     app.appendChild(realizedCard);
   }
 
@@ -1281,6 +1350,9 @@ function handleSnapshotSubmit(event) {
     realizedPnlTotal:isBank
       ? null
       : toNumberOrNull(values.get("realizedPnlTotal")),
+    realizedPnlDaily:isFx
+      ? toNumberOrNull(values.get("realizedPnlDaily"))
+      : null,
     swapTotal:isFx
       ? toNumberOrNull(values.get("swapTotal"))
       : null,
