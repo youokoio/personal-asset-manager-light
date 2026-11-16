@@ -111,14 +111,44 @@ function renderDashboard() {
       appendHomeMetric(card,"トータル損益",
         formatSignedYen(item.totalPnl));
 
-      if (category === "fx" &&
-          item.realizedBaseUnsetAccountCount > 0) {
-        card.appendChild(el(
-          "div",
-          "help",
-          "累積確定損益の基準額・基準日が未設定の口座：" +
-            item.realizedBaseUnsetAccountCount + "口座"
-        ));
+      if (category === "fx") {
+        if (item.realizedBaseUnsetAccountCount > 0) {
+          card.appendChild(el(
+            "div",
+            "help",
+            "累積確定損益の基準額・基準日が未設定の口座：" +
+              item.realizedBaseUnsetAccountCount + "口座"
+          ));
+        }
+
+        const fxBaseSummaries = appData.accounts
+          .filter(account => getCategory(account) === "fx")
+          .map(account => {
+            const realized = getFxRealizedAt(
+              appData,
+              account.id,
+              localDateString()
+            );
+            let baseText = "基準未設定";
+
+            if (realized && realized.baseSource && realized.baseDate) {
+              baseText = realized.baseSource + " " +
+                formatDateWithWeekday(realized.baseDate) + " " +
+                formatSignedYen(realized.baseAmount);
+            } else if (realized && realized.baseUnset) {
+              baseText = "基準未設定（決済損益のみ）";
+            }
+
+            return account.name + "：" + baseText;
+          });
+
+        if (fxBaseSummaries.length > 0) {
+          card.appendChild(el(
+            "div",
+            "help",
+            "累積確定損益の使用基準：" + fxBaseSummaries.join("／")
+          ));
+        }
       }
     }
 
