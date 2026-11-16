@@ -3,7 +3,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S5f-v1.13";
+const APP_VERSION = "S5f-v2";
 const SPEC_VERSION = "v1.13";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
