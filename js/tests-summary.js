@@ -37,6 +37,51 @@ function registerSummaryTests(context) {
     assert(totals.bank.bankComparedAccountCount === 1,"銀行の比較対象口座数が正しくありません。");
   });
 
+  runTest("S5b追補：分類集計はnull履歴の前の有効な基準値を使う",() => {
+    const today = localDateString();
+    const baseDate = subtractCalendarDays(today,2);
+    const account = makeAccount("fx-realized-summary","架空FX口座","fx","fx");
+    const data = {
+      accounts:[account],
+      snapshots:[
+        makeSnapshot(
+          "fx-realized-base",
+          account.id,
+          baseDate,
+          baseDate + "T10:00:00.000Z",
+          1000000,
+          {
+            effectivePrincipal:800000,
+            pnl:100000,
+            realizedPnlTotal:1000
+          }
+        ),
+        makeSnapshot(
+          "fx-realized-null",
+          account.id,
+          today,
+          today + "T10:00:00.000Z",
+          1100000,
+          {
+            effectivePrincipal:850000,
+            pnl:150000,
+            realizedPnlTotal:null
+          }
+        )
+      ],
+      fxPositions:[]
+    };
+
+    const totals = calculateCategoryTotals(data);
+
+    assert(totals.fx.realizedPnlTotal === 1000,
+      "最新履歴がnullでも、過去の有効な基準値1,000円が集計されていません。");
+    assert(totals.fx.totalPnl === 1000,
+      "FX通算損益に累積確定損益1,000円が反映されていません。");
+    assert(totals.fx.counts.realizedPnlTotal === 1,
+      "累積確定損益の集計対象口座数が正しくありません。");
+  });
+
   runTest("30日前比較：10月1日と10月20日から11月10日",() => {
     const data = {
       accounts:[makeAccount("a","架空口座A","fx","fx")],
