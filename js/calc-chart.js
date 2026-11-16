@@ -196,29 +196,10 @@ function getChartTargetDates(data,accounts) {
 }
 
 function getChartFxRealizedPnlAtDate(data,account,date) {
-  const hasBase = isFiniteMetricValue(account.realizedBaseAmount) &&
-    isValidFxPositionAsOfDate(account.realizedBaseDate);
-  const baseDate = hasBase ? account.realizedBaseDate : null;
-  if (hasBase && date < baseDate) return null;
-  const fxPositions = Array.isArray(data.fxPositions)
-    ? data.fxPositions
-    : [];
-  const settledPositions = fxPositions.filter(position =>
-    position.accountId === account.id &&
-    position.status === "決済済" &&
-    typeof position.closeDate === "string" &&
-    position.closeDate <= date &&
-    (!hasBase || position.closeDate > baseDate) &&
-    isFiniteMetricValue(position.realizedPnl)
-  );
-
-  if (!hasBase && settledPositions.length === 0) return null;
-
-  return (hasBase ? account.realizedBaseAmount : 0) +
-    settledPositions.reduce(
-      (sum,position) => sum + position.realizedPnl,
-      0
-    );
+  const realized = getFxRealizedAt(data,account.id,date);
+  return realized && isFiniteMetricValue(realized.value)
+    ? realized.value
+    : null;
 }
 
 function createFxRealizedPnlChartSeries(data,targetInfo,targetValue,field) {
