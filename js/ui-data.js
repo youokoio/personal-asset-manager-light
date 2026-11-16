@@ -154,7 +154,11 @@ function appendDataCheckResults(container,items) {
   const list = el("ul","backup-key-list");
   for (const item of items) {
     const label = item.status === "ok" ? "OK" : item.status === "ng" ? "NG" : "情報";
-    list.appendChild(el("li","",label + "： " + item.name + " — " + item.detail));
+    list.appendChild(el(
+      "li",
+      item.status === "ng" ? "error" : "",
+      label + "： " + item.name + " — " + item.detail
+    ));
   }
   container.appendChild(list);
 }
@@ -408,7 +412,9 @@ function renderDataManagement() {
     ));
     const list = el("ul","backup-key-list");
     for (const item of dataTestResults) {
-      list.appendChild(el("li","",
+      list.appendChild(el(
+        "li",
+        item.success ? "" : "error",
         (item.success ? "合格" : "不合格") + "：" + item.name + " — " + item.message
       ));
     }
