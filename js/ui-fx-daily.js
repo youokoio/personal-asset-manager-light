@@ -1,9 +1,8 @@
-
 "use strict";
 
 /* ---------- FX日次入力 UI ---------- */
 
-function getFxDailyPairs(accountId) {
+function getFxDailyPairs(accountId,existing=null) {
   const pairs = new Set();
 
   for (const position of getFxOpenPositions(appData)) {
@@ -18,6 +17,10 @@ function getFxDailyPairs(accountId) {
     }
   }
 
+  if (existing && existing.rates && typeof existing.rates === "object") {
+    for (const pair of Object.keys(existing.rates)) pairs.add(pair);
+  }
+
   return [...pairs].sort((a,b) => a.localeCompare(b));
 }
 
@@ -29,7 +32,7 @@ function getFxDailyPreviousSnapshot(accountId,targetDate) {
     )
     .sort((a,b) =>
       b.asOfDate.localeCompare(a.asOfDate) ||
-      b.recordedAt.localeCompare(a.recordedAt)
+      String(b.recordedAt || "").localeCompare(String(a.recordedAt || ""))
     )[0] || null;
 }
 
@@ -95,7 +98,7 @@ function appendFxDailyPreviousValue(
 
   const note = el(
     "div",
-    "help",
+    "help fx-daily-previous",
     "前回値：" +
       (value === null ? "未入力" : formatYen(value))
   );
@@ -115,7 +118,7 @@ function renderFxDailyRateFields(account,existing,targetDate) {
   const section = el("section","fx-daily-rates");
   section.appendChild(el("h4","","通貨ペアごとの評価レート"));
 
-  const pairs = getFxDailyPairs(account.id);
+  const pairs = getFxDailyPairs(account.id,existing);
   const existingRates = existing && existing.rates &&
     typeof existing.rates === "object"
       ? existing.rates
@@ -191,6 +194,55 @@ function renderFxDailyRateFields(account,existing,targetDate) {
   return section;
 }
 
+function formatFxDailyWeekday(dateValue) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(dateValue || ""))) return "";
+  const parts = dateValue.split("-").map(Number);
+  const date = new Date(parts[0],parts[1]-1,parts[2]);
+  if (date.getFullYear() !== parts[0] || date.getMonth() !== parts[1]-1 || date.getDate() !== parts[2]) return "";
+  return ["日","月","火","水","木","金","土"][date.getDay()];
+}
+
+function updateFxDailyWeekday(form) {
+  const input = form.elements.namedItem("asOfDate");
+  const label = form.querySelector('[data-role="fx-daily-weekday"]');
+  if (label) label.textContent = formatFxDailyWeekday(input ? input.value : "") + "曜日";
+}
+
+function refreshFxDailyPreviousValues(form,account,targetDate) {
+  const mapping = [
+    ["swapTotal","swapTotal"],
+    ["effectivePrincipal","effectivePrincipal"],
+    ["pnl","pnl"],
+    ["realizedPnlDaily","realizedPnlDaily"],
+    ["value","value"]
+  ];
+  for (const [name,field] of mapping) {
+    const input = form.elements.namedItem(name);
+    if (!input) continue;
+    const wrapper = input.closest(".field");
+    if (!wrapper) continue;
+    const old = wrapper.querySelector(".fx-daily-previous");
+    if (old) old.remove();
+    appendFxDailyPreviousValue(wrapper,account.id,field,targetDate,name);
+  }
+}
+
+function updateFxDailySettlementNote(form,account,targetDate) {
+  const note = form.querySelector('[data-role="fx-daily-settlement-note"]');
+  if (!note) return;
+  const previous = getFxDailyPreviousSnapshot(account.id,targetDate);
+  const settled = appData.fxPositions.filter(position =>
+    position.accountId === account.id &&
+    position.status === "決済済" &&
+    previous &&
+    position.closeDate > previous.asOfDate &&
+    position.closeDate <= targetDate
+  );
+  note.textContent = settled.length
+    ? "前回履歴以降に決済した建玉があります。口座残高が変わっている可能性があります。"
+    : "";
+}
+
 function renderFxDailyInputForm(account) {
   const form = document.createElement("form");
   form.id = "fx-daily-input-form";
@@ -203,7 +255,11 @@ function renderFxDailyInputForm(account) {
     {type:"date",required:true}
   );
   dateField.classList.add("snapshot-date-field");
+  const weekday = el("span","help");
+  weekday.dataset.role = "fx-daily-weekday";
+  dateField.appendChild(weekday);
   form.appendChild(dateField);
+  updateFxDailyWeekday(form);
 
   form.appendChild(renderFxDailyRateFields(
     account,
@@ -337,35 +393,21 @@ function renderFxDailyInputForm(account) {
     }
   });
 
+  updateFxDailySettlementNote(form,account,localDateString());
+
   form.elements.namedItem("asOfDate").addEventListener(
     "change",
     () => {
       const date = form.elements.namedItem("asOfDate").value;
-      const previous = getFxDailyPreviousSnapshot(
-        account.id,
-        date
-      );
-
-      const note = form.querySelector(
-        '[data-role="fx-daily-settlement-note"]'
-      );
-
-      const settled = appData.fxPositions.filter(position =>
-        position.accountId === account.id &&
-        position.status === "決済済" &&
-        previous &&
-        position.closeDate > previous.asOfDate &&
-        position.closeDate <= date
-      );
-
-      note.textContent = settled.length
-        ? "前回履歴以降に決済した建玉があります。口座残高が変わっている可能性があります。"
-        : "";
+      updateFxDailyWeekday(form);
+      refreshFxDailyPreviousValues(form,account,date);
+      updateFxDailySettlementNote(form,account,date);
 
       const rateSection = form.querySelector(".fx-daily-rates");
+      const currentRates = readFxRatesFromForm(form);
       const replacement = renderFxDailyRateFields(
         account,
-        null,
+        {rates:currentRates},
         date
       );
       rateSection.replaceWith(replacement);
@@ -477,11 +519,31 @@ renderSnapshotForm = function(account) {
     ? dateInput.value
     : localDateString();
 
+  const weekday = el("span","help");
+  weekday.dataset.role = "fx-daily-weekday";
+  if (dateInput && dateInput.parentElement) dateInput.parentElement.appendChild(weekday);
+  updateFxDailyWeekday(form);
+
   form.appendChild(renderFxDailyRateFields(
     account,
     existing,
     targetDate
   ));
+
+  if (dateInput) {
+    dateInput.addEventListener("change",() => {
+      const currentRates = readFxRatesFromForm(form);
+      updateFxDailyWeekday(form);
+      const rateSection = form.querySelector(".fx-daily-rates");
+      if (rateSection) {
+        rateSection.replaceWith(renderFxDailyRateFields(
+          account,
+          {rates:currentRates},
+          dateInput.value
+        ));
+      }
+    });
+  }
 
   form.addEventListener("submit",event => {
     if (event.eventPhase !== Event.CAPTURING &&
@@ -541,6 +603,16 @@ function saveFxSnapshotHistoryForm(form,account) {
     return;
   }
 
+  const duplicate = nextData.snapshots.some(item =>
+    item.accountId === account.id &&
+    item.asOfDate === asOfDate &&
+    item.id !== (existing ? existing.id : null)
+  );
+
+  if (duplicate && !confirm("同じ口座・対象日の履歴があります。新しい履歴として保存しますか？")) {
+    return;
+  }
+
   const snapshot = {
     ...(existing || {}),
     id:editingSnapshotId || createId(),
@@ -548,7 +620,7 @@ function saveFxSnapshotHistoryForm(form,account) {
     asOfDate,
     recordedAt:now,
     value,
-    cash:null,
+    cash:existing ? existing.cash ?? null : null,
     pnl:toNumberOrNull(values.get("pnl")),
     principal:existing ? existing.principal ?? null : null,
     cumulativeInvested:existing
@@ -571,7 +643,12 @@ function saveFxSnapshotHistoryForm(form,account) {
     memo:String(values.get("memo") || "")
   };
 
-  nextData.snapshots.push(snapshot);
+  if (existing) {
+    const index = nextData.snapshots.findIndex(item => item.id === existing.id);
+    nextData.snapshots[index] = snapshot;
+  } else {
+    nextData.snapshots.push(snapshot);
+  }
   nextData.accounts.find(item =>
     item.id === account.id
   ).updatedAt = now;
