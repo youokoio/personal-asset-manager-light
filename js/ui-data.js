@@ -78,9 +78,10 @@ function runDataSelfDiagnosis(data,serviceWorkerRegistered) {
 
           if (totalField === "realizedPnlTotal" &&
               getCategory(account) === "fx") {
-            const realized = calculateFxAccountRealizedPnl(
+            const realized = getFxRealizedAt(
               data,
-              account.id
+              account.id,
+              localDateString()
             );
             if (!realized || !isFiniteMetricValue(realized.value)) continue;
             expectedTotal += realized.value;
