@@ -215,6 +215,7 @@ function createFxRealizedPnlChartSeries(data,targetInfo,targetValue,field) {
     if (isFiniteMetricValue(account.realizedBaseAmount) &&
         isValidFxPositionAsOfDate(account.realizedBaseDate)) {
       accountDates.push(account.realizedBaseDate);
+      dates.add(account.realizedBaseDate);
     }
 
     for (const snapshot of data.snapshots) {
