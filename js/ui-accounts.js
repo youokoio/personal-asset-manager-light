@@ -107,12 +107,27 @@ function renderCategoryAccountList(category) {
       );
 
       if (category === "fx") {
-        const realized = calculateFxAccountRealizedPnl(appData,account.id);
+        const realized = getFxRealizedAt(
+          appData,
+          account.id,
+          localDateString()
+        );
+        const realizedBaseLabel = realized && realized.baseSource &&
+          realized.baseDate
+            ? "基準：" + realized.baseSource + " " +
+              formatDateWithWeekday(realized.baseDate)
+            : realized && realized.baseUnset
+              ? "基準額未設定（決済損益のみ）"
+              : realized
+                ? "基準額未設定"
+                : "";
         appendAccountMetric(
           card,
           "累積確定損益",
-          realized ? formatSignedYen(realized.value) : "未計算",
-          realized && realized.baseUnset ? "基準額未設定" : ""
+          realized && isFiniteMetricValue(realized.value)
+            ? formatSignedYen(realized.value)
+            : "未入力",
+          realizedBaseLabel
         );
         appendAccountMetric(
           card,
@@ -438,6 +453,15 @@ function renderSnapshotForm(account) {
         getSnapshotFieldLabel(account,"swapTotal","累計スワップ") + "（円）",
         "swapTotal",
         existing ? existing.swapTotal : "",
+        {}
+      );
+
+      appendSnapshotInputField(
+        form,
+        account,
+        "累積確定損益（円・任意）",
+        "realizedPnlTotal",
+        existing ? existing.realizedPnlTotal : "",
         {}
       );
 
@@ -1139,6 +1163,37 @@ function renderAccountDetail() {
   ));
   app.appendChild(info);
 
+  if (account.type === "fx") {
+    const realized = getFxRealizedAt(
+      appData,
+      account.id,
+      localDateString()
+    );
+    const realizedCard = el("section","card");
+    realizedCard.appendChild(el(
+      "div",
+      "metric-label",
+      "累積確定損益"
+    ));
+    realizedCard.appendChild(el(
+      "div",
+      "metric-value",
+      realized && isFiniteMetricValue(realized.value)
+        ? formatSignedYen(realized.value)
+        : "未入力"
+    ));
+
+    let baseLabel = "基準額未設定";
+    if (realized && realized.baseSource && realized.baseDate) {
+      baseLabel = "基準：" + realized.baseSource + " " +
+        formatDateWithWeekday(realized.baseDate);
+    } else if (realized && realized.baseUnset) {
+      baseLabel = "基準額未設定（決済損益のみ）";
+    }
+    realizedCard.appendChild(el("div","metric-sub",baseLabel));
+    app.appendChild(realizedCard);
+  }
+
   const formCard = el("section","card");
   formCard.appendChild(renderSnapshotForm(account));
   app.appendChild(formCard);
@@ -1223,7 +1278,7 @@ function handleSnapshotSubmit(event) {
     effectivePrincipal:isBank
       ? null
       : toNumberOrNull(values.get("effectivePrincipal")),
-    realizedPnlTotal:isBank || isFx
+    realizedPnlTotal:isBank
       ? null
       : toNumberOrNull(values.get("realizedPnlTotal")),
     swapTotal:isFx
