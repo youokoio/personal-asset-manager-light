@@ -364,6 +364,7 @@ async function runTestsAndRender() {
     "./js/tests-chart.js",
     "./js/tests-holdings.js",
     "./js/tests-fx.js",
+    "./js/tests-fx-daily.js",
     "./js/tests.js"
   ];
 
