@@ -2,7 +2,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S5b追補-v1";
+const APP_VERSION = "S5b追補-v2";
 const SPEC_VERSION = "v1.12";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
@@ -598,7 +598,7 @@ function calculateCategoryTotals(data) {
     }
 
     if (category === "fx") {
-      const realized = calculateFxAccountRealizedPnl(data,account.id);
+      const realized = getFxRealizedAt(data,account.id,localDateString());
       if (realized && isFiniteMetricValue(realized.value)) {
         totals.realizedPnlTotal += realized.value;
         totals.counts.realizedPnlTotal += 1;
