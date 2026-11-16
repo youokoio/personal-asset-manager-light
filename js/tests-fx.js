@@ -1,3 +1,4 @@
+
 "use strict";
 
 function registerFxTests(context) {
@@ -586,7 +587,7 @@ function registerFxTests(context) {
     assert(validateFxPositionInput({...base,asOfDate:"2026-11-14"}) === null,
       "正しいデータ確認日を受け入れていません。");
     assert(validateFxPositionInput({...base,asOfDate:"2026-02-30"}) !== null,
-      "実在しないデータ確認日を拒否できていません。");
+      "実在しない日付を拒否できていません。");
   });
 
   runTest("S5a追補：旧7列CSVはデータ確認日nullで取り込む",() => {
@@ -877,6 +878,80 @@ function registerFxTests(context) {
       "マイナスの為替差損益が-26,208円ではありません。");
     assert(negativeResult.value === -26208,
       "マイナスの確定損益が-26,208円ではありません。");
+  });
+
+  runTest("S5e 13-3：決済入力の自動計算と手修正後の停止",() => {
+    const position = makePosition(
+      "close-ui-test",
+      "fx-a",
+      "TRY/JPY",
+      "買",
+      200000,
+      3.7,
+      310850
+    );
+    const form = renderFxSettlementForm(
+      "fx-a",
+      "TRY/JPY",
+      "買",
+      [position]
+    );
+    const check = form.elements.namedItem("settle_close-ui-test");
+    const quantityInput = form.elements.namedItem("quantity_close-ui-test");
+    const realizedInput = form.elements.namedItem("realizedPnl_close-ui-test");
+    const closeRateInput = form.elements.namedItem("closeRate_close-ui-test");
+
+    check.checked = true;
+    check.dispatchEvent(new Event("change",{bubbles:true}));
+    closeRateInput.value = "3.2";
+    closeRateInput.dispatchEvent(new Event("input",{bubbles:true}));
+
+    assert(realizedInput.value === "210850",
+      "決済レート3.20で確定損益210,850円を自動入力する必要があります。");
+
+    quantityInput.value = "100000";
+    quantityInput.dispatchEvent(new Event("input",{bubbles:true}));
+    assert(realizedInput.value === "105425",
+      "数量を100,000通貨に変えると按分後の105,425円へ再計算する必要があります。");
+
+    realizedInput.value = "123456";
+    realizedInput.dispatchEvent(new Event("input",{bubbles:true}));
+    quantityInput.value = "150000";
+    quantityInput.dispatchEvent(new Event("input",{bubbles:true}));
+
+    assert(realizedInput.value === "123456",
+      "確定損益を手修正した後は自動更新してはいけません。");
+  });
+
+  runTest("S5e 13-3：決済入力でスワップ未入力の注記を表示",() => {
+    const position = makePosition(
+      "close-ui-no-swap",
+      "fx-a",
+      "USD/JPY",
+      "買",
+      100000,
+      150,
+      null
+    );
+    const form = renderFxSettlementForm(
+      "fx-a",
+      "USD/JPY",
+      "買",
+      [position]
+    );
+    const check = form.elements.namedItem("settle_close-ui-no-swap");
+    const realizedInput = form.elements.namedItem("realizedPnl_close-ui-no-swap");
+    const closeRateInput = form.elements.namedItem("closeRate_close-ui-no-swap");
+
+    check.checked = true;
+    check.dispatchEvent(new Event("change",{bubbles:true}));
+    closeRateInput.value = "155";
+    closeRateInput.dispatchEvent(new Event("input",{bubbles:true}));
+
+    assert(realizedInput.value === "500000",
+      "スワップ未入力時も為替損益500,000円を自動入力する必要があります。");
+    assert(form.textContent.includes("スワップ未入力のため含まない"),
+      "スワップ未入力の注記を表示する必要があります。");
   });
 
 }
