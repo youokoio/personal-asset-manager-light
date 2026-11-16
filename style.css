@@ -269,6 +269,9 @@ button.header-menu-button {
   font-size:12px;
   overflow-wrap:anywhere;
 }
+.backup-key-list li.error {
+  color:#9e2828;
+}
 
 /* ---------- S1d ホーム・分類別一覧 ---------- */
 .category-card-title {
