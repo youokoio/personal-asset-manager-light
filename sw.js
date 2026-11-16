@@ -1,6 +1,7 @@
+
 "use strict";
 
-const CACHE_NAME = "pam2-s5e-prep-v1";
+const CACHE_NAME = "pam2-s5e-v1.13";
 const APP_FILES = [
   "./index.html",
   "./style.css",
