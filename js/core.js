@@ -2,7 +2,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S5b追補-v3";
+const APP_VERSION = "S5b追補-v4";
 const SPEC_VERSION = "v1.12";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
