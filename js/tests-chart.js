@@ -3,6 +3,91 @@
 function registerChartTests(context) {
   const {assert,runTest,makeAccount,makeSnapshot} = context;
 
+  runTest("S5b追補：FX累積確定損益グラフは履歴基準値と決済日を反映",() => {
+    const account = makeAccount(
+      "chart-fx-realized",
+      "架空FX口座",
+      "fx",
+      "fx"
+    );
+    const data = {
+      accounts:[account],
+      snapshots:[
+        makeSnapshot(
+          "chart-fx-realized-base-old",
+          account.id,
+          "2026-10-31",
+          "2026-10-31T10:00:00.000Z",
+          1000000,
+          {realizedPnlTotal:1000000}
+        ),
+        makeSnapshot(
+          "chart-fx-realized-base-new",
+          account.id,
+          "2026-11-10",
+          "2026-11-10T10:00:00.000Z",
+          1100000,
+          {realizedPnlTotal:1080000}
+        ),
+        makeSnapshot(
+          "chart-fx-realized-null",
+          account.id,
+          "2026-11-30",
+          "2026-11-30T10:00:00.000Z",
+          1200000,
+          {realizedPnlTotal:null}
+        )
+      ],
+      fxPositions:[
+        {
+          id:"chart-fx-settlement-before",
+          accountId:account.id,
+          status:"決済済",
+          closeDate:"2026-11-05",
+          realizedPnl:80000
+        },
+        {
+          id:"chart-fx-settlement-after",
+          accountId:account.id,
+          status:"決済済",
+          closeDate:"2026-11-20",
+          realizedPnl:-30000
+        },
+        {
+          id:"chart-fx-settlement-later",
+          accountId:account.id,
+          status:"決済済",
+          closeDate:"2026-12-05",
+          realizedPnl:10000
+        }
+      ]
+    };
+
+    const result = createChartSeries(
+      data,
+      "account:" + account.id,
+      "realizedPnlTotal"
+    );
+
+    assert(result.points.length === 5,
+      "履歴対象日と基準日後の決済日を合わせた5点が必要です。");
+
+    const expected = [
+      {date:"2026-10-31",value:1000000},
+      {date:"2026-11-10",value:1080000},
+      {date:"2026-11-20",value:1050000},
+      {date:"2026-11-30",value:1050000},
+      {date:"2026-12-05",value:1060000}
+    ];
+
+    for (let i = 0; i < expected.length; i += 1) {
+      assert(result.points[i].date === expected[i].date,
+        "グラフの日付が正しくありません：" + expected[i].date);
+      assert(result.points[i].value === expected[i].value,
+        "グラフの累積確定損益が正しくありません：" + expected[i].date);
+    }
+  });
+
   /* ---------- S8b 年利換算テスト ---------- */
 
   runTest("S8b：仕様書11-5の年利換算",() => {
