@@ -1,7 +1,6 @@
-
 "use strict";
 
-const CACHE_NAME = "pam2-s5e-v1.13";
+const CACHE_NAME = "pam2-s5f-v1.13";
 const APP_FILES = [
   "./index.html",
   "./style.css",
@@ -10,6 +9,7 @@ const APP_FILES = [
   "./js/core.js",
   "./js/storage.js",
   "./js/calc-fx.js",
+  "./js/calc-fx-daily.js",
   "./js/calc-fx-settlement.js",
   "./js/calc-fx-swap.js",
   "./js/calc-fx-realized.js",
@@ -20,6 +20,7 @@ const APP_FILES = [
   "./js/ui-home.js",
   "./js/ui-accounts.js",
   "./js/ui-fx.js",
+  "./js/ui-fx-daily.js",
   "./js/ui-chart.js",
   "./js/ui-data.js",
   "./js/ui-bulk.js",
@@ -32,6 +33,7 @@ const APP_FILES = [
   "./js/tests-chart.js",
   "./js/tests-holdings.js",
   "./js/tests-fx.js",
+  "./js/tests-fx-daily.js",
   "./js/tests.js"
 ];
 
