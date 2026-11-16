@@ -1,3 +1,4 @@
+
 "use strict";
 
 /* ---------- ホーム ---------- */
@@ -121,6 +122,7 @@ function renderDashboard() {
           ));
         }
 
+        const fxRealizedWarnings = [];
         const fxBaseSummaries = appData.accounts
           .filter(account => getCategory(account) === "fx")
           .map(account => {
@@ -129,6 +131,16 @@ function renderDashboard() {
               account.id,
               localDateString()
             );
+
+            if (realized && Array.isArray(realized.warnings)) {
+              for (const warning of realized.warnings) {
+                fxRealizedWarnings.push({
+                  accountName:account.name,
+                  warning
+                });
+              }
+            }
+
             let baseText = "基準未設定";
 
             if (realized && realized.baseSource && realized.baseDate) {
@@ -147,6 +159,16 @@ function renderDashboard() {
             "div",
             "help",
             "累積確定損益の使用基準：" + fxBaseSummaries.join("／")
+          ));
+        }
+
+        for (const item of fxRealizedWarnings) {
+          card.appendChild(el(
+            "div",
+            "warning",
+            item.accountName + "：" +
+              item.warning.message + " 差額：" +
+              formatSignedYen(item.warning.difference)
           ));
         }
       }
