@@ -237,6 +237,101 @@ function registerFxDailyTests(context) {
       "配列形式のratesを拒否する必要があります。");
   });
 
+  runTest("S5f 13-3：FX日次入力・履歴フォーム描画",() => {
+    const originalData = appData;
+    const originalEditingId = editingSnapshotId;
+
+    try {
+      const accountId = "fx-daily-render";
+      const account = makeAccount(
+        accountId,
+        "架空FX口座",
+        "fx",
+        "fx"
+      );
+      const existingSnapshot = {
+        id:"fx-daily-render-snapshot",
+        accountId,
+        asOfDate:"2026-11-13",
+        recordedAt:"2026-11-13T10:00:00.000Z",
+        value:100000,
+        effectivePrincipal:80000,
+        pnl:10000,
+        swapTotal:10000,
+        realizedPnlDaily:null,
+        cash:5000,
+        rates:null,
+        memo:""
+      };
+
+      appData = {
+        accounts:[account],
+        snapshots:[existingSnapshot],
+        fxPositions:[{
+          id:"fx-daily-render-position",
+          accountId,
+          pair:"TRY/JPY",
+          side:"買",
+          quantity:1000000,
+          openRate:3.167,
+          swap:0,
+          status:"保有中"
+        }],
+        fxRates:[{
+          id:"fx-daily-render-rate",
+          accountId,
+          pair:"TRY/JPY",
+          rate:3.2,
+          asOfDate:"2026-11-13"
+        }],
+        fxSwapLedger:[]
+      };
+      editingSnapshotId = null;
+
+      const dailyForm = renderFxDailyInputForm(account);
+      assert(
+        dailyForm.querySelector('[name="asOfDate"]') !== null,
+        "日次入力フォームに対象日欄が必要です。"
+      );
+      assert(
+        dailyForm.querySelector(".fx-daily-rates") !== null,
+        "日次入力フォームに評価レート欄が必要です。"
+      );
+      assert(
+        dailyForm.querySelector('[data-role="fx-daily-weekday"]') !== null,
+        "日次入力フォームに曜日表示が必要です。"
+      );
+      assert(
+        dailyForm.querySelector('[name="value"]') !== null,
+        "日次入力フォームに総資産欄が必要です。"
+      );
+
+      const newHistoryForm = renderSnapshotForm(account);
+      assert(
+        newHistoryForm.querySelector("h3").textContent === "評価額を追加",
+        "新規履歴フォームを描画できる必要があります。"
+      );
+      assert(
+        newHistoryForm.querySelector(".fx-daily-rates") !== null,
+        "新規履歴フォームに評価レート欄が必要です。"
+      );
+
+      editingSnapshotId = existingSnapshot.id;
+      const editHistoryForm = renderSnapshotForm(account);
+      assert(
+        editHistoryForm.querySelector("h3").textContent === "履歴を編集",
+        "履歴編集フォームを描画できる必要があります。"
+      );
+      assert(
+        editHistoryForm.querySelector(".fx-daily-rates") !== null,
+        "履歴編集フォームに評価レート欄が必要です。"
+      );
+    } finally {
+      appData = originalData;
+      editingSnapshotId = originalEditingId;
+    }
+  });
+
   runTest("S5f D：過去の日付ではfxRatesを更新しない",() => {
     const accountId = "fx-daily-test";
     const data = makeDailyData({
