@@ -204,19 +204,47 @@ function getChartFxRealizedPnlAtDate(data,account,date) {
 
 function createFxRealizedPnlChartSeries(data,targetInfo,targetValue,field) {
   const dates = new Set(getChartTargetDates(data,targetInfo.accounts));
+  const fxPositions = Array.isArray(data.fxPositions)
+    ? data.fxPositions
+    : [];
 
   for (const account of targetInfo.accounts) {
     if (account.type !== "fx") continue;
+
+    const accountDates = [];
     if (isFiniteMetricValue(account.realizedBaseAmount) &&
         isValidFxPositionAsOfDate(account.realizedBaseDate)) {
-      dates.add(account.realizedBaseDate);
+      accountDates.push(account.realizedBaseDate);
     }
-    for (const position of (Array.isArray(data.fxPositions)
-      ? data.fxPositions
-      : [])) {
-      if (position.accountId === account.id &&
-          position.status === "決済済" &&
-          isValidFxPositionAsOfDate(position.closeDate)) {
+
+    for (const snapshot of data.snapshots) {
+      if (snapshot.accountId === account.id &&
+          isValidFxPositionAsOfDate(snapshot.asOfDate)) {
+        accountDates.push(snapshot.asOfDate);
+      }
+    }
+
+    const settledPositions = fxPositions.filter(position =>
+      position.accountId === account.id &&
+      position.status === "決済済" &&
+      isValidFxPositionAsOfDate(position.closeDate)
+    );
+
+    for (const position of settledPositions) {
+      accountDates.push(position.closeDate);
+    }
+
+    accountDates.sort();
+    const latestKnownDate = accountDates[accountDates.length - 1] || null;
+    const latestRealized = latestKnownDate
+      ? getFxRealizedAt(data,account.id,latestKnownDate)
+      : null;
+    const latestBaseDate = latestRealized
+      ? latestRealized.baseDate
+      : null;
+
+    for (const position of settledPositions) {
+      if (!latestBaseDate || position.closeDate > latestBaseDate) {
         dates.add(position.closeDate);
       }
     }
