@@ -220,6 +220,7 @@ function validateData(data) {
     "effectivePrincipal",
     "pnl",
     "realizedPnlTotal",
+    "realizedPnlDaily",
     "cash",
     "swapTotal",
     "requiredMargin",
