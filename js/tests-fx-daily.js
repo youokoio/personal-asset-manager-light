@@ -1,4 +1,3 @@
-
 "use strict";
 
 function registerFxDailyTests(context) {
@@ -44,6 +43,14 @@ function registerFxDailyTests(context) {
     };
   }
 
+  function assertNear(actual,expected,message) {
+    assert(
+      Number.isFinite(actual) &&
+      Math.abs(actual - expected) < 0.0000001,
+      message
+    );
+  }
+
   runTest("S5f B：LIGHT FXの総資産の目安",() => {
     const accountId = "fx-daily-test";
     const data = makeDailyData({
@@ -67,9 +74,9 @@ function registerFxDailyTests(context) {
       6143654
     );
 
-    assert(result.exchangeProfit === -2376320,
+    assertNear(result.exchangeProfit,-2376320,
       "為替差益は-2,376,320円である必要があります。");
-    assert(result.value === 5098791,
+    assertNear(result.value,5098791,
       "総資産の目安は5,098,791円である必要があります。");
   });
 
@@ -96,9 +103,9 @@ function registerFxDailyTests(context) {
       1411838
     );
 
-    assert(result.exchangeProfit === 896000,
+    assertNear(result.exchangeProfit,896000,
       "為替差益は896,000円である必要があります。");
-    assert(result.value === 2584077,
+    assertNear(result.value,2584077,
       "総資産の目安は2,584,077円である必要があります。");
   });
 
@@ -125,9 +132,9 @@ function registerFxDailyTests(context) {
       890505
     );
 
-    assert(result.exchangeProfit === 924600,
+    assertNear(result.exchangeProfit,924600,
       "為替差益は924,600円である必要があります。");
-    assert(result.value === 2526224,
+    assertNear(result.value,2526224,
       "総資産の目安は2,526,224円である必要があります。");
   });
 
