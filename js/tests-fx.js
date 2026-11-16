@@ -745,4 +745,138 @@ function registerFxTests(context) {
     }
   });
 
+  runTest("S5e：買い建玉の決済損益は為替差損益とスワップの合計",() => {
+    const position = makePosition(
+      "close-buy",
+      "fx-a",
+      "TRY/JPY",
+      "買",
+      200000,
+      3.70,
+      310850
+    );
+
+    const result = calcCloseRealized(position,200000,3.20);
+
+    assert(result.exchangePnl === -100000,
+      "為替差損益が-100,000円ではありません。");
+    assert(result.swapPnl === 310850,
+      "決済スワップが310,850円ではありません。");
+    assert(result.value === 210850,
+      "確定損益が210,850円ではありません。");
+    assert(result.swapMissing === false,
+      "スワップ入力済みなのに未入力扱いになっています。");
+  });
+
+  runTest("S5e：売り建玉の決済損益を正しく計算",() => {
+    const position = makePosition(
+      "close-sell",
+      "fx-a",
+      "USD/JPY",
+      "売",
+      100000,
+      150,
+      -2000
+    );
+
+    const result = calcCloseRealized(position,100000,148);
+
+    assert(result.exchangePnl === 200000,
+      "為替差損益が200,000円ではありません。");
+    assert(result.swapPnl === -2000,
+      "決済スワップが-2,000円ではありません。");
+    assert(result.value === 198000,
+      "確定損益が198,000円ではありません。");
+  });
+
+  runTest("S5e：一部決済のスワップを数量按分して切り捨て",() => {
+    const position = makePosition(
+      "close-partial",
+      "fx-a",
+      "USD/JPY",
+      "買",
+      200000,
+      150,
+      7467
+    );
+
+    const result = calcCloseRealized(position,50000,155);
+
+    assert(result.exchangePnl === 250000,
+      "為替差損益が250,000円ではありません。");
+    assert(result.swapPnl === 1866,
+      "按分スワップが1,866円ではありません。");
+    assert(result.value === 251866,
+      "確定損益が251,866円ではありません。");
+  });
+
+  runTest("S5e：スワップ未入力時は為替差損益のみ計算",() => {
+    const position = makePosition(
+      "close-no-swap",
+      "fx-a",
+      "USD/JPY",
+      "買",
+      100000,
+      150,
+      null
+    );
+
+    const result = calcCloseRealized(position,100000,155);
+
+    assert(result.exchangePnl === 500000,
+      "為替差損益が500,000円ではありません。");
+    assert(result.swapPnl === 0,
+      "スワップ未入力時のスワップ損益が0ではありません。");
+    assert(result.value === 500000,
+      "確定損益が500,000円ではありません。");
+    assert(result.swapMissing === true,
+      "スワップ未入力を検出できていません。");
+    assert(result.notice === "スワップ未入力のため含まない",
+      "スワップ未入力の注意文が正しくありません。");
+  });
+
+  runTest("S5e：小数の為替差損益は0方向へ切り捨て",() => {
+    const buyPosition = makePosition(
+      "close-fraction-buy",
+      "fx-a",
+      "USD/JPY",
+      "買",
+      12345,
+      150.5,
+      0
+    );
+
+    const buyResult = calcCloseRealized(
+      buyPosition,
+      12345,
+      155.123
+    );
+
+    assert(buyResult.exchangePnl === 57070,
+      "買いの為替差損益が57,070円ではありません。");
+    assert(buyResult.value === 57070,
+      "買いの確定損益が57,070円ではありません。");
+
+    const sellDirectionPosition = makePosition(
+      "close-fraction-negative",
+      "fx-a",
+      "USD/JPY",
+      "買",
+      12345,
+      150.5,
+      0
+    );
+
+    const negativeResult = calcCloseRealized(
+      sellDirectionPosition,
+      12345,
+      148.377
+    );
+
+    assert(negativeResult.exchangePnl === -26208,
+      "マイナスの為替差損益が-26,208円ではありません。");
+    assert(negativeResult.value === -26208,
+      "マイナスの確定損益が-26,208円ではありません。");
+  });
+
 }
