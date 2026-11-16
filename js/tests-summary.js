@@ -82,6 +82,317 @@ function registerSummaryTests(context) {
       "累積確定損益の集計対象口座数が正しくありません。");
   });
 
+  runTest("S5e A1・A6：日次確定損益を優先し、決済損益との差を警告",() => {
+    const account = makeAccount("fx-daily-a1","架空FX口座A","fx","fx");
+    const data = {
+      accounts:[account],
+      snapshots:[
+        makeSnapshot(
+          "daily-base",
+          account.id,
+          "2026-10-31",
+          "2026-10-31T10:00:00.000Z",
+          0,
+          {realizedPnlTotal:1000000}
+        ),
+        makeSnapshot(
+          "daily-1120",
+          account.id,
+          "2026-11-20",
+          "2026-11-20T10:00:00.000Z",
+          0,
+          {realizedPnlDaily:-25000}
+        )
+      ],
+      fxPositions:[
+        {
+          accountId:account.id,status:"決済済",
+          closeDate:"2026-10-31",realizedPnl:50000
+        },
+        {
+          accountId:account.id,status:"決済済",
+          closeDate:"2026-11-10",realizedPnl:80000
+        },
+        {
+          accountId:account.id,status:"決済済",
+          closeDate:"2026-11-20",realizedPnl:-30000
+        },
+        {
+          accountId:account.id,status:"決済済",
+          closeDate:"2026-12-05",realizedPnl:10000
+        }
+      ]
+    };
+
+    const resultAt1120 = getFxRealizedAt(data,account.id,"2026-11-20");
+    const resultAt1130 = getFxRealizedAt(data,account.id,"2026-11-30");
+
+    assert(resultAt1120.value === 1055000,
+      "1,000,000＋80,000−25,000＝1,055,000円ではありません。");
+    assert(resultAt1130.value === 1055000,
+      "11月30日の累積確定損益が1,055,000円ではありません。");
+    assert(resultAt1120.warnings.length === 1,
+      "同日の決済損益との差の警告が1件ありません。");
+    assert(resultAt1120.warnings[0].difference === 5000,
+      "日次−25,000円と決済合計−30,000円の差が5,000円ではありません。");
+  });
+
+  runTest("S5e A2：日次確定損益がない日は決済損益を採用",() => {
+    const account = makeAccount("fx-daily-a2","架空FX口座A","fx","fx");
+    const data = {
+      accounts:[account],
+      snapshots:[
+        makeSnapshot(
+          "daily-base-a2",
+          account.id,
+          "2026-10-31",
+          "2026-10-31T10:00:00.000Z",
+          0,
+          {realizedPnlTotal:1000000}
+        )
+      ],
+      fxPositions:[
+        {
+          accountId:account.id,status:"決済済",
+          closeDate:"2026-11-10",realizedPnl:80000
+        }
+      ]
+    };
+
+    const result = getFxRealizedAt(data,account.id,"2026-11-15");
+
+    assert(result.value === 1080000,
+      "1,000,000＋80,000＝1,080,000円ではありません。");
+  });
+
+  runTest("S5e A3：基準日と同日の確定損益は加算しない",() => {
+    const account = makeAccount("fx-daily-a3","架空FX口座A","fx","fx");
+    const data = {
+      accounts:[account],
+      snapshots:[
+        makeSnapshot(
+          "daily-base-a3",
+          account.id,
+          "2026-10-31",
+          "2026-10-31T10:00:00.000Z",
+          0,
+          {
+            realizedPnlTotal:1000000,
+            realizedPnlDaily:20000
+          }
+        )
+      ],
+      fxPositions:[]
+    };
+
+    const result = getFxRealizedAt(data,account.id,"2026-10-31");
+
+    assert(result.value === 1000000,
+      "基準日と同日の20,000円を加算せず、1,000,000円である必要があります。");
+  });
+
+  runTest("S5e A4：決済のない日の日次確定損益を加算",() => {
+    const account = makeAccount("fx-daily-a4","架空FX口座A","fx","fx");
+    const data = {
+      accounts:[account],
+      snapshots:[
+        makeSnapshot(
+          "daily-base-a4",
+          account.id,
+          "2026-10-31",
+          "2026-10-31T10:00:00.000Z",
+          0,
+          {realizedPnlTotal:1000000}
+        ),
+        makeSnapshot(
+          "daily-1112",
+          account.id,
+          "2026-11-12",
+          "2026-11-12T10:00:00.000Z",
+          0,
+          {realizedPnlDaily:10000}
+        )
+      ],
+      fxPositions:[
+        {
+          accountId:account.id,status:"決済済",
+          closeDate:"2026-11-10",realizedPnl:80000
+        }
+      ]
+    };
+
+    const result = getFxRealizedAt(data,account.id,"2026-11-12");
+
+    assert(result.value === 1090000,
+      "1,000,000＋80,000＋10,000＝1,090,000円ではありません。");
+  });
+
+  runTest("S5e A5：日次確定損益のnullと0を区別",() => {
+    const account = makeAccount("fx-daily-a5","架空FX口座A","fx","fx");
+
+    function createData(dailyValue) {
+      return {
+        accounts:[account],
+        snapshots:[
+          makeSnapshot(
+            "daily-base-a5",
+            account.id,
+            "2026-10-31",
+            "2026-10-31T10:00:00.000Z",
+            0,
+            {realizedPnlTotal:1000000}
+          ),
+          makeSnapshot(
+            "daily-1110-a5",
+            account.id,
+            "2026-11-10",
+            "2026-11-10T10:00:00.000Z",
+            0,
+            {realizedPnlDaily:dailyValue}
+          )
+        ],
+        fxPositions:[
+          {
+            accountId:account.id,status:"決済済",
+            closeDate:"2026-11-10",realizedPnl:80000
+          }
+        ]
+      };
+    }
+
+    const nullResult = getFxRealizedAt(
+      createData(null),
+      account.id,
+      "2026-11-15"
+    );
+    const zeroResult = getFxRealizedAt(
+      createData(0),
+      account.id,
+      "2026-11-15"
+    );
+
+    assert(nullResult.value === 1080000,
+      "日次がnullなら決済損益80,000円を加算する必要があります。");
+    assert(zeroResult.value === 1000000,
+      "日次が0なら決済損益80,000円を加算しない必要があります。");
+  });
+
+  runTest("S5e A7：FX通算損益に日次確定損益を反映",() => {
+    const today = localDateString();
+    const baseDate = subtractCalendarDays(today,3);
+    const settlementDate = subtractCalendarDays(today,2);
+    const dailyDate = subtractCalendarDays(today,1);
+    const account = makeAccount("fx-daily-total","架空FX口座A","fx","fx");
+
+    const data = {
+      accounts:[account],
+      snapshots:[
+        makeSnapshot(
+          "daily-total-base",
+          account.id,
+          baseDate,
+          baseDate + "T10:00:00.000Z",
+          0,
+          {realizedPnlTotal:1000000}
+        ),
+        makeSnapshot(
+          "daily-total-current",
+          account.id,
+          dailyDate,
+          dailyDate + "T10:00:00.000Z",
+          0,
+          {
+            pnl:-150000,
+            swapTotal:320000,
+            realizedPnlDaily:-25000
+          }
+        )
+      ],
+      fxPositions:[
+        {
+          id:"daily-total-p2",
+          accountId:account.id,
+          pair:"USD/JPY",
+          side:"買",
+          quantity:10000,
+          openDate:baseDate,
+          openRate:150,
+          swap:0,
+          status:"決済済",
+          closeDate:settlementDate,
+          realizedPnl:80000
+        },
+        {
+          id:"daily-total-p3",
+          accountId:account.id,
+          pair:"USD/JPY",
+          side:"買",
+          quantity:10000,
+          openDate:baseDate,
+          openRate:150,
+          swap:0,
+          status:"決済済",
+          closeDate:dailyDate,
+          realizedPnl:-30000
+        },
+        {
+          id:"daily-total-open",
+          accountId:account.id,
+          pair:"USD/JPY",
+          side:"買",
+          quantity:100000,
+          openDate:baseDate,
+          openRate:151.5,
+          swap:320000,
+          status:"保有中",
+          closeDate:null,
+          realizedPnl:null
+        }
+      ],
+      fxRates:[
+        {
+          id:"daily-total-rate",
+          accountId:account.id,
+          pair:"USD/JPY",
+          rate:150,
+          asOfDate:today
+        }
+      ]
+    };
+
+    const totals = calculateCategoryTotals(data);
+
+    assert(totals.fx.realizedPnlTotal === 1055000,
+      "累積確定損益が1,055,000円ではありません。");
+    assert(totals.fx.totalPnl === 1225000,
+      "−150,000＋320,000＋1,055,000＝1,225,000円ではありません。");
+  });
+
+  runTest("S5e A8：基準なしでも日次確定損益があれば算出",() => {
+    const account = makeAccount("fx-daily-a8","架空FX口座A","fx","fx");
+    const data = {
+      accounts:[account],
+      snapshots:[
+        makeSnapshot(
+          "daily-only-a8",
+          account.id,
+          "2026-11-12",
+          "2026-11-12T10:00:00.000Z",
+          0,
+          {realizedPnlDaily:10000}
+        )
+      ],
+      fxPositions:[]
+    };
+
+    const result = getFxRealizedAt(data,account.id,"2026-11-12");
+
+    assert(result.value === 10000,
+      "基準なしの日次確定損益10,000円が算出されていません。");
+    assert(result.baseUnset === true,
+      "基準額未設定の状態が返されていません。");
+  });
+
   runTest("30日前比較：10月1日と10月20日から11月10日",() => {
     const data = {
       accounts:[makeAccount("a","架空口座A","fx","fx")],
