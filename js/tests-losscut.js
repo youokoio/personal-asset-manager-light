@@ -325,57 +325,102 @@ function registerLosscutTests(context) {
       "計算前後で入力データが変わってはいけません。");
   });
 
-  runTest("S6② 画面：4口座のロスカットブロック描画",() => {
-    const fixtures = [
-      makeLossCutData({
-        accountId:"fx-render-normal",
-        accountName:"架空口座A"
-      }),
-      makeLossCutData({
-        accountId:"fx-render-no-rate",
-        accountName:"架空口座B",
-        rates:[{
-          accountId:"fx-render-no-rate",
-          pair:"USD/JPY",
-          rate:null,
-          asOfDate:null
-        }]
-      }),
-      makeLossCutData({
-        accountId:"fx-render-no-position",
-        accountName:"架空口座C",
-        positions:[],
-        rates:[]
-      }),
-      makeLossCutData({
-        accountId:"fx-render-no-history",
-        accountName:"架空口座D",
-        snapshots:[],
-        requiredMargin:null
-      })
+  runTest("S6② 画面：4口座×3種類のデータでロスカットブロック描画",() => {
+    const accounts = [
+      {id:"fx-render-light",name:"LIGHT FX",marginRatePct:4,lossCutRatio:100},
+      {id:"fx-render-central",name:"セントラル短資FX",marginRatePct:5,lossCutRatio:100},
+      {id:"fx-render-click",name:"クリック365",marginRatePct:4,lossCutRatio:50},
+      {id:"fx-render-lion",name:"LION FX",marginRatePct:4,lossCutRatio:100}
+    ];
+    const cases = [
+      {
+        label:"通常データ",
+        build:account => makeLossCutData({
+          accountId:account.id,
+          accountName:account.name,
+          marginRatePct:account.marginRatePct,
+          lossCutRatio:account.lossCutRatio
+        })
+      },
+      {
+        label:"初期データ（建玉なし）",
+        build:account => makeLossCutData({
+          accountId:account.id,
+          accountName:account.name,
+          marginRatePct:account.marginRatePct,
+          lossCutRatio:account.lossCutRatio,
+          positions:[],
+          rates:[],
+          snapshots:[]
+        })
+      },
+      {
+        label:"欠けの多いデータ",
+        build:account => makeLossCutData({
+          accountId:account.id,
+          accountName:account.name,
+          marginRatePct:null,
+          lossCutRatio:null,
+          positions:[{
+            id:"position-" + account.id,
+            accountId:account.id,
+            pair:"USD/JPY",
+            side:"買",
+            quantity:100000,
+            openRate:150,
+            swap:null,
+            status:"保有中"
+          }],
+          rates:[{
+            id:"rate-" + account.id,
+            accountId:account.id,
+            pair:"USD/JPY",
+            rate:null,
+            asOfDate:null
+          }],
+          snapshots:[]
+        })
+      }
     ];
 
-    for (const fixture of fixtures) {
-      const before = JSON.stringify(fixture);
-      const account = fixture.accounts[0];
-      const block = renderFxLossCutBlock(fixture,account.id);
+    for (const account of accounts) {
+      for (const testCase of cases) {
+        const fixture = testCase.build(account);
+        const before = JSON.stringify(fixture);
+        const block = renderFxLossCutBlock(fixture,account.id);
+        const label = account.name + "・" + testCase.label;
 
-      assert(block && block.tagName === "SECTION",
-        account.name + "のロスカットブロックが描画されていません。");
-      assert(block.textContent.includes("ロスカット値"),
-        account.name + "の見出しが表示されていません。");
-      assert(block.textContent.includes("目安"),
-        account.name + "の目安表示がありません。");
-      assert(block.querySelector("details"),
-        account.name + "の詳細・シナリオ試算がありません。");
+        assert(block && block.tagName === "SECTION",
+          label + "のロスカットブロックが描画されていません。");
+        assert(block.textContent.trim().length > 0,
+          label + "のブロック本文が空です。");
+        assert(block.textContent.includes("ロスカット値"),
+          label + "の見出しが表示されていません。");
+        assert(block.textContent.includes("目安"),
+          label + "の目安表示がありません。");
+        assert(block.querySelector("details"),
+          label + "の折りたたみ詳細がありません。");
 
-      if (account.id === "fx-render-no-position") {
-        assert(block.textContent.includes("建玉なし"),
-          "建玉なしの表示がありません。");
+        if (testCase.label === "初期データ（建玉なし）") {
+          assert(block.textContent.includes("建玉なし"),
+            label + "で「建玉なし」が表示されていません。");
+          assert(block.textContent.includes("算出不可"),
+            label + "で維持率を推測せず算出不可とする必要があります。");
+        }
+
+        if (testCase.label === "欠けの多いデータ") {
+          assert(block.textContent.includes("評価レート（USD/JPY）") &&
+            block.textContent.includes("必要証拠金率") &&
+            block.textContent.includes("ロスカット維持率") &&
+            block.textContent.includes("有効証拠金"),
+            label + "で不足項目をすべて表示する必要があります。");
+          assert(!block.textContent.includes("¥0"),
+            label + "で未入力値を0円として表示してはいけません。");
+        }
+
+        assert(JSON.stringify(fixture) === before,
+          label + "の描画で元データが変更されています。");
       }
-
-      assert(JSON.stringify(fixture) === before,
-        account.name + "の描画で元データが変更されています。");
     }
   });
 
@@ -398,7 +443,7 @@ function registerLosscutTests(context) {
     assert(resultArea.textContent.includes("シナリオ結果"),
       "入力変更後のシナリオ結果が表示されていません。");
     assert(JSON.stringify(data) === before,
-      "シナリオ入力で元データが変更されています。");
+      "シナリオ入力で元データが変更されてはいけません。");
   });
 }
 
