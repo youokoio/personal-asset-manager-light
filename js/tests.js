@@ -14,10 +14,36 @@ function runAllTests() {
       testFunction();
       results.push({name,success:true,message:"合格"});
     } catch (error) {
+      let diagnostic = "";
+
+      if (name === "S5a追補：建玉フォーム（新規）の描画" ||
+          name === "S5a追補：建玉フォーム（編集）の保存値描画") {
+        const descriptor = Object.getOwnPropertyDescriptor(
+          globalThis,
+          "appData"
+        );
+        const descriptorText = descriptor
+          ? "configurable=" + descriptor.configurable +
+            ", writable=" +
+              ("writable" in descriptor ? descriptor.writable : "accessor") +
+            ", valueType=" +
+              ("value" in descriptor ? typeof descriptor.value : "accessor")
+          : "なし";
+        const runner = document.body &&
+          document.body.dataset.testRunner === "true"
+            ? "test.html"
+            : "アプリ内";
+        diagnostic = " / 診断：" + runner +
+          "、typeof appData=" + typeof appData +
+          "、typeof globalThis.appData=" + typeof globalThis.appData +
+          "、globalThis.appData属性={" + descriptorText + "}";
+      }
+
       results.push({
         name,
         success:false,
-        message:error.message
+        message:(error && error.stack ? error.stack :
+          error && error.message ? error.message : String(error)) + diagnostic
       });
     }
   }
