@@ -797,3 +797,436 @@ renderAccountDetail = function() {
 
   app.insertBefore(dailyCard,formCard);
 };
+
+/* ---------- S5g：FX口座詳細の6区分表示 ---------- */
+
+function appendFxAccountLatestStateS5g(account) {
+  const section = el("section","card");
+  section.appendChild(el("h3","","最新状態"));
+
+  const latest = getLatestSnapshot(appData,account.id);
+  const positions = getFxOpenPositions(appData,account.id);
+  const rows = calculateFxAggregateRows(appData).filter(row =>
+    row.accountId === account.id
+  );
+
+  appendAccountMetric(
+    section,
+    "最新総資産",
+    latest && isFiniteMetricValue(latest.value)
+      ? formatYen(latest.value)
+      : "未入力",
+    latest && latest.asOfDate
+      ? "対象日：" + formatDateWithWeekday(latest.asOfDate)
+      : "履歴なし"
+  );
+
+  appendAccountMetric(
+    section,
+    "累計スワップ",
+    latest && isFiniteMetricValue(latest.swapTotal)
+      ? formatSignedYen(latest.swapTotal)
+      : "未入力"
+  );
+
+  const evaluationProfit = rows.every(row =>
+    Number.isFinite(row.exchangeProfit)
+  )
+    ? rows.reduce((sum,row) => sum + row.exchangeProfit,0)
+    : null;
+
+  appendAccountMetric(
+    section,
+    "建玉の評価損益",
+    evaluationProfit === null
+      ? "評価レート未入力"
+      : formatSignedYen(evaluationProfit)
+  );
+
+  appendAccountMetric(
+    section,
+    "保有中建玉数",
+    positions.length.toLocaleString("ja-JP")
+  );
+
+  const pairGroups = new Map();
+  for (const position of positions) {
+    const key = position.pair + " ／ " + position.side;
+    if (!pairGroups.has(key)) pairGroups.set(key,[]);
+    pairGroups.get(key).push(position);
+  }
+
+  for (const [key,items] of pairGroups) {
+    const quantity = items.reduce(
+      (sum,item) => sum + item.quantity,
+      0
+    );
+    const weightedRate = items.reduce(
+      (sum,item) => sum + item.quantity * item.openRate,
+      0
+    );
+    appendAccountMetric(
+      section,
+      key + " 平均約定レート",
+      quantity > 0
+        ? (weightedRate / quantity).toLocaleString("ja-JP",{
+            maximumFractionDigits:6
+          })
+        : "未計算"
+    );
+  }
+
+  section.appendChild(renderFxLossCutBlock(appData,account.id));
+
+  const realized = getFxRealizedAt(
+    appData,
+    account.id,
+    localDateString()
+  );
+  const realizedCard = el("section","fx-account-realized");
+  realizedCard.appendChild(el("h4","","累積確定損益"));
+  appendAccountMetric(
+    realizedCard,
+    "累積確定損益",
+    realized && isFiniteMetricValue(realized.value)
+      ? formatSignedYen(realized.value)
+      : "未入力",
+    realized && realized.baseSource && realized.baseDate
+      ? "基準：" + realized.baseSource + " " +
+        formatDateWithWeekday(realized.baseDate)
+      : ""
+  );
+  appendFxRealizedWarnings(realizedCard,realized);
+  section.appendChild(realizedCard);
+
+  return section;
+}
+
+function renderFxAccountPairSectionS5g(account) {
+  const section = el("section","card");
+  section.appendChild(el("h3","","通貨ペア別"));
+
+  const rows = calculateFxAggregateRows(appData).filter(row =>
+    row.accountId === account.id
+  );
+
+  if (!rows.length) {
+    section.appendChild(el("div","empty","保有中の建玉はありません。"));
+    return section;
+  }
+
+  const table = document.createElement("table");
+  const head = document.createElement("thead");
+  const header = document.createElement("tr");
+
+  for (const label of [
+    "通貨ペア",
+    "売買",
+    "数量",
+    "平均約定レート",
+    "評価レート",
+    "評価損益"
+  ]) {
+    const cell = document.createElement("th");
+    cell.textContent = label;
+    header.appendChild(cell);
+  }
+
+  head.appendChild(header);
+  table.appendChild(head);
+
+  const body = document.createElement("tbody");
+
+  for (const row of rows) {
+    const tr = document.createElement("tr");
+    const values = [
+      row.pair,
+      row.side,
+      formatFxQuantity(row.quantity),
+      row.averageOpenRate === null
+        ? "未計算"
+        : row.averageOpenRate.toLocaleString("ja-JP",{
+            maximumFractionDigits:6
+          }),
+      row.evaluationRate === null
+        ? "未入力"
+        : row.evaluationRate.toLocaleString("ja-JP",{
+            maximumFractionDigits:6
+          }),
+      row.exchangeProfit === null
+        ? "未計算"
+        : formatSignedYen(row.exchangeProfit)
+    ];
+
+    for (const value of values) {
+      const cell = document.createElement("td");
+      cell.textContent = value;
+      tr.appendChild(cell);
+    }
+
+    body.appendChild(tr);
+  }
+
+  table.appendChild(body);
+  section.appendChild(table);
+  return section;
+}
+
+function renderFxAccountOpenPositionRowS5g(account,position) {
+  const details = document.createElement("details");
+  details.className = "fx-account-position";
+
+  const summary = document.createElement("summary");
+  summary.textContent =
+    position.pair + " ／ " +
+    position.side + " ／ " +
+    formatFxQuantity(position.quantity) + " ／ " +
+    formatDateWithWeekday(String(position.openDate || "").slice(0,10));
+  details.appendChild(summary);
+
+  const content = el("div","fx-account-position-detail");
+
+  appendAccountMetric(
+    content,
+    "約定レート",
+    formatFxRateValue(position.openRate)
+  );
+  appendAccountMetric(
+    content,
+    "累計スワップ",
+    position.swap === null
+      ? "未入力"
+      : formatSignedYen(position.swap)
+  );
+  appendAccountMetric(
+    content,
+    "データ確認日",
+    position.asOfDate
+      ? formatDateWithWeekday(position.asOfDate)
+      : "未入力"
+  );
+
+  const actions = el("div","actions");
+
+  const edit = makeButton(
+    "編集",
+    "edit-fx-position",
+    "secondary small"
+  );
+  edit.addEventListener("click",() => {
+    content.appendChild(renderFxPositionForm(
+      account.id,
+      position.pair,
+      position.side,
+      position
+    ));
+  });
+  actions.appendChild(edit);
+
+  const settle = makeButton(
+    "決済入力",
+    "settle-fx-position",
+    "secondary small"
+  );
+  settle.addEventListener("click",() => {
+    const form = renderFxSettlementForm(
+      account.id,
+      position.pair,
+      position.side,
+      [position]
+    );
+    const check = form.querySelector(
+      'input[name="settle_' + position.id + '"]'
+    );
+    if (check) {
+      check.checked = true;
+      check.dispatchEvent(new Event("change",{bubbles:true}));
+    }
+    content.appendChild(form);
+  });
+  actions.appendChild(settle);
+
+  content.appendChild(actions);
+  details.appendChild(content);
+  return details;
+}
+
+function renderFxAccountOpenPositionsS5g(account) {
+  const section = el("section","card");
+  section.appendChild(el("h3","","保有中建玉"));
+
+  const positions = getFxOpenPositions(appData,account.id)
+    .slice()
+    .sort((a,b) =>
+      String(a.pair).localeCompare(String(b.pair)) ||
+      String(a.openDate).localeCompare(String(b.openDate))
+    );
+
+  if (!positions.length) {
+    section.appendChild(el("div","empty","保有中の建玉はありません。"));
+    return section;
+  }
+
+  for (const position of positions) {
+    section.appendChild(
+      renderFxAccountOpenPositionRowS5g(account,position)
+    );
+  }
+
+  return section;
+}
+
+function renderFxAccountSettledPositionsS5g(account) {
+  const section = el("section","card");
+  section.appendChild(el("h3","","決済済建玉"));
+
+  const positions = appData.fxPositions
+    .filter(position =>
+      position.accountId === account.id &&
+      position.status === "決済済"
+    )
+    .slice()
+    .sort((a,b) =>
+      String(b.closeDate || "").localeCompare(String(a.closeDate || "")) ||
+      String(b.openDate || "").localeCompare(String(a.openDate || ""))
+    );
+
+  if (!positions.length) {
+    section.appendChild(el("div","empty","決済済建玉はありません。"));
+    return section;
+  }
+
+  const total = positions.reduce((sum,position) =>
+    sum + (
+      Number.isFinite(position.realizedPnl)
+        ? position.realizedPnl
+        : 0
+    ),
+    0
+  );
+
+  const totalCard = el("div","metric-card");
+  totalCard.appendChild(el("div","metric-label","アプリ内の決済損益の合計"));
+  totalCard.appendChild(el("div","metric-value",formatSignedYen(total)));
+  section.appendChild(totalCard);
+
+  section.appendChild(el(
+    "div",
+    "help",
+    "この合計は決済済建玉に記録された確定損益の合計です。口座の累積確定損益とは集計対象が異なる場合があります。"
+  ));
+
+  for (const position of positions) {
+    const item = el("section","fx-settled-position");
+    item.appendChild(el(
+      "div",
+      "metric-label",
+      position.pair + " ／ " + position.side
+    ));
+    appendAccountMetric(
+      item,
+      "約定日",
+      formatDateWithWeekday(String(position.openDate || "").slice(0,10))
+    );
+    appendAccountMetric(
+      item,
+      "決済日",
+      position.closeDate
+        ? formatDateWithWeekday(position.closeDate)
+        : "未入力"
+    );
+    appendAccountMetric(
+      item,
+      "決済損益",
+      Number.isFinite(position.realizedPnl)
+        ? formatSignedYen(position.realizedPnl)
+        : "未入力"
+    );
+    section.appendChild(item);
+  }
+
+  return section;
+}
+
+function renderFxAccountExistingFeaturesS5g(account) {
+  const section = el("section","card");
+  section.appendChild(el("h3","","既存機能"));
+
+  const rows = calculateFxAggregateRows(appData).filter(row =>
+    row.accountId === account.id
+  );
+
+  for (const row of rows) {
+    appendFxSwapGroupWarning(section,row);
+  }
+  appendFxSwapAccountWarning(section,account.id);
+
+  section.appendChild(renderFxSwapEstimateCard(account.id));
+  section.appendChild(renderFxSwapRegistrationForm(rows[0] || null));
+  section.appendChild(renderFxRateManagement(account));
+  section.appendChild(makeFxPositionEntryButton(account));
+
+  const snapshotCard = el("section","fx-account-snapshot-form");
+  snapshotCard.appendChild(el("h4","","評価額履歴の入力・編集"));
+  snapshotCard.appendChild(renderSnapshotForm(account));
+  section.appendChild(snapshotCard);
+
+  section.appendChild(renderAccountSettings(account));
+
+  const historyCard = el("section","fx-account-history");
+  historyCard.appendChild(el("h4","","評価額履歴"));
+
+  const snapshots = getAccountSnapshots(appData,account.id);
+  if (!snapshots.length) {
+    historyCard.appendChild(el("div","empty","履歴はまだありません。"));
+  } else {
+    for (const snapshot of snapshots) {
+      historyCard.appendChild(renderSnapshotRow(snapshot));
+    }
+  }
+
+  section.appendChild(historyCard);
+  return section;
+}
+
+function renderFxAccountDetailS5g(account) {
+  app.replaceChildren();
+
+  const back = makeButton(
+    "← FX口座一覧へ",
+    "back-accounts",
+    "secondary"
+  );
+  back.addEventListener("click",() => {
+    selectedAccountId = null;
+    renderCategoryAccountList(currentTab);
+  });
+  app.appendChild(back);
+  app.appendChild(heading(account.name));
+
+  const latestSection = renderFxAccountLatestStateS5g(account);
+  const dailySection = el("section","card");
+  dailySection.appendChild(renderFxDailyInputForm(account));
+
+  app.appendChild(latestSection);
+  app.appendChild(dailySection);
+  app.appendChild(renderFxAccountPairSectionS5g(account));
+  app.appendChild(renderFxAccountOpenPositionsS5g(account));
+  app.appendChild(renderFxAccountSettledPositionsS5g(account));
+  app.appendChild(renderFxAccountExistingFeaturesS5g(account));
+}
+
+const renderAccountDetailBeforeS5g = renderAccountDetail;
+
+renderAccountDetail = function() {
+  const account = appData.accounts.find(item =>
+    item.id === selectedAccountId
+  );
+
+  if (!account || account.type !== "fx") {
+    renderAccountDetailBeforeS5g();
+    return;
+  }
+
+  renderFxAccountDetailS5g(account);
+};
