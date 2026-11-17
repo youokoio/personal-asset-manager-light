@@ -1,4 +1,3 @@
-
 "use strict";
 
 function registerFxTests(context) {
@@ -42,6 +41,42 @@ function registerFxTests(context) {
       fxRates:rates
     };
   }
+
+  function restoreTestGlobalProperty(target,propertyName,originalDescriptor) {
+    if (originalDescriptor) {
+      Object.defineProperty(target,propertyName,originalDescriptor);
+    } else {
+      Reflect.deleteProperty(target,propertyName);
+    }
+  }
+
+  runTest("S5a追補：テスト用プロパティの記述子を復元",() => {
+    const target = {};
+    const originalValue = {marker:"original"};
+    Object.defineProperty(target,"appData",{
+      value:originalValue,
+      writable:true,
+      enumerable:true,
+      configurable:false
+    });
+    const originalDescriptor = Object.getOwnPropertyDescriptor(
+      target,
+      "appData"
+    );
+    target.appData = {marker:"fixture"};
+    restoreTestGlobalProperty(target,"appData",originalDescriptor);
+
+    assert(target.appData === originalValue,
+      "既存プロパティの値を元に戻せていません。");
+    assert(Object.getOwnPropertyDescriptor(target,"appData").configurable === false,
+      "既存プロパティのconfigurable属性を保持できていません。");
+
+    const newTarget = {};
+    newTarget.appData = {marker:"fixture"};
+    restoreTestGlobalProperty(newTarget,"appData",undefined);
+    assert(!Object.prototype.hasOwnProperty.call(newTarget,"appData"),
+      "テスト中に追加したプロパティを削除できていません。");
+  });
 
   runTest("S5a：FX集計の数量・平均約定レート・評価損益",() => {
     const accountId = "fx-a";
@@ -638,6 +673,10 @@ function registerFxTests(context) {
   runTest("S5a追補：建玉フォーム（新規）の描画",() => {
     const hasLexicalAppData = typeof appData !== "undefined";
     const originalAppData = hasLexicalAppData ? appData : globalThis.appData;
+    const originalAppDataDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "appData"
+    );
 
     try {
       if (hasLexicalAppData) appData = makeData([] ,[]);
@@ -671,14 +710,21 @@ function registerFxTests(context) {
         "新規フォームの数量単位初期値が万通貨ではありません。");
     } finally {
       if (hasLexicalAppData) appData = originalAppData;
-      else if (originalAppData === undefined) delete globalThis.appData;
-      else globalThis.appData = originalAppData;
+      else restoreTestGlobalProperty(
+        globalThis,
+        "appData",
+        originalAppDataDescriptor
+      );
     }
   });
 
   runTest("S5a追補：建玉フォーム（編集）の保存値描画",() => {
     const hasLexicalAppData = typeof appData !== "undefined";
     const originalAppData = hasLexicalAppData ? appData : globalThis.appData;
+    const originalAppDataDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "appData"
+    );
 
     try {
       const position = {
@@ -741,8 +787,11 @@ function registerFxTests(context) {
         "編集フォームに保存済みの累計スワップが表示されていません。");
     } finally {
       if (hasLexicalAppData) appData = originalAppData;
-      else if (originalAppData === undefined) delete globalThis.appData;
-      else globalThis.appData = originalAppData;
+      else restoreTestGlobalProperty(
+        globalThis,
+        "appData",
+        originalAppDataDescriptor
+      );
     }
   });
 
