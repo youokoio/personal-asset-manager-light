@@ -1043,3 +1043,72 @@ button.chart-legend-button.chart-legend-hidden {
     grid-column:1 / -1;
   }
 }
+
+/* ---------- S5h FX履歴ページ ---------- */
+.fx-history-table-wrap {
+  width:100%;
+  max-width:100%;
+  overflow-x:auto;
+  overflow-y:visible;
+  margin-top:10px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  background:#fff;
+  -webkit-overflow-scrolling:touch;
+}
+.fx-history-table {
+  width:max-content;
+  min-width:100%;
+  border-collapse:separate;
+  border-spacing:0;
+  font-size:12px;
+}
+.fx-history-table th,
+.fx-history-table td {
+  min-width:105px;
+  padding:9px 8px;
+  border-right:1px solid var(--border);
+  border-bottom:1px solid var(--border);
+  background:#fff;
+  text-align:right;
+  white-space:nowrap;
+  vertical-align:middle;
+  font-variant-numeric:tabular-nums;
+}
+.fx-history-table th {
+  position:sticky;
+  top:0;
+  z-index:2;
+  background:#edf3f7;
+  color:var(--navy);
+  text-align:center;
+}
+.fx-history-table .fx-history-date-cell {
+  position:sticky;
+  left:0;
+  z-index:3;
+  min-width:11em;
+  width:11em;
+  background:#f8fafc;
+  text-align:left;
+}
+.fx-history-table thead .fx-history-date-cell {
+  z-index:4;
+  background:#edf3f7;
+}
+.fx-history-table td:last-child,
+.fx-history-table th:last-child {
+  min-width:150px;
+  text-align:left;
+  white-space:normal;
+}
+.fx-history-click-row {
+  cursor:pointer;
+}
+.fx-history-click-row:active td {
+  background:#edf3f7;
+}
+.fx-history-click-row:focus {
+  outline:2px solid var(--blue);
+  outline-offset:-2px;
+}
