@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "pam2-s6-2-v1";
+const CACHE_NAME = "pam2-s6-2-v2";
 const APP_FILES = [
   "./index.html",
   "./style.css",
@@ -20,6 +20,7 @@ const APP_FILES = [
   "./js/calc-chart.js",
   "./js/ui-common.js",
   "./js/ui-home.js",
+  "./js/ui-losscut.js",
   "./js/ui-accounts.js",
   "./js/ui-fx.js",
   "./js/ui-fx-daily.js",
