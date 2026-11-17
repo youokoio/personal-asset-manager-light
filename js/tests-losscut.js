@@ -324,6 +324,70 @@ function registerLosscutTests(context) {
     assert(JSON.stringify(data) === before,
       "計算前後で入力データが変わってはいけません。");
   });
+
+  runTest("S6② 画面：4口座のロスカット計算カード描画",() => {
+    const hasLexicalAppData = typeof appData !== "undefined";
+    const originalAppData = hasLexicalAppData ? appData : globalThis.appData;
+    const originalDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      "appData"
+    );
+
+    const fixtures = [
+      makeLossCutData({
+        accountId:"fx-render-normal",
+        accountName:"架空口座A"
+      }),
+      makeLossCutData({
+        accountId:"fx-render-no-rate",
+        accountName:"架空口座B",
+        rates:[{
+          accountId:"fx-render-no-rate",
+          pair:"USD/JPY",
+          rate:null,
+          asOfDate:null
+        }]
+      }),
+      makeLossCutData({
+        accountId:"fx-render-no-position",
+        accountName:"架空口座C",
+        positions:[],
+        rates:[]
+      }),
+      makeLossCutData({
+        accountId:"fx-render-no-history",
+        accountName:"架空口座D",
+        snapshots:[],
+        requiredMargin:null
+      })
+    ];
+
+    try {
+      for (const fixture of fixtures) {
+        if (hasLexicalAppData) appData = fixture;
+        else globalThis.appData = fixture;
+
+        const account = fixture.accounts[0];
+        const card = renderFxLossCutCard(account.id);
+
+        assert(card && card.tagName === "SECTION",
+          account.name + "のロスカット計算カードが描画されていません。");
+        assert(card.textContent.trim().length > 0,
+          account.name + "のカード本文が空です。");
+        assert(card.textContent.includes(account.name),
+          account.name + "の口座名が表示されていません。");
+        assert(card.textContent.includes("ロスカット計算"),
+          account.name + "の見出しが表示されていません。");
+      }
+    } finally {
+      if (hasLexicalAppData) appData = originalAppData;
+      else if (originalDescriptor) {
+        Object.defineProperty(globalThis,"appData",originalDescriptor);
+      } else {
+        Reflect.deleteProperty(globalThis,"appData");
+      }
+    }
+  });
 }
 
 const registerFxTestsBeforeLossCut = registerFxTests;
