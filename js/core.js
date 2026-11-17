@@ -1,9 +1,8 @@
-
 "use strict";
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S5f-v2";
+const APP_VERSION = "S5f-v3";
 const SPEC_VERSION = "v1.13";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
