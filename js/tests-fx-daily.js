@@ -420,6 +420,116 @@ function registerFxDailyTests(context) {
       "fxRatesのasOfDateと同日の入力では更新できる必要があります。"
     );
   });
+
+  runTest("S5h 13-3：FX履歴ページの内訳・表描画",() => {
+    const originalData = appData;
+    const originalChildren = Array.from(app.childNodes);
+    const originalHistoryAccountId = selectedFxHistoryAccountIdS5h;
+    const originalSelectedAccountId = selectedAccountId;
+    const originalEditingId = editingSnapshotId;
+    const originalEditSnapshot = editSnapshot;
+    let editedSnapshotId = null;
+
+    try {
+      const accountId = "fx-history-s5h-test";
+      const account = makeAccount(accountId,"架空FX口座","fx","fx");
+      const baseSnapshot = {
+        id:"s5h-base",accountId,asOfDate:"2026-11-10",
+        recordedAt:"2026-11-10T10:00:00.000Z",value:100000,
+        effectivePrincipal:90000,pnl:5000,swapTotal:500,
+        realizedPnlTotal:1000,realizedPnlDaily:null,requiredMargin:2000,
+        rates:{"TRY/JPY":3.1,"ZAR/JPY":7.2},memo:"基準日"
+      };
+      const dailySnapshot = {
+        id:"s5h-daily",accountId,asOfDate:"2026-11-11",
+        recordedAt:"2026-11-11T10:00:00.000Z",value:101000,
+        effectivePrincipal:90000,pnl:6000,swapTotal:600,
+        realizedPnlTotal:null,realizedPnlDaily:200,requiredMargin:2100,
+        rates:{"TRY/JPY":3.2},memo:"日次入力あり"
+      };
+      const fallbackSnapshot = {
+        id:"s5h-fallback",accountId,asOfDate:"2026-11-12",
+        recordedAt:"2026-11-12T10:00:00.000Z",value:102000,
+        effectivePrincipal:null,pnl:null,swapTotal:null,
+        realizedPnlTotal:null,realizedPnlDaily:null,requiredMargin:null,
+        rates:null,memo:"日次入力なし"
+      };
+
+      appData = {
+        accounts:[account],
+        snapshots:[baseSnapshot,dailySnapshot,fallbackSnapshot],
+        fxPositions:[
+          {id:"s5h-settled-daily",accountId,status:"決済済",closeDate:"2026-11-11",realizedPnl:300},
+          {id:"s5h-settled-fallback",accountId,status:"決済済",closeDate:"2026-11-12",realizedPnl:400},
+          {id:"s5h-settled-before-base",accountId,status:"決済済",closeDate:"2026-11-10",realizedPnl:500}
+        ],
+        fxRates:[],
+        fxSwapLedger:[]
+      };
+      selectedFxHistoryAccountIdS5h = accountId;
+      selectedAccountId = accountId;
+      editingSnapshotId = null;
+      editSnapshot = id => { editedSnapshotId = id; };
+
+      const before = JSON.stringify(appData);
+      renderFxHistoryPageS5h(account);
+      const realized = getFxRealizedAt(appData,accountId,localDateString());
+
+      assert(realized && realized.value === 1600,"累積確定損益は1,600円である必要があります。");
+      assert(
+        realized.baseAmount + realized.dailyPnlTotal + realized.fallbackSettledPnl === realized.value,
+        "基準値＋日次確定損益＋日次のない日の決済損益が累積確定損益と一致する必要があります。"
+      );
+      assert(app.textContent.includes("+¥1,000"),"基準値1,000円を表示する必要があります。");
+      assert(app.textContent.includes("+¥200"),"日次確定損益200円を表示する必要があります。");
+      assert(app.textContent.includes("+¥400"),"日次のない日の決済損益400円を表示する必要があります。");
+      assert(app.textContent.includes("+¥1,600"),"内訳の合計1,600円を表示する必要があります。");
+
+      const table = app.querySelector(".fx-history-table");
+      assert(table !== null,"FX履歴表を描画する必要があります。");
+      assert(table.querySelectorAll("thead th").length === 10,"固定8列と通貨ペア別2列の計10列を描画する必要があります。");
+      const rows = table.querySelectorAll("tbody tr");
+      assert(rows.length === 3,"対象日ごとに1行ずつ、3行を描画する必要があります。");
+      assert(rows[0].cells[0].textContent.includes("2026-11-12"),"新しい対象日を上に表示する必要があります。");
+      assert(rows[0].cells[2].textContent === "","未入力の有効元本を空欄にする必要があります。");
+      assert(rows[0].cells[7].textContent === "" && rows[0].cells[8].textContent === "","ratesがない日の評価レートを空欄にする必要があります。");
+      assert(rows[1].cells[7].textContent === "3.2" && rows[1].cells[8].textContent === "","通貨ペアごとにratesの値を対応する列へ表示する必要があります。");
+      assert(JSON.stringify(appData) === before,"履歴ページの描画で保存データを変更してはいけません。");
+
+      rows[0].click();
+      assert(editedSnapshotId === "s5h-fallback","履歴行のタップで既存の履歴編集画面を開く必要があります。");
+    } finally {
+      appData = originalData;
+      selectedFxHistoryAccountIdS5h = originalHistoryAccountId;
+      selectedAccountId = originalSelectedAccountId;
+      editingSnapshotId = originalEditingId;
+      editSnapshot = originalEditSnapshot;
+      app.replaceChildren(...originalChildren);
+    }
+  });
+
+  runTest("S5h 13-3：履歴なし・ratesなし・日次確定損益なし",() => {
+    const originalData = appData;
+    const originalChildren = Array.from(app.childNodes);
+    const originalHistoryAccountId = selectedFxHistoryAccountIdS5h;
+
+    try {
+      const account = makeAccount("fx-history-s5h-empty","架空FX口座","fx","fx");
+      appData = {accounts:[account],snapshots:[],fxPositions:[],fxRates:[],fxSwapLedger:[]};
+      selectedFxHistoryAccountIdS5h = account.id;
+
+      renderFxHistoryPageS5h(account);
+
+      assert(app.textContent.includes("累積確定損益"),"履歴がなくても累積確定損益の見出しを表示する必要があります。");
+      assert(app.textContent.includes("未入力"),"累積確定損益がない場合は未入力と表示する必要があります。");
+      assert(app.textContent.includes("履歴はまだありません。"),"履歴がない場合は空表示を行う必要があります。");
+      assert(app.querySelector(".fx-history-table") === null,"履歴がない場合に空の表を表示しない必要があります。");
+    } finally {
+      appData = originalData;
+      selectedFxHistoryAccountIdS5h = originalHistoryAccountId;
+      app.replaceChildren(...originalChildren);
+    }
+  });
 }
 
 const registerFxTestsBeforeDaily = registerFxTests;
