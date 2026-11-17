@@ -1,10 +1,15 @@
 "use strict";
 
 function formatFxLossCutYen(value) {
-  if (!Number.isFinite(value)) return "未計算";
+  if (!Number.isFinite(value)) return "算出不可";
   const amount = Math.trunc(value);
   const sign = amount > 0 ? "+" : amount < 0 ? "−" : "";
   return sign + "¥" + Math.abs(amount).toLocaleString("ja-JP");
+}
+
+function formatFxLossCutMoney(value) {
+  if (!Number.isFinite(value)) return "算出不可";
+  return "¥" + Math.abs(Math.trunc(value)).toLocaleString("ja-JP");
 }
 
 function formatFxLossCutRatio(value) {
@@ -13,7 +18,7 @@ function formatFxLossCutRatio(value) {
 }
 
 function formatFxLossCutRate(value) {
-  if (!Number.isFinite(value)) return "未計算";
+  if (!Number.isFinite(value)) return "算出不可";
   const truncated = Math.trunc(value * 10000) / 10000;
   return truncated.toLocaleString("ja-JP",{
     minimumFractionDigits:0,
@@ -22,7 +27,7 @@ function formatFxLossCutRate(value) {
 }
 
 function formatFxLossCutPercent(value) {
-  if (!Number.isFinite(value)) return "未計算";
+  if (!Number.isFinite(value)) return "算出不可";
   const truncated = Math.trunc(value * 10000) / 10000;
   return truncated.toLocaleString("ja-JP",{
     minimumFractionDigits:0,
@@ -31,280 +36,374 @@ function formatFxLossCutPercent(value) {
 }
 
 function formatFxLossCutShortfall(value) {
-  return Number.isFinite(value) && value > 0
-    ? formatFxLossCutYen(value)
-    : "不足なし";
+  if (!Number.isFinite(value)) return "算出不可";
+  return value > 0 ? formatFxLossCutMoney(value) : "不足なし";
 }
 
-function renderFxLossCutCard(accountId) {
+function createFxLossCutInputField(labelText,name,value,placeholder) {
+  const wrapper = el("div","field fx-losscut-input-field");
+  const label = el("label","",labelText);
+  const input = document.createElement("input");
+  input.type = "text";
+  input.inputMode = "decimal";
+  input.autocomplete = "off";
+  input.className = "fx-losscut-input";
+  input.id = name;
+  input.name = name;
+  input.value = value === null || value === undefined ? "" : String(value);
+  if (placeholder) input.placeholder = placeholder;
+  label.htmlFor = name;
+  wrapper.append(label,input);
+  return {wrapper,input};
+}
+
+function appendFxLossCutMetric(container,label,value,subText = "") {
+  appendAccountMetric(container,label,value,subText);
+}
+
+function renderFxLossCutBlock(data,accountId) {
   const card = el("section","card fx-losscut-card");
-  const account = appData.accounts.find(item =>
+  const account = data.accounts.find(item =>
     item.id === accountId && item.type === "fx"
   );
   if (!account) return card;
 
-  card.appendChild(heading(account.name + " ／ ロスカット計算"));
+  const initial = calculateFxLossCut(data,accountId);
+  const openPositions = getFxOpenPositions(data,accountId);
+  const headingRow = el("div","fx-losscut-heading");
+  headingRow.appendChild(el("h3","","ロスカット値"));
+  headingRow.appendChild(el("span","pill","目安"));
+  card.appendChild(headingRow);
   card.appendChild(el(
     "div",
     "help",
-    "シナリオと計算結果は目安です。入力内容・結果は保存されません。"
+    "現在の評価レートと最新の有効証拠金を使った目安です。"
   ));
 
-  const initial = calculateFxLossCut(appData,accountId);
-  const equityField = makeNumericField(
-    "有効証拠金（円）",
-    "fxLossCutEquity_" + accountId,
-    initial.effectiveEquity === null
-      ? ""
-      : formatInputNumber(initial.effectiveEquity),
-    {placeholder:"最新の口座評価額。手入力で変更できます。"}
+  const summary = el("div","fx-losscut-summary");
+  appendFxLossCutMetric(
+    summary,
+    "現在の維持率",
+    initial.metrics
+      ? formatFxLossCutRatio(initial.metrics.maintenanceRatio)
+      : "算出不可"
   );
-  const equityInput = equityField.querySelector("input");
-  card.appendChild(equityField);
-  appendAccountMetric(
-    card,
-    "有効証拠金の対象日",
-    initial.effectiveEquityDate
-      ? formatDateWithWeekday(initial.effectiveEquityDate)
-      : "対象日なし"
-  );
+  if (initial.metrics) {
+    appendFxLossCutMetric(
+      summary,
+      "現在の判定",
+      initial.metrics.isLossCut ? "ロスカット水準" : "ロスカット水準ではありません"
+    );
+  }
 
-  const settingArea = el("div","fx-losscut-settings");
-  appendAccountMetric(
-    settingArea,
-    "ロスカット維持率",
-    Number.isFinite(initial.lossCutRatio)
-      ? formatFxLossCutRatio(initial.lossCutRatio)
-      : "未設定"
+  if (openPositions.length === 0) {
+    summary.appendChild(el("div","empty","建玉なし"));
+  } else if (initial.positions.length === 0) {
+    summary.appendChild(el(
+      "div",
+      "empty",
+      "計算対象となる円建て建玉がありません。"
+    ));
+  } else {
+    for (const pairResult of initial.pairRates) {
+      for (const root of pairResult.roots) {
+        appendFxLossCutMetric(
+          summary,
+          pairResult.pair + " ／ " + root.direction,
+          root.rate === null
+            ? root.status
+            : formatFxLossCutRate(root.rate)
+        );
+      }
+    }
+    if (!initial.canCalculate) {
+      const unavailablePairs = Array.from(new Set(
+        initial.positions.map(position => position.pair)
+      )).sort();
+      for (const pair of unavailablePairs) {
+        appendFxLossCutMetric(summary,pair,"算出不可");
+      }
+    }
+  }
+  card.appendChild(summary);
+
+  const warningArea = el("div","fx-losscut-warnings");
+  for (const warning of initial.warnings) {
+    warningArea.appendChild(el("div","notice","警告：" + warning));
+  }
+  const displayedMissing = initial.missing.filter(item =>
+    item !== "保有中の建玉"
   );
-  appendAccountMetric(
-    settingArea,
-    "必要証拠金率",
-    Number.isFinite(initial.marginRatePct)
-      ? formatFxLossCutRatio(initial.marginRatePct)
-      : "未設定"
+  if (displayedMissing.length) {
+    warningArea.appendChild(el(
+      "div",
+      "notice",
+      "計算に必要な入力が不足しています：" + displayedMissing.join("、")
+    ));
+  }
+  if (warningArea.childNodes.length) card.appendChild(warningArea);
+
+  const details = document.createElement("details");
+  details.className = "fx-losscut-details";
+  const summaryLabel = document.createElement("summary");
+  summaryLabel.textContent = "詳細・シナリオ試算";
+  details.appendChild(summaryLabel);
+
+  const inputArea = el("div","fx-losscut-inputs");
+  inputArea.appendChild(el("h4","","シナリオ入力（保存されません）"));
+
+  const equityField = createFxLossCutInputField(
+    "有効証拠金の上書き（円）",
+    "fx-losscut-equity-" + accountId,
+    initial.effectiveEquity,
+    "最新の有効証拠金"
   );
-  appendAccountMetric(
-    settingArea,
-    "目安維持率",
-    formatFxLossCutRatio(initial.targetRatio)
-  );
-  appendAccountMetric(
-    settingArea,
-    "必要証拠金の補正",
-    initial.correctionDate
-      ? "補正係数 " + initial.correctionFactor.toLocaleString("ja-JP",{maximumFractionDigits:6})
-      : "補正なし（係数1）",
-    initial.correctionDate
-      ? "実績対象日：" + formatDateWithWeekday(initial.correctionDate)
-      : ""
-  );
-  card.appendChild(settingArea);
+  inputArea.appendChild(equityField.wrapper);
+  inputArea.appendChild(el(
+    "div",
+    "help",
+    "対象日：" + (initial.effectiveEquityDate
+      ? formatDateWithWeekday(initial.effectiveEquityDate)
+      : "未入力")
+  ));
 
   const rateInputs = new Map();
-  const rateSection = el("section","fx-losscut-rate-inputs");
-  rateSection.appendChild(el("h3","","通貨ペアごとのシナリオレート"));
+  const pairSection = el("div","fx-losscut-rate-inputs");
+  pairSection.appendChild(el("h4","","通貨ペアごとのシナリオレート"));
   const pairs = Object.keys(initial.rates).sort();
   if (!pairs.length) {
-    rateSection.appendChild(el("div","help","保有中の円建て建玉がありません。"));
+    pairSection.appendChild(el("div","empty","保有中の円建て建玉がありません。"));
   }
   for (const pair of pairs) {
-    const field = makeNumericField(
+    const safePair = pair.replace(/[^A-Za-z0-9_-]/g,"-");
+    const field = createFxLossCutInputField(
       pair + "（現在 " + formatFxLossCutRate(initial.rates[pair]) + "）",
-      "fxLossCutRate_" + accountId + "_" + pair.replace("/","_"),
-      formatInputNumber(initial.rates[pair]),
-      {placeholder:"シナリオレート"}
+      "fx-losscut-rate-" + accountId + "-" + safePair,
+      initial.rates[pair],
+      "評価レート"
     );
-    const input = field.querySelector("input");
-    rateInputs.set(pair,input);
-    rateSection.appendChild(field);
+    rateInputs.set(pair,field.input);
+    pairSection.appendChild(field.wrapper);
   }
-  card.appendChild(rateSection);
+  inputArea.appendChild(pairSection);
 
-  const uniformField = makeNumericField(
+  const uniformField = createFxLossCutInputField(
     "全ペア一律の変動率（%）",
-    "fxLossCutUniform_" + accountId,
-    "",
-    {placeholder:"例：-10（下落10%）"}
+    "fx-losscut-uniform-" + accountId,
+    0,
+    "−100〜＋1,000"
   );
-  const uniformInput = uniformField.querySelector("input");
-  uniformInput.setAttribute("inputmode","decimal");
-  card.appendChild(uniformField);
-  card.appendChild(el(
+  inputArea.appendChild(uniformField.wrapper);
+  inputArea.appendChild(el(
     "div",
     "help",
-    "一律変動率は−100%〜＋1,000%の範囲です。空欄なら一律シナリオを表示しません。"
+    "マイナスは下落、プラスは上昇です。範囲は−100%〜＋1,000%です。"
   ));
+  details.appendChild(inputArea);
 
-  const resultArea = el("section","fx-losscut-results");
-  card.appendChild(resultArea);
-
-  function appendResultBadge(container) {
-    container.appendChild(el("div","success","目安"));
-  }
+  const resultArea = el("div","fx-losscut-detail-results");
+  details.appendChild(resultArea);
+  card.appendChild(details);
 
   function appendScenarioMetrics(container,metrics) {
-    appendAccountMetric(container,"為替差損益",formatFxLossCutYen(metrics.scenarioProfit));
-    appendAccountMetric(container,"シナリオ有効証拠金",formatFxLossCutYen(metrics.effectiveEquity));
-    appendAccountMetric(container,"必要証拠金",formatFxLossCutYen(metrics.requiredMargin));
-    appendAccountMetric(container,"維持率",formatFxLossCutRatio(metrics.maintenanceRatio));
-    appendAccountMetric(
+    appendFxLossCutMetric(container,"シナリオ評価損益",formatFxLossCutYen(metrics.scenarioProfit));
+    appendFxLossCutMetric(container,"シナリオ有効証拠金",formatFxLossCutYen(metrics.effectiveEquity));
+    appendFxLossCutMetric(container,"必要証拠金",formatFxLossCutMoney(metrics.requiredMargin));
+    appendFxLossCutMetric(container,"維持率",formatFxLossCutRatio(metrics.maintenanceRatio));
+    appendFxLossCutMetric(
       container,
       "ロスカット判定",
       metrics.isLossCut === null
         ? "算出不可"
         : metrics.isLossCut ? "ロスカット" : "ロスカットなし"
     );
-    appendAccountMetric(container,"ロスカットまでの余裕額",formatFxLossCutYen(metrics.headroom));
-    appendAccountMetric(
+    appendFxLossCutMetric(container,"ロスカットまでの余裕額",formatFxLossCutYen(metrics.headroom));
+    appendFxLossCutMetric(
       container,
       "不足額（ロスカット維持率基準）",
       formatFxLossCutShortfall(metrics.lossCutShortfall),
-      "余裕額：" + formatFxLossCutYen(metrics.headroom)
+      metrics.lossCutShortfall <= 0 && Number.isFinite(metrics.headroom)
+        ? "余裕額：" + formatFxLossCutYen(metrics.headroom)
+        : ""
     );
-    appendAccountMetric(
+    appendFxLossCutMetric(
       container,
       "不足額（目安維持率基準）",
-      formatFxLossCutShortfall(metrics.targetShortfall)
+      formatFxLossCutShortfall(metrics.targetShortfall),
+      metrics.targetShortfall <= 0 && Number.isFinite(metrics.targetShortfall)
+        ? "余裕額：" + formatFxLossCutYen(-metrics.targetShortfall)
+        : ""
     );
+  }
+
+  function appendLossCutRoots(container,result) {
+    const section = el("section","fx-losscut-result-section");
+    section.appendChild(el("h4","","通貨ペアごとのロスカットレート"));
+    if (!result.pairRates.length) {
+      section.appendChild(el("div","empty","算出できるロスカットレートがありません。"));
+    }
+    for (const pairResult of result.pairRates) {
+      for (const root of pairResult.roots) {
+        appendFxLossCutMetric(
+          section,
+          pairResult.pair + " ／ " + root.direction,
+          root.rate === null ? root.status : formatFxLossCutRate(root.rate)
+        );
+      }
+    }
+    container.appendChild(section);
   }
 
   function updateResults() {
     resultArea.replaceChildren();
-    const effectiveEquity = toNumberOrNull(equityInput.value);
+    const rawEquity = equityField.input.value.trim();
+    const effectiveEquity = toNumberOrNull(rawEquity);
     const scenarioRates = {};
-    const invalidPairs = [];
+    const invalidInputs = [];
+
+    if (rawEquity === "" || effectiveEquity === null || effectiveEquity <= 0) {
+      invalidInputs.push("有効証拠金は0より大きい数値で入力してください。");
+    }
+
     for (const [pair,input] of rateInputs.entries()) {
-      const rate = toNumberOrNull(input.value);
-      if (rate === null || rate <= 0) {
-        invalidPairs.push(pair);
+      const rawRate = input.value.trim();
+      const rate = toNumberOrNull(rawRate);
+      if (rawRate === "" || rate === null || rate <= 0) {
+        invalidInputs.push(pair + "のシナリオレートは0より大きい数値で入力してください。");
       } else {
         scenarioRates[pair] = rate;
       }
     }
 
-    const uniformChangePct = toNumberOrNull(uniformInput.value);
-    const uniformIsValid = uniformInput.value.trim() === "" ||
-      (uniformChangePct !== null &&
-       uniformChangePct >= -100 && uniformChangePct <= 1000);
-    const result = calculateFxLossCut(appData,accountId,{
+    const rawUniform = uniformField.input.value.trim();
+    const uniformChangePct = toNumberOrNull(rawUniform);
+    if (rawUniform === "" || uniformChangePct === null ||
+        uniformChangePct < -100 || uniformChangePct > 1000) {
+      invalidInputs.push("全ペア一律の変動率は−100%〜＋1,000%で入力してください。");
+    }
+
+    if (invalidInputs.length) {
+      resultArea.appendChild(el(
+        "div",
+        "error",
+        invalidInputs.join("／")
+      ));
+      return;
+    }
+
+    const result = calculateFxLossCut(data,accountId,{
       effectiveEquity,
       effectiveEquityDate:initial.effectiveEquityDate,
       scenarioRates,
-      ...(uniformIsValid && uniformInput.value.trim() !== ""
-        ? {uniformChangePct}
-        : {})
+      uniformChangePct
     });
 
     for (const warning of result.warnings) {
-      resultArea.appendChild(el("div","help","警告：" + warning));
+      resultArea.appendChild(el("div","notice","警告：" + warning));
     }
-
     if (result.missing.length) {
       resultArea.appendChild(el(
         "div",
-        "error",
+        "notice",
         "計算できません。不足項目：" + result.missing.join("、")
       ));
+      return;
     }
-    if (invalidPairs.length) {
-      resultArea.appendChild(el(
-        "div",
-        "error",
-        "シナリオレートを正しく入力してください：" + invalidPairs.join("、")
-      ));
-    }
-    if (!uniformIsValid) {
-      resultArea.appendChild(el(
-        "div",
-        "error",
-        "全ペア一律の変動率は−100%〜＋1,000%で入力してください。"
-      ));
+    if (!result.metrics) {
+      resultArea.appendChild(el("div","notice","計算結果を表示できません。"));
+      return;
     }
 
-    if (result.metrics && invalidPairs.length === 0) {
-      const scenarioSection = el("section","fx-losscut-result-section");
-      scenarioSection.appendChild(el("h3","","シナリオ結果"));
-      appendResultBadge(scenarioSection);
-      appendScenarioMetrics(scenarioSection,result.metrics);
-      resultArea.appendChild(scenarioSection);
+    const metricsSection = el("section","fx-losscut-result-section");
+    metricsSection.appendChild(el("h4","","シナリオ結果"));
+    appendScenarioMetrics(metricsSection,result.metrics);
+    resultArea.appendChild(metricsSection);
+
+    appendLossCutRoots(resultArea,result);
+
+    const atSection = el("section","fx-losscut-result-section");
+    atSection.appendChild(el("h4","","ロスカット時点の評価損益・有効証拠金"));
+    if (!result.lossCutAtDetails.length) {
+      atSection.appendChild(el("div","empty","算出できるロスカットレートがありません。"));
     }
-
-    if (result.canCalculate) {
-      const pairSection = el("section","fx-losscut-result-section");
-      pairSection.appendChild(el("h3","","通貨ペアごとのロスカットレート"));
-      appendResultBadge(pairSection);
-      for (const pairResult of result.pairRates) {
-        for (const root of pairResult.roots) {
-          appendAccountMetric(
-            pairSection,
-            pairResult.pair + " ／ " + root.direction,
-            root.rate === null
-              ? root.status
-              : formatFxLossCutRate(root.rate) + "（" + root.status + "）"
-          );
-        }
-      }
-      resultArea.appendChild(pairSection);
-
-      const detailSection = el("section","fx-losscut-result-section");
-      detailSection.appendChild(el("h3","","ロスカット時点の評価損益・有効証拠金"));
-      appendResultBadge(detailSection);
-      if (!result.lossCutAtDetails.length) {
-        detailSection.appendChild(el("div","help","算出できるロスカットレートがありません。"));
-      }
-      for (const detail of result.lossCutAtDetails) {
-        appendAccountMetric(
-          detailSection,
-          detail.pair + " ／ " + detail.direction + " 評価損益合計",
-          formatFxLossCutYen(detail.exchangeProfit)
-        );
-        appendAccountMetric(
-          detailSection,
-          detail.pair + " ／ " + detail.direction + " 有効証拠金",
-          formatFxLossCutYen(detail.effectiveEquity)
-        );
-      }
-      resultArea.appendChild(detailSection);
-
-      const uniformSection = el("section","fx-losscut-result-section");
-      uniformSection.appendChild(el("h3","","全ペア一律変動率の逆算"));
-      appendResultBadge(uniformSection);
-      for (const direction of ["down","up"]) {
-        const root = result.uniformRoots[direction];
-        if (!root) continue;
-        appendAccountMetric(
-          uniformSection,
-          direction === "down" ? "下落方向" : "上昇方向",
-          root.percent === null
-            ? root.status
-            : formatFxLossCutPercent(root.percent)
-        );
-      }
-      if (!result.uniformRoots.down && !result.uniformRoots.up) {
-        uniformSection.appendChild(el("div","help","該当する探索方向がありません。"));
-      }
-      if (result.uniformScenario) {
-        appendAccountMetric(
-          uniformSection,
-          "入力した一律変動率の維持率",
-          formatFxLossCutRatio(result.uniformScenario.maintenanceRatio)
-        );
-        appendAccountMetric(
-          uniformSection,
-          "入力した一律変動率のロスカット判定",
-          result.uniformScenario.isLossCut ? "ロスカット" : "ロスカットなし"
-        );
-      }
-      resultArea.appendChild(uniformSection);
+    for (const item of result.lossCutAtDetails) {
+      appendFxLossCutMetric(
+        atSection,
+        item.pair + " ／ " + item.direction + " 評価損益合計",
+        formatFxLossCutYen(item.exchangeProfit)
+      );
+      appendFxLossCutMetric(
+        atSection,
+        item.pair + " ／ " + item.direction + " 有効証拠金",
+        formatFxLossCutMoney(item.effectiveEquity)
+      );
     }
+    resultArea.appendChild(atSection);
+
+    const uniformSection = el("section","fx-losscut-result-section");
+    uniformSection.appendChild(el("h4","","全ペア一律の逆算・試算"));
+    for (const direction of ["down","up"]) {
+      const root = result.uniformRoots[direction];
+      if (!root) continue;
+      appendFxLossCutMetric(
+        uniformSection,
+        direction === "down" ? "下落方向の変動率" : "上昇方向の変動率",
+        root.percent === null ? root.status : formatFxLossCutPercent(root.percent)
+      );
+    }
+    if (!result.uniformRoots.down && !result.uniformRoots.up) {
+      uniformSection.appendChild(el("div","empty","該当する探索方向がありません。"));
+    }
+    if (result.uniformScenario) {
+      appendFxLossCutMetric(
+        uniformSection,
+        "入力した一律変動率の維持率",
+        formatFxLossCutRatio(result.uniformScenario.maintenanceRatio)
+      );
+      appendFxLossCutMetric(
+        uniformSection,
+        "入力した一律変動率のロスカット判定",
+        result.uniformScenario.isLossCut ? "ロスカット" : "ロスカットなし"
+      );
+    }
+    resultArea.appendChild(uniformSection);
+
+    const contextSection = el("section","fx-losscut-result-section");
+    contextSection.appendChild(el("h4","","計算条件・対象日"));
+    appendFxLossCutMetric(
+      contextSection,
+      "必要証拠金の補正係数",
+      result.correctionDate
+        ? result.correctionFactor.toLocaleString("ja-JP",{maximumFractionDigits:6})
+        : "補正なし（係数1）",
+      result.correctionDate
+        ? "実績対象日：" + formatDateWithWeekday(result.correctionDate)
+        : ""
+    );
+    appendFxLossCutMetric(
+      contextSection,
+      "有効証拠金の対象日",
+      result.effectiveEquityDate
+        ? formatDateWithWeekday(result.effectiveEquityDate)
+        : "対象日なし"
+    );
+    for (const pair of Object.keys(result.rateDates).sort()) {
+      appendFxLossCutMetric(
+        contextSection,
+        pair + " 評価レートの対象日",
+        result.rateDates[pair]
+          ? formatDateWithWeekday(result.rateDates[pair])
+          : "対象日なし"
+      );
+    }
+    resultArea.appendChild(contextSection);
   }
 
-  equityInput.addEventListener("input",updateResults);
+  equityField.input.addEventListener("input",updateResults);
   for (const input of rateInputs.values()) {
     input.addEventListener("input",updateResults);
   }
-  uniformInput.addEventListener("input",updateResults);
+  uniformField.input.addEventListener("input",updateResults);
   updateResults();
 
   return card;
