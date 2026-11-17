@@ -445,6 +445,99 @@ function registerLosscutTests(context) {
     assert(JSON.stringify(data) === before,
       "シナリオ入力で元データが変更されてはいけません。");
   });
+
+  runTest("S5g：通貨ペア別・保有中・決済済の区分表示",() => {
+    const previousData = appData;
+    const account = makeAccount(
+      "fx-s5g-test",
+      "架空S5gテスト口座",
+      "fx",
+      "fx"
+    );
+    const fixture = makeLossCutData({
+      accountId:account.id,
+      accountName:account.name,
+      positions:[
+        {
+          id:"s5g-open-1",
+          accountId:account.id,
+          pair:"USD/JPY",
+          side:"買",
+          quantity:100000,
+          openRate:150,
+          swap:1000,
+          openDate:"2026-10-01",
+          asOfDate:"2026-11-17",
+          status:"保有中"
+        },
+        {
+          id:"s5g-open-2",
+          accountId:account.id,
+          pair:"USD/JPY",
+          side:"買",
+          quantity:50000,
+          openRate:152,
+          swap:500,
+          openDate:"2026-10-10",
+          asOfDate:"2026-11-17",
+          status:"保有中"
+        },
+        {
+          id:"s5g-closed-1",
+          accountId:account.id,
+          pair:"EUR/JPY",
+          side:"売",
+          quantity:30000,
+          openRate:160,
+          swap:200,
+          openDate:"2026-09-01",
+          closeDate:"2026-10-01",
+          realizedPnl:12000,
+          status:"決済済"
+        }
+      ],
+      rates:[{
+        id:"s5g-rate",
+        accountId:account.id,
+        pair:"USD/JPY",
+        rate:155,
+        asOfDate:"2026-11-17"
+      }]
+    });
+    fixture.accounts = [account];
+    fixture.fxSwapLedger = [];
+    const before = JSON.stringify(fixture);
+
+    try {
+      appData = fixture;
+
+      const pairSection = renderFxAccountPairSectionS5g(account);
+      assert(pairSection.textContent.includes("USD/JPY"),
+        "通貨ペア別にUSD/JPYを表示する必要があります。");
+      assert(pairSection.textContent.includes("150.666667") ||
+        pairSection.textContent.includes("150.666666"),
+        "数量加重平均約定レートを表示する必要があります。");
+
+      const openSection = renderFxAccountOpenPositionsS5g(account);
+      assert(openSection.querySelectorAll("details.fx-account-position").length === 2,
+        "保有中建玉を2件表示する必要があります。");
+      assert(openSection.textContent.includes("USD/JPY"),
+        "保有中建玉の通貨ペアを表示する必要があります。");
+
+      const settledSection = renderFxAccountSettledPositionsS5g(account);
+      assert(settledSection.textContent.includes("決済済建玉"),
+        "決済済建玉の区分見出しが必要です。");
+      assert(settledSection.textContent.includes("¥12,000") ||
+        settledSection.textContent.includes("+¥12,000"),
+        "決済損益を表示する必要があります。");
+
+      assert(JSON.stringify(fixture) === before,
+        "区分表示の描画で保存データを変更してはいけません。");
+    } finally {
+      appData = previousData;
+    }
+  });
+
 }
 
 const registerFxTestsBeforeLossCut = registerFxTests;
