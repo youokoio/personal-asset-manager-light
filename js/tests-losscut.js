@@ -325,14 +325,7 @@ function registerLosscutTests(context) {
       "計算前後で入力データが変わってはいけません。");
   });
 
-  runTest("S6② 画面：4口座のロスカット計算カード描画",() => {
-    const hasLexicalAppData = typeof appData !== "undefined";
-    const originalAppData = hasLexicalAppData ? appData : globalThis.appData;
-    const originalDescriptor = Object.getOwnPropertyDescriptor(
-      globalThis,
-      "appData"
-    );
-
+  runTest("S6② 画面：4口座のロスカットブロック描画",() => {
     const fixtures = [
       makeLossCutData({
         accountId:"fx-render-normal",
@@ -362,31 +355,50 @@ function registerLosscutTests(context) {
       })
     ];
 
-    try {
-      for (const fixture of fixtures) {
-        if (hasLexicalAppData) appData = fixture;
-        else globalThis.appData = fixture;
+    for (const fixture of fixtures) {
+      const before = JSON.stringify(fixture);
+      const account = fixture.accounts[0];
+      const block = renderFxLossCutBlock(fixture,account.id);
 
-        const account = fixture.accounts[0];
-        const card = renderFxLossCutCard(account.id);
+      assert(block && block.tagName === "SECTION",
+        account.name + "のロスカットブロックが描画されていません。");
+      assert(block.textContent.includes("ロスカット値"),
+        account.name + "の見出しが表示されていません。");
+      assert(block.textContent.includes("目安"),
+        account.name + "の目安表示がありません。");
+      assert(block.querySelector("details"),
+        account.name + "の詳細・シナリオ試算がありません。");
 
-        assert(card && card.tagName === "SECTION",
-          account.name + "のロスカット計算カードが描画されていません。");
-        assert(card.textContent.trim().length > 0,
-          account.name + "のカード本文が空です。");
-        assert(card.textContent.includes(account.name),
-          account.name + "の口座名が表示されていません。");
-        assert(card.textContent.includes("ロスカット計算"),
-          account.name + "の見出しが表示されていません。");
+      if (account.id === "fx-render-no-position") {
+        assert(block.textContent.includes("建玉なし"),
+          "建玉なしの表示がありません。");
       }
-    } finally {
-      if (hasLexicalAppData) appData = originalAppData;
-      else if (originalDescriptor) {
-        Object.defineProperty(globalThis,"appData",originalDescriptor);
-      } else {
-        Reflect.deleteProperty(globalThis,"appData");
-      }
+
+      assert(JSON.stringify(fixture) === before,
+        account.name + "の描画で元データが変更されています。");
     }
+  });
+
+  runTest("S6② 画面：シナリオ入力で結果を再計算",() => {
+    const data = makeLossCutData();
+    const before = JSON.stringify(data);
+    const block = renderFxLossCutBlock(data,"fx-losscut");
+    const inputs = block.querySelectorAll(".fx-losscut-input");
+
+    assert(inputs.length === 3,
+      "有効証拠金・通貨ペアレート・一律変動率の3入力が必要です。");
+
+    const resultArea = block.querySelector(".fx-losscut-detail-results");
+    assert(resultArea && resultArea.textContent.includes("シナリオ結果"),
+      "初期シナリオ結果が表示されていません。");
+
+    inputs[0].value = "900000";
+    inputs[0].dispatchEvent(new Event("input",{bubbles:true}));
+
+    assert(resultArea.textContent.includes("シナリオ結果"),
+      "入力変更後のシナリオ結果が表示されていません。");
+    assert(JSON.stringify(data) === before,
+      "シナリオ入力で元データが変更されています。");
   });
 }
 
