@@ -1,4 +1,4 @@
 "use strict";
 
-var appData;
-var editingSnapshotId = null;
+globalThis.appData = undefined;
+globalThis.editingSnapshotId = null;
