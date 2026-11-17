@@ -42,8 +42,9 @@ function runAllTests() {
       results.push({
         name,
         success:false,
-        message:(error && error.stack ? error.stack :
-          error && error.message ? error.message : String(error)) + diagnostic
+        message:(error && error.name ? error.name : "Error") + ": " +
+          (error && error.message ? error.message : String(error)) +
+          (error && error.stack ? "\n" + error.stack : "") + diagnostic
       });
     }
   }
