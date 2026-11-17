@@ -934,3 +934,112 @@ button.chart-legend-button.chart-legend-hidden {
     align-items:center;
   }
 }
+
+
+/* ---------- S6②-2 FXロスカット目安 ---------- */
+
+.fx-losscut-card {
+  margin-top:0;
+}
+
+.fx-losscut-heading {
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+}
+
+.fx-losscut-heading h3 {
+  margin:0;
+}
+
+.fx-losscut-heading .pill {
+  flex:0 0 auto;
+}
+
+.fx-losscut-summary {
+  margin-top:10px;
+}
+
+.fx-losscut-warnings {
+  margin-top:10px;
+}
+
+.fx-losscut-warnings .notice {
+  margin-bottom:7px;
+}
+
+.fx-losscut-details {
+  margin-top:14px;
+  padding-top:12px;
+  border-top:1px solid var(--border);
+}
+
+.fx-losscut-details > summary {
+  color:var(--blue);
+  font-size:14px;
+  font-weight:650;
+  cursor:pointer;
+  padding:5px 0;
+}
+
+.fx-losscut-details[open] > summary {
+  margin-bottom:12px;
+}
+
+.fx-losscut-inputs h4,
+.fx-losscut-result-section h4 {
+  margin:0 0 10px;
+  font-size:14px;
+}
+
+.fx-losscut-inputs > .help {
+  margin-top:-7px;
+  margin-bottom:12px;
+}
+
+.fx-losscut-input-field {
+  margin-bottom:12px;
+}
+
+.fx-losscut-input {
+  text-align:right;
+  font-variant-numeric:tabular-nums;
+}
+
+.fx-losscut-rate-inputs {
+  margin-top:14px;
+}
+
+.fx-losscut-rate-inputs h4 {
+  margin-bottom:10px;
+}
+
+.fx-losscut-detail-results {
+  margin-top:14px;
+}
+
+.fx-losscut-result-section {
+  padding:12px 0;
+  border-top:1px solid var(--border);
+}
+
+.fx-losscut-result-section h4 {
+  margin-bottom:8px;
+}
+
+.fx-losscut-result-section .account-metric-line:last-child {
+  border-bottom:0;
+}
+
+@media (min-width:600px) {
+  .fx-losscut-rate-inputs {
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    column-gap:16px;
+  }
+
+  .fx-losscut-rate-inputs h4 {
+    grid-column:1 / -1;
+  }
+}
