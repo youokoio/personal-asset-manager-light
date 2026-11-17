@@ -1205,6 +1205,10 @@ function renderAccountDetail() {
 
   app.appendChild(heading(account.name));
 
+  if (account.type === "fx") {
+    app.appendChild(renderFxLossCutBlock(appData,account.id));
+  }
+
   const latest = getLatestSnapshot(appData,account.id);
   const holdingsSummary = isHoldingsAccount(account)
     ? calculateHoldingsSummary(appData,account.id)
