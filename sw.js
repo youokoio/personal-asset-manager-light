@@ -1,11 +1,12 @@
 "use strict";
 
-const CACHE_NAME = "pam2-s5f-v1.13";
+const CACHE_NAME = "pam2-s5f-v2";
 const APP_FILES = [
   "./index.html",
   "./style.css",
   "./manifest.json",
   "./icon.svg",
+  "./js/tests-render-bootstrap.js",
   "./js/core.js",
   "./js/storage.js",
   "./js/calc-fx.js",
