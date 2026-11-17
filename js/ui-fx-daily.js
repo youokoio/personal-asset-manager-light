@@ -1,3 +1,4 @@
+
 "use strict";
 
 /* ---------- FX日次入力 UI ---------- */
@@ -1204,7 +1205,7 @@ function renderFxAccountDetailS5g(account) {
   app.appendChild(back);
   app.appendChild(heading(account.name));
 
-  const latestSection = renderFxAccountLatestStateS5g(account);
+  const latestSection = appendFxAccountLatestStateS5g(account);
   const dailySection = el("section","card");
   dailySection.appendChild(renderFxDailyInputForm(account));
 
