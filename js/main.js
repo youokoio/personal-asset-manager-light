@@ -406,6 +406,7 @@ async function runTestsAndRender() {
     "./js/tests-fx.js",
     "./js/tests-fx-daily.js",
     "./js/tests-losscut.js",
+    "./js/tests-snapshot-edit.js",
     "./js/tests.js"
   ];
 
