@@ -109,6 +109,7 @@ function runAllTests() {
   registerFxSwapEstimateTests(context);
   registerFxPositionBatchTests(context);
   registerLoanTests(context);
+  registerSnapshotEditTests(context);
 
   return results;
 }
