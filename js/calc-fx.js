@@ -677,3 +677,304 @@ function parseFxPositionCsv(text,accounts) {
 
   return {items,errors};
 }
+
+/* ---------- FX決済シミュレーション ---------- */
+
+function calculateFxSettlementSimulation(
+  data,
+  accountId,
+  selectedPositionIds,
+  settlementRates,
+  swapValues,
+  options = {}
+) {
+  if (!data || !Array.isArray(data.accounts) ||
+      !Array.isArray(data.fxPositions) || !Array.isArray(data.fxRates) ||
+      !Array.isArray(data.snapshots) || !Array.isArray(data.fxSwapLedger) ||
+      !data.settings) {
+    throw new Error("FXデータの形式が正しくありません。");
+  }
+
+  if (!data.accounts.some(item =>
+    item.id === accountId && item.type === "fx"
+  )) {
+    throw new Error("FX口座が見つかりません。");
+  }
+
+  if (!Array.isArray(selectedPositionIds) ||
+      selectedPositionIds.length === 0 ||
+      new Set(selectedPositionIds).size !== selectedPositionIds.length) {
+    throw new Error("決済する建玉を1件以上選択してください。");
+  }
+
+  const openPositions = getFxOpenPositions(data,accountId);
+  const selectedPositions = selectedPositionIds.map(id =>
+    openPositions.find(position => position.id === id) || null
+  );
+  if (selectedPositions.some(position => position === null)) {
+    throw new Error("選択した建玉が見つからないか、既に決済されています。");
+  }
+
+  const rates = settlementRates && typeof settlementRates === "object"
+    ? settlementRates
+    : {};
+  const swaps = swapValues && typeof swapValues === "object"
+    ? swapValues
+    : {};
+  const details = [];
+  let settlementPnl = 0;
+
+  for (const position of selectedPositions) {
+    const rate = rates[position.pair];
+    if (!Number.isFinite(rate) || rate <= 0) {
+      throw new Error(position.pair + "の決済レートを入力してください。");
+    }
+
+    const swap = Object.prototype.hasOwnProperty.call(swaps,position.id)
+      ? swaps[position.id]
+      : position.swap;
+    if (!Number.isSafeInteger(swap)) {
+      throw new Error(
+        position.pair + "のスワップを整数の円で入力してください。"
+      );
+    }
+
+    const exchangeProfit = Math.trunc(
+      calculateFxPositionExchangeProfit(position,rate)
+    );
+    if (!Number.isSafeInteger(exchangeProfit)) {
+      throw new Error("決済為替損益が安全な整数の範囲を超えています。");
+    }
+
+    const total = exchangeProfit + swap;
+    if (!Number.isSafeInteger(total)) {
+      throw new Error("決済損益が安全な整数の範囲を超えています。");
+    }
+    settlementPnl += total;
+    details.push({
+      positionId:position.id,
+      pair:position.pair,
+      side:position.side,
+      quantity:position.quantity,
+      openRate:position.openRate,
+      settlementRate:rate,
+      exchangeProfit,
+      swap,
+      total
+    });
+  }
+
+  if (!Number.isSafeInteger(settlementPnl)) {
+    throw new Error("決済損益合計が安全な整数の範囲を超えています。");
+  }
+
+  const taxRatePct = data.settings.taxRatePct;
+  const fxYtdRealized = data.settings.fxYtdRealized;
+  const fxLossCarry = data.settings.fxLossCarry;
+  if (![taxRatePct,fxYtdRealized,fxLossCarry].every(Number.isFinite) ||
+      taxRatePct < 0) {
+    throw new Error("税率・今年の確定損益・繰越損失の設定を確認してください。");
+  }
+
+  const taxBefore = Math.max(0,fxYtdRealized - fxLossCarry);
+  const taxAfter = Math.max(
+    0,
+    fxYtdRealized + settlementPnl - fxLossCarry
+  );
+  const estimatedTax = settlementPnl < 0
+    ? 0
+    : Math.floor(Math.max(0,taxAfter - taxBefore) * taxRatePct / 100);
+  const afterTaxProfit = settlementPnl - estimatedTax;
+
+  const beforeLossCut = calculateFxLossCut(data,accountId);
+  const context = getFxLossCutAccountContext(data,accountId);
+  const deductTax = options.deductTax === true;
+  const currentEquity = context.effectiveEquity;
+  const afterEquity = Number.isFinite(currentEquity)
+    ? currentEquity - (deductTax ? estimatedTax : 0)
+    : null;
+  const selectedIdSet = new Set(selectedPositionIds);
+  const remainingPositions = openPositions.filter(position =>
+    !selectedIdSet.has(position.id)
+  );
+  const remainingLossCutPositions = context.positions.filter(position =>
+    !selectedIdSet.has(position.id)
+  );
+  const remainingPairs = new Set(remainingLossCutPositions.map(position =>
+    position.pair
+  ));
+  const afterContext = {
+    ...context,
+    positions:remainingLossCutPositions,
+    missing:context.missing.filter(item => {
+      const match = item.match(/^評価レート（(.+)）$/);
+      return !match || remainingPairs.has(match[1]);
+    })
+  };
+
+  let afterLossCut = {
+    canCalculate:false,
+    missing:[],
+    warnings:context.warnings.slice(),
+    effectiveEquity:afterEquity,
+    metrics:null,
+    pairRates:[],
+    lossCutAtDetails:[]
+  };
+
+  if (remainingLossCutPositions.length > 0 &&
+      afterContext.missing.length === 0 &&
+      Number.isFinite(afterEquity)) {
+    const metrics = calculateFxLossCutMetrics(
+      afterContext,
+      afterContext.rates,
+      afterEquity
+    );
+    if (metrics) {
+      const pairRates = calculateFxLossCutPairRates(
+        afterContext,
+        afterEquity
+      );
+      const lossCutAtDetails = pairRates.flatMap(pairResult =>
+        pairResult.roots
+          .filter(root => root.rate !== null)
+          .map(root => ({pair:pairResult.pair,...root}))
+      );
+      afterLossCut = {
+        canCalculate:true,
+        missing:[],
+        warnings:context.warnings.slice(),
+        effectiveEquity:afterEquity,
+        metrics,
+        pairRates,
+        lossCutAtDetails
+      };
+    }
+  } else {
+    afterLossCut.missing = afterContext.missing.slice();
+    if (!remainingLossCutPositions.length) {
+      afterLossCut.missing.push("決済後に残る円建て建玉");
+    }
+  }
+
+  const targetPair = options.targetPair || "";
+  const targetRate = options.targetRate;
+  let targetMaintenance = {
+    canCalculate:false,
+    pair:targetPair || null,
+    rate:Number.isFinite(targetRate) ? targetRate : null,
+    requiredEffectiveEquity:null,
+    difference:null
+  };
+
+  if (remainingLossCutPositions.length > 0 &&
+      afterContext.missing.length === 0 &&
+      Number.isFinite(afterEquity) &&
+      remainingPairs.has(targetPair) &&
+      Number.isFinite(targetRate) &&
+      targetRate > 0) {
+    let currentProfit = 0;
+    let targetProfit = 0;
+    let rawRequiredMargin = 0;
+    let valid = true;
+
+    for (const position of remainingLossCutPositions) {
+      const currentRate = afterContext.rates[position.pair];
+      const scenarioRate = position.pair === targetPair
+        ? targetRate
+        : currentRate;
+      if (!Number.isFinite(currentRate) ||
+          !Number.isFinite(scenarioRate) ||
+          !Number.isFinite(position.quantity) ||
+          position.quantity <= 0) {
+        valid = false;
+        break;
+      }
+      currentProfit += calculateFxPositionExchangeProfit(
+        position,
+        currentRate
+      );
+      targetProfit += calculateFxPositionExchangeProfit(
+        position,
+        scenarioRate
+      );
+      rawRequiredMargin += position.quantity *
+        scenarioRate * context.marginRatePct / 100;
+    }
+
+    const requiredMargin = rawRequiredMargin * context.correctionFactor;
+    if (valid && Number.isFinite(requiredMargin)) {
+      const requiredEffectiveEquity =
+        context.lossCutRatio * requiredMargin / 100 -
+        (targetProfit - currentProfit);
+      targetMaintenance = {
+        canCalculate:true,
+        pair:targetPair,
+        rate:targetRate,
+        requiredEffectiveEquity,
+        difference:requiredEffectiveEquity - afterEquity
+      };
+    }
+  }
+
+  const warnings = [];
+  const selectedGroups = new Map();
+  for (const position of selectedPositions) {
+    const key = JSON.stringify([
+      position.accountId,
+      position.pair,
+      position.side
+    ]);
+    if (!selectedGroups.has(key)) {
+      selectedGroups.set(key,{
+        pair:position.pair,
+        side:position.side
+      });
+    }
+  }
+
+  for (const group of selectedGroups.values()) {
+    const latest = getLatestFxSwapRegistration(
+      data,
+      accountId,
+      group.pair,
+      group.side
+    );
+    const reconciliation = calculateFxSwapGroupReconciliation(
+      data,
+      accountId,
+      group.pair,
+      group.side
+    );
+    if ((latest && latest.status === "未配分") ||
+        (reconciliation && reconciliation.warning)) {
+      warnings.push(
+        group.pair + "／" + group.side +
+        "にスワップの未配分・不一致があります。決済損益のスワップが不正確な可能性があります。"
+      );
+    }
+  }
+
+  return {
+    accountId,
+    selectedCount:selectedPositions.length,
+    details,
+    settlementPnl,
+    taxRatePct,
+    estimatedTax,
+    afterTaxProfit,
+    deductTax,
+    currentEquity,
+    afterEquity,
+    beforeLossCut:{
+      canCalculate:beforeLossCut.canCalculate,
+      missing:beforeLossCut.missing,
+      metrics:beforeLossCut.metrics,
+      lossCutAtDetails:beforeLossCut.lossCutAtDetails
+    },
+    afterLossCut,
+    remainingPositionCount:remainingPositions.length,
+    targetMaintenance,
+    warnings
+  };
+}
