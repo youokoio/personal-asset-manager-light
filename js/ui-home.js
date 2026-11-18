@@ -1,4 +1,3 @@
-
 "use strict";
 
 /* ---------- ホーム ---------- */
@@ -60,6 +59,50 @@ function renderDashboard() {
   grid.appendChild(diffCard);
 
   app.appendChild(grid);
+
+  const loanSummary = calculateLoanDebtSummary(
+    appData,
+    summary.total
+  );
+  const loanCard = el("section","card home-loan-card");
+
+  loanCard.appendChild(el("h3","","住宅ローン・純資産"));
+
+  appendHomeMetric(
+    loanCard,
+    "住宅ローン負債合計",
+    loanSummary.debt === null
+      ? (loanSummary.loanCount === 0 ? "未登録" : "未入力")
+      : formatYen(loanSummary.debt)
+  );
+
+  appendHomeMetric(
+    loanCard,
+    "純資産（総資産－負債）",
+    loanSummary.netWorth === null
+      ? "算出不可"
+      : formatYen(loanSummary.netWorth)
+  );
+
+  if (loanSummary.loanCount > 0 &&
+      !loanSummary.isComplete) {
+    loanCard.appendChild(el(
+      "div",
+      "help",
+      "登録済みローン " + loanSummary.loanCount +
+        "本のうち、残高履歴が入力済みなのは " +
+        loanSummary.recordedLoanCount +
+        "本です。すべてのローンの残高を登録すると負債合計と純資産を算出します。"
+    ));
+  } else if (loanSummary.loanCount === 0) {
+    loanCard.appendChild(el(
+      "div",
+      "help",
+      "住宅ローンが登録されていません。"
+    ));
+  }
+
+  app.appendChild(loanCard);
 
   const totals = calculateCategoryTotals(appData);
 
