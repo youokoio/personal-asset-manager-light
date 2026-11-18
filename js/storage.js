@@ -466,6 +466,70 @@ function validateData(data) {
     }
   }
 
+  /* ---------- 住宅ローン検証 ---------- */
+
+  const loanIds = new Set();
+
+  for (const loan of data.loans) {
+    if (!loan ||
+        typeof loan.id !== "string" ||
+        !loan.id ||
+        typeof loan.name !== "string" ||
+        !loan.name.trim() ||
+        !isValidFxDateForStorage(loan.startDate) ||
+        typeof loan.startAmount !== "number" ||
+        !Number.isFinite(loan.startAmount) ||
+        loan.startAmount <= 0 ||
+        !["変動","固定"].includes(loan.rateType) ||
+        !isValidFxDateForStorage(loan.finalDueDate) ||
+        !Number.isInteger(loan.repayDay) ||
+        loan.repayDay < 1 ||
+        loan.repayDay > 31 ||
+        !isNullableNumber(loan.monthlyPayment) ||
+        (loan.monthlyPayment !== null &&
+         loan.monthlyPayment !== undefined &&
+         loan.monthlyPayment < 0) ||
+        !isValidFxDateForStorage(loan.reviewDate) ||
+        typeof loan.rule5y !== "boolean" ||
+        typeof loan.rule125 !== "boolean" ||
+        typeof loan.memo !== "string") {
+      throw new Error("住宅ローンデータに不正な項目があります。");
+    }
+
+    if (loanIds.has(loan.id)) {
+      throw new Error("住宅ローンIDが重複しています。");
+    }
+    loanIds.add(loan.id);
+  }
+
+  const loanSnapshotIds = new Set();
+
+  for (const snapshot of data.loanSnapshots) {
+    if (!snapshot ||
+        typeof snapshot.id !== "string" ||
+        !snapshot.id ||
+        typeof snapshot.loanId !== "string" ||
+        !isValidFxDateForStorage(snapshot.asOfDate) ||
+        typeof snapshot.recordedAt !== "string" ||
+        typeof snapshot.balance !== "number" ||
+        !Number.isFinite(snapshot.balance) ||
+        snapshot.balance < 0 ||
+        typeof snapshot.rate !== "number" ||
+        !Number.isFinite(snapshot.rate) ||
+        snapshot.rate < 0) {
+      throw new Error("住宅ローン履歴データに不正な項目があります。");
+    }
+
+    if (loanSnapshotIds.has(snapshot.id)) {
+      throw new Error("住宅ローン履歴IDが重複しています。");
+    }
+    loanSnapshotIds.add(snapshot.id);
+
+    if (!loanIds.has(snapshot.loanId)) {
+      throw new Error("住宅ローン履歴の参照先がありません。");
+    }
+  }
+
   const settingNumberFields = [
     "taxRatePct",
     "fxYtdRealized",
