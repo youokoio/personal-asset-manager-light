@@ -32,9 +32,9 @@ function registerSnapshotEditTests(context) {
     document.body.appendChild(form);
 
     const previous = {
-      appData:globalThis.appData,
-      selectedAccountId:globalThis.selectedAccountId,
-      editingSnapshotId:globalThis.editingSnapshotId,
+      appData,
+      selectedAccountId,
+      editingSnapshotId,
       saveData:globalThis.saveData,
       render:globalThis.render,
       showMessage:globalThis.showMessage,
@@ -43,9 +43,9 @@ function registerSnapshotEditTests(context) {
     const saved = {called:false,data:null};
 
     try {
-      globalThis.appData = data;
-      globalThis.selectedAccountId = accountId;
-      globalThis.editingSnapshotId = snapshotId;
+      appData = data;
+      selectedAccountId = accountId;
+      editingSnapshotId = snapshotId;
       globalThis.saveData = nextData => {
         saved.called = true;
         saved.data = nextData;
@@ -60,9 +60,9 @@ function registerSnapshotEditTests(context) {
 
       return saved;
     } finally {
-      globalThis.appData = previous.appData;
-      globalThis.selectedAccountId = previous.selectedAccountId;
-      globalThis.editingSnapshotId = previous.editingSnapshotId;
+      appData = previous.appData;
+      selectedAccountId = previous.selectedAccountId;
+      editingSnapshotId = previous.editingSnapshotId;
       globalThis.saveData = previous.saveData;
       globalThis.showMessage = previous.showMessage;
       if (previous.hadRender) {
@@ -141,10 +141,13 @@ function registerSnapshotEditTests(context) {
         {futureField:"x"}
       )
     ]);
-    submitSnapshotForTest(
+    const saved = submitSnapshotForTest(
       data,account.id,"snapshot-edit-2",makeFormValues()
     );
 
+    assert(saved.called,"保存処理を呼び出す必要があります。");
+    assert(data.snapshots[0].value === 2000,
+      "編集した総資産を2,000円に更新する必要があります。");
     assert(data.snapshots[0].futureField === "x",
       "未知の項目 futureField＝x を保持する必要があります。");
   });
@@ -195,10 +198,13 @@ function registerSnapshotEditTests(context) {
     assert(getLatestSnapshot(data,account.id).id === "snapshot-edit-B",
       "編集前はrecordedAtが新しいBを採用する必要があります。");
 
-    submitSnapshotForTest(
+    const saved = submitSnapshotForTest(
       data,account.id,"snapshot-edit-A",makeFormValues()
     );
 
+    assert(saved.called,"保存処理を呼び出す必要があります。");
+    assert(data.snapshots[0].value === 2000,
+      "編集対象Aの総資産を2,000円に更新する必要があります。");
     assert(getLatestSnapshot(data,account.id).id === "snapshot-edit-B",
       "Aを編集しても採用記録はBのままである必要があります。");
   });
@@ -239,10 +245,11 @@ function registerSnapshotEditTests(context) {
       snapshots:[snapshot]
     };
 
-    submitSnapshotForTest(
+    const saved = submitSnapshotForTest(
       data,account.id,"snapshot-edit-6",makeFormValues({pnl:""})
     );
 
+    assert(saved.called,"保存処理を呼び出す必要があります。");
     assert(data.snapshots[0].pnl === null,
       "空欄にした評価損益は従来どおりnullにする必要があります。");
   });
