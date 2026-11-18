@@ -1373,7 +1373,12 @@ function handleSnapshotSubmit(event) {
       render();
       return;
     }
-    appData.snapshots[index] = snapshot;
+    appData.snapshots[index] = {
+      ...previousSnapshot,
+      ...snapshot,
+      recordedAt:previousSnapshot.recordedAt,
+      updatedAt:now
+    };
   } else {
     appData.snapshots.push(snapshot);
   }
