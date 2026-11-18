@@ -297,6 +297,7 @@ function createLoanCard(loan) {
   card.appendChild(actions);
 
   card.appendChild(createLoanHistory(loan));
+  card.appendChild(createLoanSimulation(loan));
 
   if (loan.memo) {
     card.appendChild(el("div","help","メモ：" + loan.memo));
@@ -341,6 +342,10 @@ function renderLoanScreen() {
 
   for (const loan of appData.loans) {
     app.appendChild(createLoanCard(loan));
+  }
+
+  if (appData.loans.length > 0) {
+    app.appendChild(createLoanCombinedSummaryCard());
   }
 
   if (appData.loans.length < 2) {
@@ -503,4 +508,318 @@ function saveLoanSnapshotFromForm() {
   loanSnapshotTargetId = null;
   showMessage("残高・金利の履歴を保存しました。");
   renderLoanScreen();
+}
+
+
+/* ---------- 住宅ローン金利シミュレーション ---------- */
+
+function createLoanDisplayLine(label,value) {
+  return el("div","loan-simulation-line",label + "：" + value);
+}
+
+function createLoanSimulationTable(months,paymentDates) {
+  const section = el("section","card loan-monthly-breakdown");
+  section.appendChild(el(
+    "h4",
+    "",
+    "指定金利での12回分の返済内訳"
+  ));
+  section.appendChild(el(
+    "div",
+    "help",
+    "過去の月別残高は保存していないため、現在残高からの試算です。"
+  ));
+
+  if (!months || !months.length) {
+    section.appendChild(el("div","empty","返済内訳を計算できません。"));
+    return section;
+  }
+
+  const table = el("div","loan-monthly-table");
+  const header = el("div","loan-monthly-row loan-monthly-header");
+  for (const label of ["回数・返済日","利息","元金","返済後残高"]) {
+    header.appendChild(el("div","",label));
+  }
+  table.appendChild(header);
+
+  for (let index = 0; index < months.length; index += 1) {
+    const month = months[index];
+    const row = el("div","loan-monthly-row");
+    const date = paymentDates[index] || (month.month + "回目");
+    row.appendChild(el("div","",month.month + "回目\n" + date));
+    row.appendChild(el("div","",formatYen(month.interest)));
+    row.appendChild(el("div","",formatYen(month.principal)));
+    row.appendChild(el("div","",formatYen(month.nextBalance)));
+    table.appendChild(row);
+  }
+
+  section.appendChild(table);
+  if (months.some(item => item.unpaidInterest)) {
+    section.appendChild(el(
+      "div",
+      "notice warning",
+      "未払利息が発生する試算です。"
+    ));
+  }
+  return section;
+}
+
+function createLoanScenarioResult(row) {
+  const card = el("section","card loan-scenario-result");
+  card.appendChild(el(
+    "h4",
+    "",
+    formatDateWithWeekday(row.reviewDate) + " の見直し試算"
+  ));
+
+  card.appendChild(createLoanDisplayLine(
+    "見直し日時点の予測残高",
+    formatYen(row.forecastBalance)
+  ));
+  card.appendChild(createLoanDisplayLine(
+    "想定金利",
+    row.scenarioRate + "%"
+  ));
+  card.appendChild(createLoanDisplayLine(
+    "見直し後の毎月返済額",
+    row.newPayment === null ? "計算不可" : formatYen(row.newPayment)
+  ));
+
+  if (row.firstMonth) {
+    card.appendChild(createLoanDisplayLine(
+      "初月の利息",
+      formatYen(row.firstMonth.interest)
+    ));
+    card.appendChild(createLoanDisplayLine(
+      "初月の元金",
+      formatYen(row.firstMonth.principal)
+    ));
+  }
+
+  card.appendChild(createLoanDisplayLine(
+    "現行返済額との差",
+    row.difference === null ? "計算不可" : formatSignedYen(row.difference)
+  ));
+  card.appendChild(createLoanDisplayLine(
+    "見直し後の累計利息",
+    row.cumulativeInterestAfterReview === null
+      ? "計算不可"
+      : formatYen(row.cumulativeInterestAfterReview)
+  ));
+
+  if (row.capped) {
+    card.appendChild(el(
+      "div",
+      "notice warning",
+      "125%ルールの上限を適用しました（上限：" +
+        formatYen(row.capAmount) +
+        "）。"
+    ));
+  }
+  if (row.unpaidInterest) {
+    card.appendChild(el(
+      "div",
+      "notice warning",
+      "未払利息が発生する試算です。"
+    ));
+  }
+  return card;
+}
+
+function createLoanSimulation(loan) {
+  const section = el("section","loan-simulation");
+  section.appendChild(el("h4","","金利変更シミュレーション"));
+
+  const latest = getLatestLoanSnapshot(appData,loan.id);
+  if (!latest ||
+      !isFiniteMetricValue(loan.monthlyPayment) ||
+      !isFiniteMetricValue(latest.balance) ||
+      !isFiniteMetricValue(latest.rate)) {
+    section.appendChild(el(
+      "div",
+      "empty",
+      "現在残高・適用金利・毎月返済額を登録すると試算できます。"
+    ));
+    return section;
+  }
+
+  if (loan.rateType !== "変動") {
+    section.appendChild(el(
+      "div",
+      "help",
+      "仕様§7の試算は変動金利を前提とするため、固定金利は対象外です。"
+    ));
+    return section;
+  }
+
+  const reviewDates = getLoanReviewDates(loan);
+  if (!reviewDates.length || latest.asOfDate >= reviewDates[0]) {
+    section.appendChild(el(
+      "div",
+      "empty",
+      "次回見直し日と最終返済期日を確認してください。"
+    ));
+    return section;
+  }
+
+  section.appendChild(el(
+    "div",
+    "help",
+    loan.rule5y
+      ? "5年ルールを前提に、見直し日まで現在の返済額を維持して試算します。"
+      : "5年ルールは無効ですが、仕様§7の見直し日単位の計算条件で試算します。"
+  ));
+
+  const rateInputs = [];
+  const controls = el("div","loan-scenario-controls");
+
+  for (const reviewDate of reviewDates) {
+    const row = el("section","card loan-scenario-row");
+    row.dataset.loanScenarioRow = "true";
+    row.appendChild(el(
+      "h4",
+      "",
+      formatDateWithWeekday(reviewDate)
+    ));
+
+    const label = el("label","","想定金利（年率・%）");
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = "0";
+    input.step = "0.01";
+    input.value = String(latest.rate);
+    input.inputMode = "decimal";
+    input.dataset.loanScenarioRate = "true";
+    input.id = "loan-scenario-rate-" + reviewDate.replace(/-/g,"");
+    label.htmlFor = input.id;
+    label.appendChild(input);
+    row.appendChild(label);
+
+    const buttons = el("div","form-actions");
+    for (const step of [0.25,0.5,1,2]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "secondary";
+      button.textContent = "+" + step.toFixed(2).replace(/0+$/,"").replace(/\.$/,"");
+      button.dataset.loanRateStep = String(step);
+      buttons.appendChild(button);
+    }
+    row.appendChild(buttons);
+    controls.appendChild(row);
+    rateInputs.push(input);
+  }
+
+  section.appendChild(controls);
+
+  const results = el("div","loan-scenario-results");
+  section.appendChild(results);
+
+  function updateLoanSimulationResults() {
+    results.replaceChildren();
+    const rates = rateInputs.map(input => toNumberOrNull(input.value));
+
+    if (rates.some(rate => rate === null || rate < 0)) {
+      results.appendChild(el(
+        "div",
+        "help",
+        "すべての想定金利を0以上の数値で入力してください。"
+      ));
+      return;
+    }
+
+    const scenario = calculateLoanScenarioTable(loan,latest,rates);
+    if (!scenario || !scenario.rows.length) {
+      results.appendChild(el(
+        "div",
+        "empty",
+        "試算できません。残高・返済額・日付を確認してください。"
+      ));
+      return;
+    }
+
+    results.appendChild(el("h4","","見直し日ごとの試算結果"));
+    for (const row of scenario.rows) {
+      results.appendChild(createLoanScenarioResult(row));
+    }
+
+    if (scenario.unpaidInterest) {
+      results.appendChild(el(
+        "div",
+        "notice warning",
+        "試算期間中に未払利息が発生します。"
+      ));
+    }
+
+    const monthlyDates = getLoanRepaymentDates(
+      latest.asOfDate,
+      loan.finalDueDate,
+      loan.repayDay
+    ).slice(0,12);
+    const monthly = calculateLoanRecentBreakdown(
+      latest.balance,
+      rates[0],
+      loan.monthlyPayment,
+      monthlyDates.length
+    );
+
+    if (monthly) {
+      results.appendChild(createLoanSimulationTable(
+        monthly.months,
+        monthlyDates
+      ));
+    }
+  }
+
+  section.addEventListener("input",event => {
+    if (event.target.matches("[data-loan-scenario-rate]")) {
+      updateLoanSimulationResults();
+    }
+  });
+
+  section.addEventListener("click",event => {
+    const button = event.target.closest("[data-loan-rate-step]");
+    if (!button) return;
+
+    const row = button.closest("[data-loan-scenario-row]");
+    const input = row
+      ? row.querySelector("[data-loan-scenario-rate]")
+      : null;
+    if (!input) return;
+
+    const step = Number(button.dataset.loanRateStep);
+    input.value = (latest.rate + step).toFixed(2);
+    updateLoanSimulationResults();
+  });
+
+  updateLoanSimulationResults();
+  return section;
+}
+
+function createLoanCombinedSummaryCard() {
+  const card = el("section","card loan-combined-summary");
+  card.appendChild(el("h3","","住宅ローン合計"));
+  const summary = calculateLoanCombinedSummary(appData);
+
+  if (!summary.complete) {
+    card.appendChild(el(
+      "div",
+      "help",
+      "登録した全ローンの残高・金利・毎月返済額がそろうと、合計を表示します。"
+    ));
+    return card;
+  }
+
+  card.appendChild(createLoanDisplayLine(
+    "毎月返済額",
+    formatYen(summary.monthlyPayment)
+  ));
+  card.appendChild(createLoanDisplayLine(
+    "元金",
+    formatYen(summary.principal)
+  ));
+  card.appendChild(createLoanDisplayLine(
+    "利息",
+    formatYen(summary.interest)
+  ));
+  return card;
 }
