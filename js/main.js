@@ -55,6 +55,8 @@ function render() {
     renderDataManagement();
   } else if (currentTab === "bulk") {
     renderBulkInput();
+  } else if (currentTab === "loan") {
+    renderLoanScreen();
   }
 }
 
@@ -136,6 +138,16 @@ headerMenu.addEventListener("click",event => {
     closeHeaderMenu();
     render();
     window.scrollTo(0,0);
+  } else if (button.dataset.menuAction === "open-loan") {
+    currentTab = "loan";
+    selectedAccountId = null;
+    editingSnapshotId = null;
+    loanEditingId = null;
+    loanSnapshotTargetId = null;
+    showMessage("");
+    closeHeaderMenu();
+    render();
+    window.scrollTo(0,0);
   }
 });
 
@@ -153,6 +165,8 @@ document.querySelector(".bottom-nav").addEventListener("click",event => {
   editingSnapshotId = null;
   deleteAllArmed = false;
   chartWorkingPreferences = null;
+  loanEditingId = null;
+  loanSnapshotTargetId = null;
   showMessage("");
   closeHeaderMenu();
   render();
@@ -290,6 +304,32 @@ app.addEventListener("click",event => {
     removeBulkImportRow(id);
   } else if (action === "bulk-import-save") {
     executeBulkImport();
+  } else if (action === "loan-new") {
+    try {
+      startNewLoan();
+    } catch (error) {
+      showMessage(error.message || "住宅ローンを登録できませんでした。",true);
+      render();
+    }
+  } else if (action === "loan-edit") {
+    startEditLoan(id);
+  } else if (action === "loan-add-snapshot") {
+    startLoanSnapshot(id);
+  } else if (action === "loan-cancel" ||
+             action === "loan-snapshot-cancel") {
+    cancelLoanEditor();
+  } else if (action === "loan-save") {
+    try {
+      saveLoanFromForm();
+    } catch (error) {
+      showMessage(error.message || "住宅ローンを保存できませんでした。",true);
+    }
+  } else if (action === "loan-snapshot-save") {
+    try {
+      saveLoanSnapshotFromForm();
+    } catch (error) {
+      showMessage(error.message || "残高・金利を保存できませんでした。",true);
+    }
   }
 });
 
