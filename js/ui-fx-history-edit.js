@@ -280,6 +280,9 @@ function renderFxHistoryEditableCellS11a(
       );
     input.title = "変更前：" + originalText;
 
+    const scroll = cell.closest(".fx-history-table-wrap");
+    const scrollLeft = scroll ? scroll.scrollLeft : null;
+
     cell.replaceChildren(input);
     input.focus();
     input.select();
@@ -313,6 +316,10 @@ function renderFxHistoryEditableCellS11a(
       const toolbar = app.querySelector(".fx-history-edit-toolbar");
       if (toolbar) {
         toolbar.replaceWith(renderFxHistoryEditToolbarS11a(account));
+      }
+
+      if (scroll && scrollLeft !== null) {
+        scroll.scrollLeft = scrollLeft;
       }
     };
 
