@@ -515,6 +515,124 @@ function registerFxDailyTests(context) {
     }
   });
 
+  runTest("S11b：FX履歴セル編集後の位置維持・隣接セル編集",() => {
+    const originalData = appData;
+    const originalChildren = Array.from(app.childNodes);
+    const originalHistoryAccountId = selectedFxHistoryAccountIdS5h;
+    const originalSelectedAccountId = selectedAccountId;
+    const originalEditingId = editingSnapshotId;
+    const originalFxHistoryEditState = fxHistoryEditStateS11a;
+
+    try {
+      const accountId = "fx-history-s11b-test";
+      const account = makeAccount(accountId,"架空FX口座","fx","fx");
+      const snapshot = {
+        id:"s11b-snapshot",
+        accountId,
+        asOfDate:"2026-11-12",
+        recordedAt:"2026-11-12T10:00:00.000Z",
+        value:100000,
+        effectivePrincipal:90000,
+        pnl:5000,
+        swapTotal:500,
+        realizedPnlTotal:null,
+        realizedPnlDaily:null,
+        requiredMargin:2000,
+        rates:null,
+        memo:""
+      };
+
+      appData = {
+        accounts:[account],
+        snapshots:[snapshot],
+        fxPositions:[],
+        fxRates:[],
+        fxSwapLedger:[]
+      };
+      selectedFxHistoryAccountIdS5h = accountId;
+      selectedAccountId = accountId;
+      editingSnapshotId = null;
+      fxHistoryEditStateS11a = {
+        accountId,
+        openSnapshotId:null,
+        previousEditingSnapshotId:null,
+        changes:new Map(),
+        errors:[],
+        message:""
+      };
+
+      renderFxHistoryPageS5h(account);
+      const table = app.querySelector(".fx-history-table");
+      const scroll = app.querySelector(".fx-history-table-wrap");
+      assert(!!table,"FX履歴テーブルが表示される");
+      assert(!!scroll,"FX履歴スクロール領域が表示される");
+      scroll.scrollLeft = 73;
+
+      const valueCell = app.querySelector(
+        '[data-snapshot-id="s11b-snapshot"][data-field="value"]'
+      );
+      assert(!!valueCell,"評価額セルが存在する");
+      valueCell.click();
+      const valueInput = valueCell.querySelector("input");
+      assert(!!valueInput,"評価額セルが編集状態になる");
+      valueInput.value = "105000";
+      valueInput.dispatchEvent(new Event("blur"));
+
+      assert(
+        app.querySelector(".fx-history-table") === table,
+        "確定後も同じテーブル要素を維持する"
+      );
+      assert(
+        app.querySelector(".fx-history-table-wrap") === scroll,
+        "確定後も同じスクロール領域を維持する"
+      );
+      assert(scroll.scrollLeft === 73,"確定後も横スクロール位置を維持する");
+      assert(
+        getFxHistoryPendingValueS11a(snapshot,"value") === "105000",
+        "確定値が一括編集の保留値に反映される"
+      );
+      assert(
+        app.querySelector(".fx-history-edit-toolbar")?.textContent.includes("1件"),
+        "編集件数表示が更新される"
+      );
+
+      const pnlCell = app.querySelector(
+        '[data-snapshot-id="s11b-snapshot"][data-field="pnl"]'
+      );
+      assert(!!pnlCell,"隣接する損益セルが存在する");
+      pnlCell.click();
+      assert(!!pnlCell.querySelector("input"),"隣接セルを続けて編集できる");
+      const pnlInput = pnlCell.querySelector("input");
+      pnlInput.dispatchEvent(new KeyboardEvent("keydown",{key:"Escape"}));
+      pnlInput.dispatchEvent(new Event("blur"));
+
+      assert(
+        app.querySelector(".fx-history-table") === table,
+        "キャンセル後も同じテーブル要素を維持する"
+      );
+      assert(
+        app.querySelector(".fx-history-table-wrap") === scroll,
+        "キャンセル後も同じスクロール領域を維持する"
+      );
+      assert(scroll.scrollLeft === 73,"キャンセル後も横スクロール位置を維持する");
+      assert(
+        getFxHistoryPendingValueS11a(snapshot,"pnl") === 5000,
+        "キャンセルしたセルの値は変更されない"
+      );
+      assert(
+        getFxHistoryChangedCellCountS11a() === 1,
+        "キャンセル後も先に確定した1件だけが保留される"
+      );
+    } finally {
+      appData = originalData;
+      selectedFxHistoryAccountIdS5h = originalHistoryAccountId;
+      selectedAccountId = originalSelectedAccountId;
+      editingSnapshotId = originalEditingId;
+      fxHistoryEditStateS11a = originalFxHistoryEditState;
+      app.replaceChildren(...originalChildren);
+    }
+  });
+
   runTest("S5h 13-3：履歴なし・ratesなし・日次確定損益なし",() => {
     const originalData = appData;
     const originalChildren = Array.from(app.childNodes);
