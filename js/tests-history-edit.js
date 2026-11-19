@@ -223,7 +223,7 @@ function registerHistoryEditTests(context) {
     assert(h1.requiredMargin === null,
       "H1の必要証拠金を空欄にするとnullになる必要があります。");
     assert(h2.requiredMargin === null,
-      "既存nullの必要証拠金を空欄のまま保存してもnullである必要があります。");
+      "既存nullの必要証拠金を空欄のまま保存してもnullになる必要があります。");
     assert(h2.realizedPnlDaily === 0,
       "文字列0は数値の0として保存する必要があります。");
   });
@@ -494,6 +494,256 @@ function registerHistoryEditTests(context) {
       "fxPositionsを変更してはいけません。");
     assert(JSON.stringify(result.data.settings) === beforeSettings,
       "settingsを変更してはいけません。");
+  });
+
+  runTest("S11a 17-7-12：行内フォームの展開・制御",() => {
+    const originalData = appData;
+    const originalChildren = Array.from(app.childNodes);
+    const originalEditState = fxHistoryEditStateS11a;
+    const originalEditingSnapshotId = editingSnapshotId;
+
+    try {
+      const data = makeHistoryData();
+      const account = data.accounts[0];
+      appData = data;
+
+      resetFxHistoryEditStateS11a(account.id);
+      renderFxHistoryPageS5h(account);
+
+      fxHistoryEditStateS11a.changes.set("H1",{
+        value:"5000001"
+      });
+
+      const h2DateCell = Array.from(
+        app.querySelectorAll(".fx-history-date-cell")
+      ).find(cell =>
+        cell.textContent.includes("2026-11-10")
+      );
+
+      assert(h2DateCell !== undefined,
+        "H2の対象日セルを表示する必要があります。");
+
+      h2DateCell.click();
+
+      assert(fxHistoryEditStateS11a.openSnapshotId === null,
+        "未保存のセル編集がある間は行内フォームを開いてはいけません。");
+      assert(app.textContent.includes(
+        "先に『まとめて保存』か『変更を破棄』をしてください"
+      ),"未保存のセル編集がある場合は指定のメッセージを表示する必要があります。");
+
+      fxHistoryEditStateS11a.changes.clear();
+      fxHistoryEditStateS11a.message = "";
+      renderFxHistoryPageS5h(account);
+
+      const h2DateCellAfterClear = Array.from(
+        app.querySelectorAll(".fx-history-date-cell")
+      ).find(cell =>
+        cell.textContent.includes("2026-11-10")
+      );
+
+      h2DateCellAfterClear.click();
+
+      assert(fxHistoryEditStateS11a.openSnapshotId === "H2",
+        "H2の行内フォームを開く必要があります。");
+
+      let inlineForms = app.querySelectorAll(
+        ".fx-history-inline-form"
+      );
+
+      assert(inlineForms.length === 1,
+        "行内フォームは同時に1つだけ表示する必要があります。");
+
+      const h1DateCell = Array.from(
+        app.querySelectorAll(".fx-history-date-cell")
+      ).find(cell =>
+        cell.textContent.includes("2026-11-05")
+      );
+
+      h1DateCell.click();
+
+      assert(fxHistoryEditStateS11a.openSnapshotId === "H1",
+        "別の行を選ぶと、その行のフォームに切り替わる必要があります。");
+
+      inlineForms = app.querySelectorAll(
+        ".fx-history-inline-form"
+      );
+
+      assert(inlineForms.length === 1,
+        "切り替え後も行内フォームは1つだけである必要があります。");
+
+      const valueCell = app.querySelector(
+        '.fx-history-table [data-snapshot-id="H1"][data-field="value"]'
+      );
+
+      assert(valueCell !== null,
+        "フォーム表示中も数値セルを描画する必要があります。");
+
+      valueCell.click();
+
+      assert(valueCell.querySelector("input") === null,
+        "行内フォームを開いている間はセルを編集できない必要があります。");
+
+      const close = app.querySelector(
+        '[data-action="close-fx-history-inline-form"]'
+      );
+
+      assert(close !== null,
+        "行内フォームに閉じる操作を表示する必要があります。");
+
+      close.click();
+
+      assert(fxHistoryEditStateS11a.openSnapshotId === null,
+        "閉じる操作で行内フォームを閉じる必要があります。");
+      assert(app.querySelector(".fx-history-inline-form") === null,
+        "閉じた後は行内フォームを表示しない必要があります。");
+    } finally {
+      appData = originalData;
+      fxHistoryEditStateS11a = originalEditState;
+      editingSnapshotId = originalEditingSnapshotId;
+      app.replaceChildren(...originalChildren);
+    }
+  });
+
+  runTest("S11a 17-7-13：変更なしではまとめて保存できない",() => {
+    const originalData = appData;
+    const originalChildren = Array.from(app.childNodes);
+    const originalEditState = fxHistoryEditStateS11a;
+
+    try {
+      const data = makeHistoryData();
+      const account = data.accounts[0];
+      appData = data;
+
+      resetFxHistoryEditStateS11a(account.id);
+      renderFxHistoryPageS5h(account);
+
+      let saveButton = app.querySelector(
+        '[data-action="save-fx-history-edits"]'
+      );
+
+      assert(saveButton !== null,
+        "まとめて保存ボタンを表示する必要があります。");
+      assert(saveButton.disabled,
+        "変更がないときはまとめて保存ボタンを無効にする必要があります。");
+
+      fxHistoryEditStateS11a.changes.set("H2",{
+        value:"5200000"
+      });
+      renderFxHistoryPageS5h(account);
+
+      saveButton = app.querySelector(
+        '[data-action="save-fx-history-edits"]'
+      );
+
+      assert(saveButton !== null && !saveButton.disabled,
+        "変更があるときはまとめて保存ボタンを有効にする必要があります。");
+      assert(saveButton.textContent === "まとめて保存（1件）",
+        "変更セル数をボタンに表示する必要があります。");
+    } finally {
+      appData = originalData;
+      fxHistoryEditStateS11a = originalEditState;
+      app.replaceChildren(...originalChildren);
+    }
+  });
+
+  runTest("S11a 17-7-14：FX履歴ページと編集状態の描画",() => {
+    const originalData = appData;
+    const originalChildren = Array.from(app.childNodes);
+    const originalEditState = fxHistoryEditStateS11a;
+    const originalEditingSnapshotId = editingSnapshotId;
+    const originalHistoryAccountId = selectedFxHistoryAccountIdS5h;
+
+    try {
+      const emptyAccount = makeAccount(
+        "history-edit-empty",
+        "架空FX口座",
+        "fx",
+        "fx"
+      );
+
+      appData = {
+        accounts:[emptyAccount],
+        snapshots:[],
+        fxPositions:[],
+        fxRates:[],
+        fxSwapLedger:[]
+      };
+
+      resetFxHistoryEditStateS11a(emptyAccount.id);
+      renderFxHistoryPageS5h(emptyAccount);
+
+      assert(app.textContent.includes("累積確定損益"),
+        "履歴がなくても累積確定損益の見出しを表示する必要があります。");
+      assert(app.textContent.includes("履歴はまだありません。"),
+        "履歴がない場合は空表示を行う必要があります。");
+      assert(app.querySelector(".fx-history-table") === null,
+        "履歴がない場合に空の表を表示しない必要があります。");
+
+      const data = makeHistoryData();
+      const account = data.accounts[0];
+      appData = data;
+
+      resetFxHistoryEditStateS11a(account.id);
+
+      const before = JSON.stringify(appData);
+      renderFxHistoryPageS5h(account);
+
+      const table = app.querySelector(".fx-history-table");
+
+      assert(table !== null,
+        "履歴がある場合は表を描画する必要があります。");
+      assert(table.querySelectorAll("tbody tr").length === 4,
+        "4件の履歴を描画する必要があります。");
+
+      const h0RateCell = table.querySelector(
+        '[data-snapshot-id="H0"][data-field="rates"]'
+      );
+
+      assert(h0RateCell === null,
+        "ratesがnullの履歴では通貨ペアの編集セルを生成しない必要があります。");
+
+      const h2ValueCell = table.querySelector(
+        '[data-snapshot-id="H2"][data-field="value"]'
+      );
+
+      assert(h2ValueCell !== null,
+        "総資産の数値セルを描画する必要があります。");
+
+      h2ValueCell.click();
+
+      const input = h2ValueCell.querySelector("input");
+
+      assert(input !== null,
+        "数値セルをタップすると直接編集欄を表示する必要があります。");
+
+      input.dispatchEvent(new KeyboardEvent("keydown",{
+        key:"Escape",
+        bubbles:true
+      }));
+
+      assert(!hasFxHistoryPendingChangesS11a(),
+        "Escapeキーでセル編集を取り消し、未保存変更を残さない必要があります。");
+
+      assert(JSON.stringify(appData) === before,
+        "履歴ページの描画とセル編集で保存データを変更してはいけません。");
+
+      const h2DateCell = Array.from(
+        app.querySelectorAll(".fx-history-date-cell")
+      ).find(cell =>
+        cell.textContent.includes("2026-11-10")
+      );
+
+      h2DateCell.click();
+
+      assert(app.querySelector(".fx-history-inline-form") !== null,
+        "対象日のタップで行内フォームを描画する必要があります。");
+    } finally {
+      appData = originalData;
+      fxHistoryEditStateS11a = originalEditState;
+      editingSnapshotId = originalEditingSnapshotId;
+      selectedFxHistoryAccountIdS5h = originalHistoryAccountId;
+      app.replaceChildren(...originalChildren);
+    }
   });
 
   runTest("S11a 17-7-15：rates・未知の項目を含む既存項目の保持",() => {
