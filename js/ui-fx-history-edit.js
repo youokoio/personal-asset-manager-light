@@ -289,27 +289,31 @@ function renderFxHistoryEditableCellS11a(
     const finish = () => {
       if (!cell.contains(input)) return;
 
-      if (cancelled) {
-        renderFxHistoryPageS5h(
-          appData.accounts.find(item =>
-            item.id === fxHistoryEditStateS11a.accountId
-          )
+      const account = appData.accounts.find(item =>
+        item.id === fxHistoryEditStateS11a.accountId
+      );
+      if (!account || !cell.parentNode) return;
+
+      if (!cancelled) {
+        setFxHistoryPendingValueS11a(
+          snapshot,
+          fieldKey,
+          input.value,
+          pair
         );
-        return;
       }
 
-      setFxHistoryPendingValueS11a(
+      const updatedCell = renderFxHistoryEditableCellS11a(
         snapshot,
-        fieldKey,
-        input.value,
-        pair
+        field,
+        options
       );
+      cell.replaceWith(updatedCell);
 
-      renderFxHistoryPageS5h(
-        appData.accounts.find(item =>
-          item.id === fxHistoryEditStateS11a.accountId
-        )
-      );
+      const toolbar = app.querySelector(".fx-history-edit-toolbar");
+      if (toolbar) {
+        toolbar.replaceWith(renderFxHistoryEditToolbarS11a(account));
+      }
     };
 
     input.addEventListener("keydown",event => {
