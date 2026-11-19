@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "pam2-s11a-0-v3";
+const CACHE_NAME = "pam2-s11a-split-v1";
 const APP_FILES = [
   "./index.html",
   "./style.css",
@@ -32,6 +32,7 @@ const APP_FILES = [
   "./js/ui-fx-import.js",
   "./js/ui-fx.js",
   "./js/ui-fx-daily.js",
+  "./js/ui-fx-history.js",
   "./js/ui-chart.js",
   "./js/ui-data.js",
   "./js/ui-bulk.js",
