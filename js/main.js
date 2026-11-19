@@ -407,6 +407,12 @@ async function runTestsAndRender() {
     "./js/tests-fx-daily.js",
     "./js/tests-losscut.js",
     "./js/tests-snapshot-edit.js",
+    "./js/tests-fx-settlement.js",
+    "./js/tests-fx-settlement-simulation.js",
+    "./js/tests-fx-swap-allocation.js",
+    "./js/tests-fx-swap-estimate.js",
+    "./js/tests-fx-position-batch.js",
+    "./js/tests-loan.js",
     "./js/tests.js"
   ];
 
