@@ -110,6 +110,7 @@ function runAllTests() {
   registerFxPositionBatchTests(context);
   registerLoanTests(context);
   registerSnapshotEditTests(context);
+  registerOcrTests(context);
 
   return results;
 }
