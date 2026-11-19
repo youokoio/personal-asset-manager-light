@@ -2,7 +2,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S11a-split-v1";
+const APP_VERSION = "S11a-test-split-v1";
 const SPEC_VERSION = "v1.16";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
