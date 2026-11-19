@@ -413,6 +413,8 @@ async function runTestsAndRender() {
     "./js/tests-fx-swap-estimate.js",
     "./js/tests-fx-position-batch.js",
     "./js/tests-loan.js",
+    "./js/tests-ocr-data.js",
+    "./js/tests-ocr.js",
     "./js/tests.js"
   ];
 
