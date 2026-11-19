@@ -4,12 +4,6 @@ function registerOcrTests(context) {
   const {assert,runTest} = context;
   const data = OCR_TEST_DATA;
 
-  function getRule(caseData) {
-    return caseData.rule === "otherAccountRule"
-      ? data.otherAccountRule
-      : data.lightFxRule;
-  }
-
   function getField(result,name) {
     return result.fields[name];
   }
@@ -102,15 +96,22 @@ function registerOcrTests(context) {
   });
 
   runTest("S12：異なる項目名を誤って割り当てない",() => {
-    const result = parseOcrText(
-      data.cases.find(item => item.id === "different-label").text,
-      data.lightFxRule
+    const item = data.cases.find(value =>
+      value.id === "different-label"
     );
+    const result = parseOcrText(item.text,data.lightFxRule);
+    const pnl = getField(result,"pnl");
 
-    assert(getField(result,"pnl").value === null,
+    assert(pnl.value === null,
       "別の項目名を評価損益に割り当てています。");
-    assert(getField(result,"pnl").status === "missing",
-      "評価損益が未取得になっていません。");
+    assert(pnl.status === "missing-required",
+      "必須の評価損益が未取得（必須）になっていません。");
+    assert(
+      result.unrecognizedLines.some(line =>
+        line.text.includes("未決済建玉評価損益")
+      ),
+      "認識できない項目名が未認識行に残っていません。"
+    );
   });
 
   runTest("S12：数値として読めない値はnullで原文を保持",() => {
@@ -281,9 +282,9 @@ function registerOcrTests(context) {
   });
 
   runTest("S12：口座ごとの解析ルールが独立している",() => {
-    const originalResult = parseOcrText(
-      data.otherAccountText,
-      data.otherAccountRule
+    const originalLightResult = parseOcrText(
+      data.normalText,
+      data.lightFxRule
     );
 
     const copiedRule = JSON.parse(
@@ -294,19 +295,35 @@ function registerOcrTests(context) {
       data.ruleIsolation.changedLabel
     ];
 
-    const afterResult = parseOcrText(
+    const changedLightResult = parseOcrText(
+      data.normalText,
+      copiedRule
+    );
+
+    const otherBefore = parseOcrText(
+      data.otherAccountText,
+      data.otherAccountRule
+    );
+
+    const otherAfter = parseOcrText(
       data.otherAccountText,
       data.otherAccountRule
     );
 
     assert(
-      originalResult.fields.value.value ===
-        afterResult.fields.value.value,
+      originalLightResult.fields.pnl.value === -265433,
+      "複製前のLIGHT FXルールの結果が正しくありません。"
+    );
+    assert(
+      changedLightResult.fields.pnl.value === null,
+      "複製ルールの変更が解析結果に反映されていません。"
+    );
+    assert(
+      otherBefore.fields.value.value === otherAfter.fields.value.value,
       "別口座の総資産の解析結果が変わっています。"
     );
     assert(
-      originalResult.fields.pnl.value ===
-        afterResult.fields.pnl.value,
+      otherBefore.fields.pnl.value === otherAfter.fields.pnl.value,
       "別口座の評価損益の解析結果が変わっています。"
     );
     assert(
@@ -335,7 +352,7 @@ function registerOcrTests(context) {
     );
   });
 
-  runTest("S12：OCR原文を解析結果の未認識行にそのまま出さない",() => {
+  runTest("S12：OCR原文を未認識行にそのまま残さない",() => {
     const source = "口座サマリー\n取引番号123456789012";
     const result = parseOcrText(source,data.lightFxRule);
     const serialized = JSON.stringify(result);
