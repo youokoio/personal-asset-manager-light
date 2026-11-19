@@ -1,21 +1,22 @@
 "use strict";
 
-/* ---------- S11a FX履歴編集の検証・保存 ---------- */
+/* ---------- S11a FX履歴編集：検証・保存 ---------- */
 
-const HISTORY_EDIT_NUMBER_FIELDS_S11A = [
+const HISTORY_EDIT_NUMERIC_FIELDS_S11A = [
   "value",
   "effectivePrincipal",
   "pnl",
   "swapTotal",
   "realizedPnlDaily",
-  "requiredMargin"
+  "requiredMargin",
+  "realizedPnlTotal"
 ];
 
 const HISTORY_EDIT_ALLOWED_FIELDS_S11A = [
-  ...HISTORY_EDIT_NUMBER_FIELDS_S11A,
-  "rates",
+  ...HISTORY_EDIT_NUMERIC_FIELDS_S11A,
   "asOfDate",
-  "memo"
+  "memo",
+  "rates"
 ];
 
 function normalizeHistoryEditNumberS11a(value) {
@@ -25,7 +26,9 @@ function normalizeHistoryEditNumberS11a(value) {
     String.fromCharCode(character.charCodeAt(0) - 0xFEE0)
   ).trim();
 
-  if (!source) return {value:null,error:null};
+  if (!source) {
+    return {value:null,error:null};
+  }
 
   let normalized = source
     .replace(/,/g,"")
@@ -40,12 +43,19 @@ function normalizeHistoryEditNumberS11a(value) {
   normalized = normalized.replace(/^−/,"-");
 
   if (!/^-?(?:\d+(?:\.\d*)?|\.\d+)$/.test(normalized)) {
-    return {value:null,error:"数値形式が正しくありません。"};
+    return {
+      value:null,
+      error:"数値形式が正しくありません。"
+    };
   }
 
   const number = Number(normalized);
+
   if (!Number.isFinite(number)) {
-    return {value:null,error:"数値として扱えません。"};
+    return {
+      value:null,
+      error:"数値として扱えません。"
+    };
   }
 
   return {value:number,error:null};
@@ -54,15 +64,11 @@ function normalizeHistoryEditNumberS11a(value) {
 function validateHistoryEditsS11a(data,edits) {
   const errors = [];
   const normalizedEdits = [];
-  const seenSnapshotIds = new Set();
-  let changedCount = 0;
+  const seenIds = new Set();
 
-  const addError = (snapshotId,field,pair,message) => {
-    errors.push({snapshotId,field,pair,message});
-  };
-
-  if (!data || !Array.isArray(data.snapshots) ||
-      !Array.isArray(data.accounts)) {
+  if (!data ||
+      !Array.isArray(data.accounts) ||
+      !Array.isArray(data.snapshots)) {
     return {
       errors:[{
         snapshotId:null,
@@ -88,34 +94,67 @@ function validateHistoryEditsS11a(data,edits) {
     };
   }
 
-  for (const edit of edits) {
-    const snapshotId = edit && typeof edit.snapshotId === "string"
-      ? edit.snapshotId
-      : null;
+  const addError = (snapshotId,field,pair,message) => {
+    errors.push({snapshotId,field,pair,message});
+  };
 
-    if (!snapshotId || seenSnapshotIds.has(snapshotId)) {
-      addError(snapshotId,null,null,"編集対象の履歴が正しくありません。");
+  let changedCount = 0;
+
+  for (const edit of edits) {
+    const snapshotId = edit &&
+      typeof edit.snapshotId === "string"
+        ? edit.snapshotId
+        : null;
+
+    if (!snapshotId || seenIds.has(snapshotId)) {
+      addError(
+        snapshotId,
+        null,
+        null,
+        "編集対象の履歴が正しくありません。"
+      );
       continue;
     }
-    seenSnapshotIds.add(snapshotId);
 
-    const snapshot = data.snapshots.find(item => item.id === snapshotId);
+    seenIds.add(snapshotId);
+
+    const snapshot = data.snapshots.find(item =>
+      item.id === snapshotId
+    );
+
     if (!snapshot) {
-      addError(snapshotId,null,null,"編集対象の履歴が見つかりません。");
+      addError(
+        snapshotId,
+        null,
+        null,
+        "編集対象の履歴が見つかりません。"
+      );
       continue;
     }
 
     const account = data.accounts.find(item =>
       item.id === snapshot.accountId
     );
+
     if (!account || account.type !== "fx") {
-      addError(snapshotId,null,null,"FX口座の履歴ではありません。");
+      addError(
+        snapshotId,
+        null,
+        null,
+        "FX口座の履歴ではありません。"
+      );
       continue;
     }
 
-    if (!edit.changes || typeof edit.changes !== "object" ||
+    if (!edit.changes ||
+        typeof edit.changes !== "object" ||
         Array.isArray(edit.changes)) {
-      addError(snapshotId,null,null,"変更内容の形式が正しくありません。");
+      addError(
+        snapshotId,
+        null,
+        null,
+        "変更内容の形式が正しくありません。"
+      );
       continue;
     }
 
@@ -123,11 +162,16 @@ function validateHistoryEditsS11a(data,edits) {
 
     for (const field of Object.keys(edit.changes)) {
       if (!HISTORY_EDIT_ALLOWED_FIELDS_S11A.includes(field)) {
-        addError(snapshotId,field,null,"編集できない項目です。");
+        addError(
+          snapshotId,
+          field,
+          null,
+          "編集できない項目です。"
+        );
         continue;
       }
 
-      if (HISTORY_EDIT_NUMBER_FIELDS_S11A.includes(field)) {
+      if (HISTORY_EDIT_NUMERIC_FIELDS_S11A.includes(field)) {
         const result = normalizeHistoryEditNumberS11a(
           edit.changes[field]
         );
@@ -138,87 +182,164 @@ function validateHistoryEditsS11a(data,edits) {
         }
 
         if (field === "value" && result.value === null) {
-          addError(snapshotId,field,null,"総資産は空欄にできません。");
+          addError(
+            snapshotId,
+            field,
+            null,
+            "総資産は空欄にできません。"
+          );
           continue;
         }
 
         if (field === "requiredMargin" &&
-            result.value !== null && result.value < 0) {
-          addError(snapshotId,field,null,"必要証拠金は0以上で入力してください。");
+            result.value !== null &&
+            result.value < 0) {
+          addError(
+            snapshotId,
+            field,
+            null,
+            "必要証拠金は0以上で入力してください。"
+          );
           continue;
         }
 
         normalizedChanges[field] = result.value;
+
         const currentValue = snapshot[field] === undefined
           ? null
           : snapshot[field];
-        if (currentValue !== result.value) changedCount += 1;
+
+        if (currentValue !== result.value) {
+          changedCount += 1;
+        }
+
+        continue;
+      }
+
+      if (field === "asOfDate") {
+        const date = String(edit.changes.asOfDate || "");
+
+        if (!isValidFxDateForStorage(date)) {
+          addError(
+            snapshotId,
+            field,
+            null,
+            "対象日を正しく入力してください。"
+          );
+          continue;
+        }
+
+        normalizedChanges.asOfDate = date;
+
+        if (snapshot.asOfDate !== date) {
+          changedCount += 1;
+        }
+
+        continue;
+      }
+
+      if (field === "memo") {
+        if (typeof edit.changes.memo !== "string") {
+          addError(
+            snapshotId,
+            field,
+            null,
+            "メモの形式が正しくありません。"
+          );
+          continue;
+        }
+
+        normalizedChanges.memo = edit.changes.memo;
+
+        if (snapshot.memo !== edit.changes.memo) {
+          changedCount += 1;
+        }
+
         continue;
       }
 
       if (field === "rates") {
         const sourceRates = edit.changes.rates;
-        if (!sourceRates || typeof sourceRates !== "object" ||
+
+        if (!sourceRates ||
+            typeof sourceRates !== "object" ||
             Array.isArray(sourceRates)) {
-          addError(snapshotId,"rates",null,"評価レートの形式が正しくありません。");
+          addError(
+            snapshotId,
+            field,
+            null,
+            "評価レートの形式が正しくありません。"
+          );
           continue;
         }
 
         const normalizedRates = {};
+
         for (const pair of Object.keys(sourceRates)) {
           if (!isValidFxPairForStorage(pair)) {
-            addError(snapshotId,"rates",pair,"通貨ペアの形式が正しくありません。");
+            addError(
+              snapshotId,
+              field,
+              pair,
+              "通貨ペアの形式が正しくありません。"
+            );
             continue;
           }
 
           const result = normalizeHistoryEditNumberS11a(
             sourceRates[pair]
           );
+
           if (result.error) {
-            addError(snapshotId,"rates",pair,result.error);
+            addError(
+              snapshotId,
+              field,
+              pair,
+              result.error
+            );
             continue;
           }
+
           if (result.value !== null && result.value <= 0) {
-            addError(snapshotId,"rates",pair,"評価レートは正の数で入力してください。");
+            addError(
+              snapshotId,
+              field,
+              pair,
+              "評価レートは正の数を入力してください。"
+            );
             continue;
           }
 
           normalizedRates[pair] = result.value;
-          const currentValue = snapshot.rates &&
-            Object.prototype.hasOwnProperty.call(snapshot.rates,pair)
+
+          const currentRate = snapshot.rates &&
+            Object.prototype.hasOwnProperty.call(
+              snapshot.rates,
+              pair
+            )
               ? snapshot.rates[pair]
               : null;
-          if (currentValue !== result.value) changedCount += 1;
+
+          if (currentRate !== result.value) {
+            changedCount += 1;
+          }
         }
+
         normalizedChanges.rates = normalizedRates;
-        continue;
-      }
-
-      if (field === "asOfDate") {
-        const date = String(edit.changes.asOfDate || "");
-        if (!isValidFxDateForStorage(date)) {
-          addError(snapshotId,field,null,"対象日を正しく入力してください。");
-          continue;
-        }
-        normalizedChanges.asOfDate = date;
-        if (snapshot.asOfDate !== date) changedCount += 1;
-        continue;
-      }
-
-      if (field === "memo") {
-        if (typeof edit.changes.memo !== "string") {
-          addError(snapshotId,field,null,"メモの形式が正しくありません。");
-          continue;
-        }
-        normalizedChanges.memo = edit.changes.memo;
-        if (snapshot.memo !== edit.changes.memo) changedCount += 1;
       }
     }
 
-    normalizedEdits.push({snapshotId,changes:normalizedChanges});
+    normalizedEdits.push({
+      snapshotId,
+      changes:normalizedChanges
+    });
   }
 
-  return {errors,normalizedEdits,changedCount};
+  return {
+    errors,
+    normalizedEdits,
+    changedCount
+  };
 }
 
 function applyHistoryEditsS11a(data,normalizedEdits,savedAt) {
@@ -230,11 +351,13 @@ function applyHistoryEditsS11a(data,normalizedEdits,savedAt) {
     const snapshot = nextData.snapshots.find(item =>
       item.id === edit.snapshotId
     );
+
     if (!snapshot) {
       throw new Error("編集対象の履歴が見つかりません。");
     }
 
     let changed = false;
+
     for (const [field,value] of Object.entries(edit.changes)) {
       if (field === "rates") {
         const nextRates = snapshot.rates &&
@@ -244,9 +367,13 @@ function applyHistoryEditsS11a(data,normalizedEdits,savedAt) {
             : {};
 
         let ratesChanged = false;
+
         for (const [pair,rate] of Object.entries(value)) {
           if (rate === null) {
-            if (Object.prototype.hasOwnProperty.call(nextRates,pair)) {
+            if (Object.prototype.hasOwnProperty.call(
+              nextRates,
+              pair
+            )) {
               delete nextRates[pair];
               ratesChanged = true;
             }
@@ -262,12 +389,14 @@ function applyHistoryEditsS11a(data,normalizedEdits,savedAt) {
             : null;
           changed = true;
         }
+
         continue;
       }
 
       const currentValue = snapshot[field] === undefined
         ? null
         : snapshot[field];
+
       if (currentValue !== value) {
         snapshot[field] = value;
         changed = true;
@@ -282,25 +411,36 @@ function applyHistoryEditsS11a(data,normalizedEdits,savedAt) {
   }
 
   for (const accountId of updatedAccountIds) {
-    const account = nextData.accounts.find(item => item.id === accountId);
-    if (!account) throw new Error("編集対象の口座が見つかりません。");
+    const account = nextData.accounts.find(item =>
+      item.id === accountId
+    );
+
+    if (!account) {
+      throw new Error("編集対象の口座が見つかりません。");
+    }
+
     account.updatedAt = savedAt;
   }
 
-  return {data:nextData,updatedCount};
+  return {
+    data:nextData,
+    updatedCount
+  };
 }
 
 function saveHistoryEditsS11a(data,edits,storage,options = {}) {
-  if (!storage || typeof storage.getItem !== "function" ||
+  if (!storage ||
+      typeof storage.getItem !== "function" ||
       typeof storage.setItem !== "function") {
     throw new Error("保存先が正しくありません。");
   }
 
   const validation = validateHistoryEditsS11a(data,edits);
+
   if (validation.errors.length) {
     const error = new Error(
-      validation.errors[0].message + "（エラー " +
-      validation.errors.length + "件）"
+      validation.errors[0].message +
+      "（エラー " + validation.errors.length + "件）"
     );
     error.errors = validation.errors;
     throw error;
@@ -311,17 +451,24 @@ function saveHistoryEditsS11a(data,edits,storage,options = {}) {
   }
 
   const currentRaw = storage.getItem("pam2");
+
   if (currentRaw === null) {
-    throw new Error("現在の保存データを確認できないため、中止しました。");
+    throw new Error(
+      "現在の保存データを確認できないため、中止しました。"
+    );
   }
 
   try {
     storage.setItem("pam2_pre_histedit",currentRaw);
   } catch (error) {
-    throw new Error("一時バックアップを保存できないため、中止しました。");
+    throw new Error(
+      "一時バックアップを保存できないため、中止しました。"
+    );
   }
 
-  const savedAt = options.savedAt || new Date().toISOString();
+  const savedAt = options.savedAt ||
+    new Date().toISOString();
+
   const applied = applyHistoryEditsS11a(
     data,
     validation.normalizedEdits,
@@ -339,7 +486,9 @@ function saveHistoryEditsS11a(data,edits,storage,options = {}) {
   try {
     storage.setItem("pam2",JSON.stringify(applied.data));
   } catch (error) {
-    throw new Error("保存に失敗しました。元の保存データは変更していません。");
+    throw new Error(
+      "保存に失敗しました。保存データは変更していません。"
+    );
   }
 
   return {
