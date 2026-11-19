@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "pam2-s11a-test-split-v1";
+const CACHE_NAME = "pam2-s11a-history-edit-load-v1";
 const APP_FILES = [
   "./index.html",
   "./style.css",
@@ -18,6 +18,7 @@ const APP_FILES = [
   "./js/calc-fx-realized.js",
   "./js/calc-fx-batch.js",
   "./js/calc-import.js",
+  "./js/calc-history-edit.js",
   "./js/calc-chart.js",
   "./js/ui-common.js",
   "./js/ui-home.js",
@@ -32,6 +33,7 @@ const APP_FILES = [
   "./js/ui-fx-import.js",
   "./js/ui-fx.js",
   "./js/ui-fx-daily.js",
+  "./js/ui-fx-history-edit.js",
   "./js/ui-fx-history.js",
   "./js/ui-chart.js",
   "./js/ui-data.js",
