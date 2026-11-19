@@ -5,15 +5,22 @@
 let fxHistoryEditStateS11a = {
   accountId:null,
   openSnapshotId:null,
+  previousEditingSnapshotId:null,
   changes:new Map(),
   errors:[],
   message:""
 };
 
 function resetFxHistoryEditStateS11a(accountId) {
+  if (fxHistoryEditStateS11a.openSnapshotId !== null) {
+    editingSnapshotId =
+      fxHistoryEditStateS11a.previousEditingSnapshotId;
+  }
+
   fxHistoryEditStateS11a = {
     accountId:accountId || null,
     openSnapshotId:null,
+    previousEditingSnapshotId:null,
     changes:new Map(),
     errors:[],
     message:""
@@ -106,7 +113,7 @@ function setFxHistoryPendingValueS11a(snapshot,field,value,pair) {
     const normalized = normalizeHistoryEditNumberS11a(value);
 
     if (!normalized.error &&
-        normalized.value === originalValue) {
+        normalized.value === (originalValue ?? null)) {
       delete rates[pair];
     } else {
       rates[pair] = value;
@@ -122,7 +129,7 @@ function setFxHistoryPendingValueS11a(snapshot,field,value,pair) {
     const normalized = normalizeHistoryEditNumberS11a(value);
 
     if (!normalized.error &&
-        normalized.value === originalValue) {
+        normalized.value === (originalValue ?? null)) {
       delete fields[field];
     } else {
       fields[field] = value;
@@ -160,7 +167,7 @@ function formatFxHistoryEditableValueS11a(value,field) {
     return String(value);
   }
 
-  if (field === "rate") {
+  if (field === "rate" || field === "rates") {
     return formatFxRateValue(value);
   }
 
@@ -179,6 +186,7 @@ function renderFxHistoryEditableCellS11a(
   const cell = document.createElement("td");
   const pair = options.pair || null;
   const fieldKey = pair ? "rates" : field;
+  const displayField = pair ? "rate" : field;
   const pending = getFxHistoryPendingFieldsS11a(snapshot.id);
   const pendingValue = getFxHistoryPendingValueS11a(
     snapshot,
@@ -192,7 +200,7 @@ function renderFxHistoryEditableCellS11a(
       !Array.isArray(snapshot.rates)
         ? snapshot.rates[pair] ?? null
         : null
-    : snapshot[field];
+    : snapshot[field] ?? null;
 
   const normalizedPending = normalizeHistoryEditNumberS11a(
     pendingValue
@@ -208,7 +216,10 @@ function renderFxHistoryEditableCellS11a(
   if (changed) {
     cell.classList.add("fx-history-cell-dirty");
     cell.title = "変更前：" +
-      formatFxHistoryEditableValueS11a(originalValue,field);
+      formatFxHistoryEditableValueS11a(
+        originalValue,
+        displayField
+      );
   }
 
   const error = getFxHistoryEditErrorS11a(
@@ -233,7 +244,7 @@ function renderFxHistoryEditableCellS11a(
       ? String(pendingValue ?? "")
       : formatFxHistoryEditableValueS11a(
           normalizedPending.value,
-          field
+          displayField
         )
   );
 
@@ -263,15 +274,29 @@ function renderFxHistoryEditableCellS11a(
     );
 
     const originalText =
-      formatFxHistoryEditableValueS11a(originalValue,field);
+      formatFxHistoryEditableValueS11a(
+        originalValue,
+        displayField
+      );
     input.title = "変更前：" + originalText;
 
     cell.replaceChildren(input);
     input.focus();
     input.select();
 
+    let cancelled = false;
+
     const finish = () => {
       if (!cell.contains(input)) return;
+
+      if (cancelled) {
+        renderFxHistoryPageS5h(
+          appData.accounts.find(item =>
+            item.id === fxHistoryEditStateS11a.accountId
+          )
+        );
+        return;
+      }
 
       setFxHistoryPendingValueS11a(
         snapshot,
@@ -293,11 +318,8 @@ function renderFxHistoryEditableCellS11a(
         input.blur();
       } else if (event.key === "Escape") {
         event.preventDefault();
-        renderFxHistoryPageS5h(
-          appData.accounts.find(item =>
-            item.id === fxHistoryEditStateS11a.accountId
-          )
-        );
+        cancelled = true;
+        input.blur();
       }
     });
 
@@ -353,7 +375,8 @@ function renderFxHistoryEditToolbarS11a(account) {
     "primary"
   );
   save.disabled = count === 0;
-  save.addEventListener("click",() => {
+  save.addEventListener("click",event => {
+    event.stopPropagation();
     saveFxHistoryPendingEditsS11a(account);
   });
 
@@ -363,7 +386,9 @@ function renderFxHistoryEditToolbarS11a(account) {
     "secondary"
   );
   discard.disabled = count === 0;
-  discard.addEventListener("click",() => {
+  discard.addEventListener("click",event => {
+    event.stopPropagation();
+
     if (!window.confirm("未保存の変更をすべて破棄しますか？")) {
       return;
     }
@@ -377,6 +402,28 @@ function renderFxHistoryEditToolbarS11a(account) {
   actions.append(save,discard);
   section.appendChild(actions);
   return section;
+}
+
+function findFxHistoryErrorCellS11a(error) {
+  if (!error || !error.snapshotId) return null;
+
+  const cells = app.querySelectorAll("[data-snapshot-id]");
+
+  for (const cell of cells) {
+    if (cell.dataset.snapshotId !== error.snapshotId) continue;
+
+    if (String(error.field || "").startsWith("rates.")) {
+      const pair = error.field.slice(6);
+      if (cell.dataset.field === "rates" &&
+          cell.dataset.pair === pair) {
+        return cell;
+      }
+    } else if (cell.dataset.field === error.field) {
+      return cell;
+    }
+  }
+
+  return null;
 }
 
 function saveFxHistoryPendingEditsS11a(account) {
@@ -399,13 +446,10 @@ function saveFxHistoryPendingEditsS11a(account) {
     renderFxHistoryPageS5h(account);
 
     const firstError = fxHistoryEditStateS11a.errors[0];
-    if (firstError && firstError.snapshotId) {
-      const selector = [
-        '[data-snapshot-id="' + CSS.escape(firstError.snapshotId) + '"]',
-        '[data-field="' + CSS.escape(firstError.field || "") + '"]'
-      ].join("");
-      const target = app.querySelector(selector);
-      if (target) target.scrollIntoView({
+    const target = findFxHistoryErrorCellS11a(firstError);
+
+    if (target) {
+      target.scrollIntoView({
         behavior:"smooth",
         block:"center",
         inline:"center"
@@ -423,75 +467,269 @@ function saveFxHistoryPendingEditsS11a(account) {
   renderFxHistoryPageS5h(account);
 }
 
+function getFxHistoryColumnCountS11a(account) {
+  const pairs = new Set();
+
+  for (const position of appData.fxPositions || []) {
+    if (position.accountId === account.id && position.pair) {
+      pairs.add(position.pair);
+    }
+  }
+
+  for (const snapshot of getAccountSnapshots(appData,account.id)) {
+    if (!snapshot.rates ||
+        typeof snapshot.rates !== "object" ||
+        Array.isArray(snapshot.rates)) {
+      continue;
+    }
+
+    for (const pair of Object.keys(snapshot.rates)) {
+      pairs.add(pair);
+    }
+  }
+
+  return 8 + pairs.size;
+}
+
+function buildFxHistoryInlineChangeS11a(snapshot,form) {
+  const values = new FormData(form);
+  const fields = {};
+
+  const asOfDate = String(values.get("asOfDate") || "");
+  if (asOfDate !== snapshot.asOfDate) {
+    fields.asOfDate = asOfDate;
+  }
+
+  const numericFields = [
+    "value",
+    "effectivePrincipal",
+    "pnl",
+    "swapTotal",
+    "realizedPnlDaily",
+    "realizedPnlTotal",
+    "requiredMargin"
+  ];
+
+  for (const field of numericFields) {
+    const rawValue = String(values.get(field) ?? "");
+    const normalized = normalizeHistoryEditNumberS11a(rawValue);
+    const originalValue = snapshot[field] ?? null;
+
+    if (normalized.error ||
+        normalized.value !== originalValue) {
+      fields[field] = rawValue;
+    }
+  }
+
+  const memo = String(values.get("memo") ?? "");
+  if (memo !== (snapshot.memo ?? "")) {
+    fields.memo = memo;
+  }
+
+  const rates = {};
+  const originalRates = snapshot.rates &&
+    typeof snapshot.rates === "object" &&
+    !Array.isArray(snapshot.rates)
+      ? snapshot.rates
+      : {};
+
+  for (const input of form.querySelectorAll("[data-fx-pair]")) {
+    const pair = input.dataset.fxPair;
+    const rawValue = input.value;
+    const normalized = normalizeHistoryEditNumberS11a(rawValue);
+    const originalValue = Object.prototype.hasOwnProperty.call(
+      originalRates,
+      pair
+    )
+      ? originalRates[pair]
+      : null;
+
+    if (normalized.error ||
+        normalized.value !== originalValue) {
+      rates[pair] = rawValue;
+    }
+  }
+
+  if (Object.keys(rates).length) {
+    fields.rates = rates;
+  }
+
+  return {
+    snapshotId:snapshot.id,
+    fields
+  };
+}
+
+function renderFxHistoryInlineFormErrorsS11a(form,errors,message) {
+  const old = form.querySelector(".fx-history-inline-errors");
+  if (old) old.remove();
+
+  for (const input of form.querySelectorAll("[aria-invalid='true']")) {
+    input.removeAttribute("aria-invalid");
+    input.classList.remove("fx-history-input-invalid");
+  }
+
+  const section = el("div","fx-history-inline-errors");
+  if (message) {
+    section.appendChild(el("div","error",message));
+  }
+
+  if (errors.length) {
+    section.appendChild(el(
+      "div",
+      "fx-history-edit-errors",
+      "入力エラー " + errors.length + "件"
+    ));
+
+    for (const error of errors) {
+      section.appendChild(el(
+        "div",
+        "fx-history-cell-error",
+        (error.field || "項目") + "：" + error.message
+      ));
+
+      let input = null;
+
+      if (String(error.field || "").startsWith("rates.")) {
+        const pair = error.field.slice(6);
+        input = Array.from(
+          form.querySelectorAll("[data-fx-pair]")
+        ).find(item => item.dataset.fxPair === pair) || null;
+      } else if (error.field) {
+        input = form.elements.namedItem(error.field);
+      }
+
+      if (input && input.classList) {
+        input.setAttribute("aria-invalid","true");
+        input.classList.add("fx-history-input-invalid");
+      }
+    }
+  }
+
+  const actions = form.querySelector(".actions");
+  if (actions) {
+    form.insertBefore(section,actions);
+  } else {
+    form.appendChild(section);
+  }
+}
+
+function closeFxHistoryInlineFormS11a(account) {
+  editingSnapshotId =
+    fxHistoryEditStateS11a.previousEditingSnapshotId;
+
+  fxHistoryEditStateS11a.openSnapshotId = null;
+  fxHistoryEditStateS11a.previousEditingSnapshotId = null;
+  fxHistoryEditStateS11a.errors = [];
+  fxHistoryEditStateS11a.message = "";
+
+  renderFxHistoryPageS5h(account);
+}
+
+function saveFxHistoryInlineFormS11a(form) {
+  const snapshotId = form.dataset.snapshotId;
+  const snapshot = appData.snapshots.find(item =>
+    item.id === snapshotId
+  );
+  const account = snapshot
+    ? appData.accounts.find(item => item.id === snapshot.accountId)
+    : null;
+
+  if (!snapshot || !account) {
+    renderFxHistoryInlineFormErrorsS11a(
+      form,
+      [],
+      "編集対象の履歴が見つかりません。"
+    );
+    return;
+  }
+
+  const change = buildFxHistoryInlineChangeS11a(snapshot,form);
+
+  if (!Object.keys(change.fields).length) {
+    renderFxHistoryInlineFormErrorsS11a(
+      form,
+      [],
+      "変更された項目はありません。"
+    );
+    return;
+  }
+
+  const result = saveHistoryEditsS11a(
+    appData,
+    [change],
+    localStorage,
+    new Date().toISOString()
+  );
+
+  if (!result.ok) {
+    fxHistoryEditStateS11a.errors = result.errors || [];
+    fxHistoryEditStateS11a.message = result.error ||
+      "履歴の保存に失敗しました。";
+
+    renderFxHistoryInlineFormErrorsS11a(
+      form,
+      fxHistoryEditStateS11a.errors,
+      fxHistoryEditStateS11a.message
+    );
+    return;
+  }
+
+  appData = result.data;
+  editingSnapshotId =
+    fxHistoryEditStateS11a.previousEditingSnapshotId;
+
+  fxHistoryEditStateS11a.openSnapshotId = null;
+  fxHistoryEditStateS11a.previousEditingSnapshotId = null;
+  fxHistoryEditStateS11a.errors = [];
+  fxHistoryEditStateS11a.message = "履歴を保存しました。";
+
+  renderFxHistoryPageS5h(account);
+}
+
+app.addEventListener("submit",event => {
+  const form = event.target;
+
+  if (!form ||
+      !form.classList ||
+      !form.classList.contains("fx-history-inline-form")) {
+    return;
+  }
+
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (!form.reportValidity()) return;
+
+  saveFxHistoryInlineFormS11a(form);
+},true);
+
 function renderFxHistoryInlineFormRowS11a(account,snapshot) {
   const row = document.createElement("tr");
   row.className = "fx-history-inline-form-row";
 
   const cell = document.createElement("td");
-  cell.colSpan = 20;
-
-  const formAccount = account;
-  const previousEditingSnapshotId = editingSnapshotId;
+  cell.colSpan = getFxHistoryColumnCountS11a(account);
 
   editingSnapshotId = snapshot.id;
-  fxHistoryEditStateS11a.openSnapshotId = snapshot.id;
 
-  const form = renderSnapshotForm(formAccount,{
-    inline:true,
-    onSubmit:event => {
-      event.preventDefault();
-
-      const values = new FormData(event.currentTarget);
-      const fields = {
-        asOfDate:String(values.get("asOfDate") || ""),
-        value:String(values.get("value") ?? ""),
-        effectivePrincipal:String(values.get("effectivePrincipal") ?? ""),
-        pnl:String(values.get("pnl") ?? ""),
-        swapTotal:String(values.get("swapTotal") ?? ""),
-        realizedPnlDaily:String(values.get("realizedPnlDaily") ?? ""),
-        realizedPnlTotal:String(values.get("realizedPnlTotal") ?? ""),
-        requiredMargin:String(values.get("requiredMargin") ?? ""),
-        memo:String(values.get("memo") || "")
-      };
-
-      const result = saveHistoryEditsS11a(
-        appData,
-        [{snapshotId:snapshot.id,fields}],
-        localStorage,
-        new Date().toISOString()
-      );
-
-      if (!result.ok) {
-        fxHistoryEditStateS11a.errors = result.errors || [];
-        fxHistoryEditStateS11a.message = result.error ||
-          "履歴の保存に失敗しました。";
-        renderFxHistoryPageS5h(account);
-        return;
-      }
-
-      appData = result.data;
-      editingSnapshotId = previousEditingSnapshotId;
-      fxHistoryEditStateS11a.openSnapshotId = null;
-      fxHistoryEditStateS11a.errors = [];
-      fxHistoryEditStateS11a.message =
-        "履歴を保存しました。";
-      renderFxHistoryPageS5h(account);
-    }
-  });
-
+  const form = renderSnapshotForm(account);
   form.classList.add("fx-history-inline-form");
+  form.dataset.snapshotId = snapshot.id;
+
+  const oldCancel = form.querySelector(
+    '[data-action="cancel-edit"]'
+  );
+  if (oldCancel) oldCancel.remove();
 
   const close = makeButton(
     "閉じる",
     "close-fx-history-inline-form",
     "secondary"
   );
-  close.addEventListener("click",() => {
-    editingSnapshotId = previousEditingSnapshotId;
-    fxHistoryEditStateS11a.openSnapshotId = null;
-    fxHistoryEditStateS11a.errors = [];
-    fxHistoryEditStateS11a.message = "";
-    renderFxHistoryPageS5h(account);
+  close.addEventListener("click",event => {
+    event.stopPropagation();
+    closeFxHistoryInlineFormS11a(account);
   });
 
   const actions = form.querySelector(".actions");
@@ -515,10 +753,22 @@ function openFxHistoryInlineFormS11a(account,snapshot) {
   }
 
   if (fxHistoryEditStateS11a.openSnapshotId === snapshot.id) {
-    fxHistoryEditStateS11a.openSnapshotId = null;
-  } else {
-    fxHistoryEditStateS11a.openSnapshotId = snapshot.id;
+    closeFxHistoryInlineFormS11a(account);
+    return;
   }
+
+  if (fxHistoryEditStateS11a.openSnapshotId !== null) {
+    editingSnapshotId =
+      fxHistoryEditStateS11a.previousEditingSnapshotId;
+  }
+
+  fxHistoryEditStateS11a.previousEditingSnapshotId =
+    editingSnapshotId;
+  fxHistoryEditStateS11a.openSnapshotId = snapshot.id;
+  editingSnapshotId = snapshot.id;
+
+  fxHistoryEditStateS11a.errors = [];
+  fxHistoryEditStateS11a.message = "";
 
   renderFxHistoryPageS5h(account);
 }
@@ -532,6 +782,47 @@ function confirmFxHistoryLeaveS11a() {
 
   return true;
 }
+
+document.addEventListener("click",event => {
+  if (!hasFxHistoryPendingChangesS11a()) return;
+
+  const target = event.target &&
+    typeof event.target.closest === "function"
+      ? event.target.closest(
+          "button[data-tab],button[data-menu-action],button[data-action]"
+        )
+      : null;
+
+  if (!target) return;
+
+  const action = target.dataset.action || "";
+
+  if ([
+    "save-fx-history-edits",
+    "discard-fx-history-edits",
+    "close-fx-history-inline-form",
+    "back-fx-history",
+    "open-fx-history"
+  ].includes(action)) {
+    return;
+  }
+
+  if (!confirmFxHistoryLeaveS11a()) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    return;
+  }
+
+  resetFxHistoryEditStateS11a(null);
+},true);
+
+window.addEventListener("beforeunload",event => {
+  if (!hasFxHistoryPendingChangesS11a()) return;
+
+  event.preventDefault();
+  event.returnValue = "";
+});
 
 function renderFxHistoryEditStateS11a(account) {
   if (fxHistoryEditStateS11a.accountId !== account.id) {
