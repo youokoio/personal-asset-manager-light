@@ -10,14 +10,12 @@ function normalizeOcrWidth(value) {
     .replace(/　/g," ")
     .replace(/：/g,":")
     .replace(/／/g,"/")
-    .replace(/－/g,"－");
+    .replace(/－/g,"-");
 }
 
 function splitOcrLines(text) {
-  const source = normalizeOcrWidth(text);
-  const lines = source.split(/\r\n|\n|\r/);
-
-  return lines
+  return normalizeOcrWidth(text)
+    .split(/\r\n|\n|\r/)
     .map((value,index) => ({
       lineNumber:index + 1,
       text:value.trim()
@@ -84,18 +82,10 @@ function identifyOcrFormats(text,rule) {
     };
   }
 
-  if (matches.length > 1) {
-    return {
-      status:"multiple",
-      format:null,
-      matches
-    };
-  }
-
   return {
-    status:"unidentified",
+    status:matches.length > 1 ? "multiple" : "unidentified",
     format:null,
-    matches:[]
+    matches
   };
 }
 
@@ -117,11 +107,11 @@ function matchOcrLabel(line,label) {
 
   const remainder = normalizedLine.slice(normalizedLabel.length);
 
-  if (remainder !== "" && !/^[\s:]/.test(remainder)) {
+  if (remainder !== "" && !/^[\s:\t]/.test(remainder)) {
     return null;
   }
 
-  return remainder.replace(/^[\s:]+/,"").trim();
+  return remainder.replace(/^[\s:\t]+/,"").trim();
 }
 
 function findOcrLabelMatches(lines,labels) {
@@ -170,21 +160,22 @@ function normalizeOcrAmount(value,negativeMarks = []) {
     .trim();
 
   let negative = false;
-
   const marks = normalizeOcrWordList(negativeMarks);
 
   for (const mark of marks) {
-    if (source.startsWith(mark)) {
+    const normalizedMark = normalizeOcrWidth(mark);
+
+    if (source.startsWith(normalizedMark)) {
       negative = true;
-      source = source.slice(mark.length).trim();
+      source = source.slice(normalizedMark.length).trim();
       break;
     }
   }
 
-  if (source.startsWith("-") ||
-      source.startsWith("−") ||
-      source.startsWith("－")) {
-    if (negative) {
+  if (/^[+\-−]/.test(source)) {
+    const sign = source.charAt(0);
+
+    if (negative && sign !== "+") {
       return {
         value:null,
         error:"負の符号が重複しています。",
@@ -192,13 +183,19 @@ function normalizeOcrAmount(value,negativeMarks = []) {
       };
     }
 
-    negative = true;
-    source = source.slice(1).trim();
-  } else if (source.startsWith("+")) {
+    if (sign === "+" && negative) {
+      return {
+        value:null,
+        error:"符号の組み合わせを認識できません。",
+        original
+      };
+    }
+
+    negative = sign !== "+";
     source = source.slice(1).trim();
   }
 
-  if (!source || /[+\-−－]/.test(source)) {
+  if (!source || /[+\-−－ー―]/.test(source)) {
     return {
       value:null,
       error:"金額の符号を認識できません。",
@@ -233,57 +230,62 @@ function normalizeOcrAmount(value,negativeMarks = []) {
 
 /* ---------- 日付の正規化 ---------- */
 
-function parseOcrDateCandidate(value,patterns) {
-  const source = normalizeOcrWidth(value).trim();
+function parseOcrDateCandidates(value,patterns) {
+  const source = normalizeOcrWidth(value);
   const allowedPatterns = normalizeOcrWordList(patterns);
 
   const patternDefinitions = [
     {
       name:"YYYY/M/D",
-      regex:/(\d{4})\/(\d{1,2})\/(\d{1,2})/
+      regex:/\d{4}\/\d{1,2}\/\d{1,2}/
     },
     {
       name:"YYYY-MM-DD",
-      regex:/(\d{4})-(\d{1,2})-(\d{1,2})/
+      regex:/\d{4}-\d{1,2}-\d{1,2}/
     },
     {
       name:"YYYY年M月D日",
-      regex:/(\d{4})年(\d{1,2})月(\d{1,2})日/
+      regex:/\d{4}年\d{1,2}月\d{1,2}日/
     }
   ];
+
+  const candidates = [];
 
   for (const definition of patternDefinitions) {
     if (!allowedPatterns.includes(definition.name)) continue;
 
-    const match = source.match(definition.regex);
-    if (!match) continue;
+    const expression = new RegExp(
+      "(?<!\\d)" + definition.regex.source + "(?!\\d)",
+      "g"
+    );
 
-    const year = Number(match[1]);
-    const month = Number(match[2]);
-    const day = Number(match[3]);
+    for (const match of source.matchAll(expression)) {
+      const original = match[0];
+      const numbers = original.match(/\d+/g).map(Number);
 
-    const date = new Date(Date.UTC(year,month - 1,day));
+      const year = numbers[0];
+      const month = numbers[1];
+      const day = numbers[2];
 
-    if (date.getUTCFullYear() !== year ||
-        date.getUTCMonth() !== month - 1 ||
-        date.getUTCDate() !== day) {
-      return {
-        value:null,
-        error:"実在しない日付です。",
-        original:match[0]
-      };
+      const date = new Date(Date.UTC(year,month - 1,day));
+      const valid =
+        date.getUTCFullYear() === year &&
+        date.getUTCMonth() === month - 1 &&
+        date.getUTCDate() === day;
+
+      candidates.push({
+        original,
+        value:valid
+          ? String(year).padStart(4,"0") + "-" +
+            String(month).padStart(2,"0") + "-" +
+            String(day).padStart(2,"0")
+          : null,
+        error:valid ? null : "実在しない日付です。"
+      });
     }
-
-    return {
-      value:String(year).padStart(4,"0") + "-" +
-        String(month).padStart(2,"0") + "-" +
-        String(day).padStart(2,"0"),
-      error:null,
-      original:match[0]
-    };
   }
 
-  return null;
+  return candidates;
 }
 
 function findOcrDateCandidates(lines,dateRule) {
@@ -310,8 +312,7 @@ function findOcrDateCandidates(lines,dateRule) {
         });
       } else {
         const nextLine = lines.find(item =>
-          item.lineNumber > line.lineNumber &&
-          item.text.trim() !== ""
+          item.lineNumber > line.lineNumber
         );
 
         if (nextLine) searchLines.push(nextLine);
@@ -326,17 +327,21 @@ function findOcrDateCandidates(lines,dateRule) {
   const candidates = [];
 
   for (const line of searchLines) {
-    const parsed = parseOcrDateCandidate(line.text,patterns);
-    if (!parsed) continue;
+    const parsedCandidates = parseOcrDateCandidates(
+      line.text,
+      patterns
+    );
 
-    candidates.push({
-      lineNumber:line.lineNumber,
-      original:parsed.original,
-      value:parsed.value,
-      error:parsed.error
-    });
+    for (const parsed of parsedCandidates) {
+      candidates.push({
+        lineNumber:line.lineNumber,
+        original:parsed.original,
+        value:parsed.value,
+        error:parsed.error
+      });
 
-    usedLineNumbers.add(line.lineNumber);
+      usedLineNumbers.add(line.lineNumber);
+    }
   }
 
   return {
@@ -364,11 +369,6 @@ function getOcrFieldResult(fieldName,fieldRule,lines) {
 
   const matches = findOcrLabelMatches(lines,rule.labels);
   const occurrence = rule.occurrence || "only";
-  const selectedMatches = occurrence === "first"
-    ? matches.slice(0,1)
-    : occurrence === "last"
-      ? matches.slice(-1)
-      : matches;
 
   if (matches.length === 0) {
     return {
@@ -382,7 +382,14 @@ function getOcrFieldResult(fieldName,fieldRule,lines) {
     };
   }
 
+  const selectedMatches = occurrence === "first"
+    ? matches.slice(0,1)
+    : occurrence === "last"
+      ? matches.slice(-1)
+      : matches;
+
   const candidates = [];
+  const usedLineNumbers = [];
 
   for (const match of selectedMatches) {
     let rawValue = match.remainder;
@@ -390,16 +397,15 @@ function getOcrFieldResult(fieldName,fieldRule,lines) {
 
     if (rule.layout === "nextLine") {
       const nextLine = lines.find(line =>
-        line.lineNumber > match.lineNumber &&
-        line.text.trim() !== ""
+        line.lineNumber > match.lineNumber
       );
 
-      if (!nextLine) {
-        rawValue = "";
-      } else {
-        rawValue = nextLine.text;
-        valueLineNumber = nextLine.lineNumber;
-      }
+      rawValue = nextLine ? nextLine.text : "";
+      valueLineNumber = nextLine
+        ? nextLine.lineNumber
+        : null;
+    } else {
+      rawValue = rawValue.split(/\s+/)[0] || "";
     }
 
     const parsed = normalizeOcrAmount(
@@ -415,20 +421,11 @@ function getOcrFieldResult(fieldName,fieldRule,lines) {
       value:parsed.value,
       error:parsed.error
     });
-  }
 
-  const usedLineNumbers = [];
-
-  for (const match of selectedMatches) {
     usedLineNumbers.push(match.lineNumber);
 
-    if (rule.layout === "nextLine") {
-      const nextLine = lines.find(line =>
-        line.lineNumber > match.lineNumber &&
-        line.text.trim() !== ""
-      );
-
-      if (nextLine) usedLineNumbers.push(nextLine.lineNumber);
+    if (valueLineNumber !== null) {
+      usedLineNumbers.push(valueLineNumber);
     }
   }
 
@@ -438,26 +435,7 @@ function getOcrFieldResult(fieldName,fieldRule,lines) {
       status:"multiple",
       value:null,
       original:null,
-      candidates:matches.map(match => {
-        const rawValue = rule.layout === "nextLine"
-          ? (lines.find(line =>
-              line.lineNumber > match.lineNumber &&
-              line.text.trim() !== ""
-            ) || {}).text || ""
-          : match.remainder;
-
-        const parsed = normalizeOcrAmount(
-          rawValue,
-          rule.negativeMarks
-        );
-
-        return {
-          lineNumber:match.lineNumber,
-          original:rawValue,
-          value:parsed.value,
-          error:parsed.error
-        };
-      }),
+      candidates,
       required:rule.required === true,
       usedLineNumbers
     };
@@ -509,7 +487,6 @@ function parseOcrText(text,rule,formatId = null) {
   }
 
   const identification = identifyOcrFormats(source,rule);
-
   let selectedFormat = null;
 
   if (formatId !== null) {
@@ -561,12 +538,16 @@ function parseOcrText(text,rule,formatId = null) {
     usedLineNumbers.add(lineNumber);
   }
 
+  const dateRequired = selectedFormat.date
+    ? selectedFormat.date.required !== false
+    : true;
+
   let date = {
-    status:"missing",
+    status:dateRequired ? "missing-required" : "missing",
     value:null,
     original:null,
     candidates:[],
-    required:true
+    required:dateRequired
   };
 
   if (dateResult.candidates.length === 1) {
@@ -577,9 +558,7 @@ function parseOcrText(text,rule,formatId = null) {
       value:candidate.value,
       original:candidate.original,
       candidates:dateResult.candidates,
-      required:selectedFormat.date
-        ? selectedFormat.date.required !== false
-        : true
+      required:dateRequired
     };
   } else if (dateResult.candidates.length > 1) {
     date = {
@@ -587,9 +566,7 @@ function parseOcrText(text,rule,formatId = null) {
       value:null,
       original:null,
       candidates:dateResult.candidates,
-      required:selectedFormat.date
-        ? selectedFormat.date.required !== false
-        : true
+      required:dateRequired
     };
   }
 
@@ -619,28 +596,27 @@ function parseOcrText(text,rule,formatId = null) {
     .filter(line => !usedLineNumbers.has(line.lineNumber))
     .map(line => ({
       lineNumber:line.lineNumber,
-      text:line.text
+      text:maskOcrSensitiveDigits(line.text)
     }));
 
   const reasons = [];
 
-  if (date.status === "missing" ||
-      date.status === "unreadable" ||
-      date.status === "multiple") {
+  if (date.required &&
+      date.status !== "recognized") {
     reasons.push("対象日を確定できません。");
   }
 
-  if (fields.value.status === "missing-required" ||
-      fields.value.status === "missing" ||
-      fields.value.status === "unreadable" ||
-      fields.value.status === "multiple") {
+  if (fields.value.required &&
+      fields.value.status !== "recognized") {
     reasons.push("総資産を確定できません。");
   }
 
   const needsConfirmation =
-    date.status !== "recognized" ||
+    (date.required && date.status !== "recognized") ||
     Object.values(fields).some(field =>
-      ["unreadable","multiple","missing-required"].includes(field.status)
+      field.required && field.status !== "recognized"
+        ? true
+        : ["unreadable","multiple"].includes(field.status)
     );
 
   return {
