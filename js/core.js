@@ -1,9 +1,8 @@
-
 "use strict";
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S11a-history-edit-load-v3";
+const APP_VERSION = "S11b-history-cell-position-v1";
 const SPEC_VERSION = "v1.16";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
