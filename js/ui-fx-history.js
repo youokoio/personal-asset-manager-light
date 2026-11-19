@@ -132,13 +132,17 @@ function renderFxHistoryTableS5h(account) {
 
   const columns = [
     {label:"対象日",key:"asOfDate"},
-    {label:"総資産",key:"value"},
-    {label:"有効元本",key:"effectivePrincipal"},
-    {label:"評価損益",key:"pnl",signed:true},
-    {label:"累計スワップ",key:"swapTotal",signed:true},
-    {label:"その日の確定損益",key:"realizedPnlDaily",signed:true},
-    {label:"必要証拠金",key:"requiredMargin"},
-    ...pairList.map(pair => ({label:"評価レート " + pair,pair})),
+    {label:"総資産",key:"value",editable:true},
+    {label:"有効元本",key:"effectivePrincipal",editable:true},
+    {label:"評価損益",key:"pnl",signed:true,editable:true},
+    {label:"累計スワップ",key:"swapTotal",signed:true,editable:true},
+    {label:"その日の確定損益",key:"realizedPnlDaily",signed:true,editable:true},
+    {label:"必要証拠金",key:"requiredMargin",editable:true},
+    ...pairList.map(pair => ({
+      label:"評価レート " + pair,
+      pair,
+      editable:true
+    })),
     {label:"メモ",key:"memo"}
   ];
 
@@ -162,66 +166,84 @@ function renderFxHistoryTableS5h(account) {
   for (const snapshot of snapshots) {
     const row = document.createElement("tr");
     row.className = "fx-history-click-row";
-    row.tabIndex = 0;
     row.setAttribute("aria-label",
+      formatDateWithWeekday(snapshot.asOfDate) + "の履歴");
+
+    const dateCell = document.createElement("td");
+    dateCell.className = "fx-history-date-cell";
+    dateCell.textContent = formatDateWithWeekday(snapshot.asOfDate);
+    dateCell.tabIndex = 0;
+    dateCell.setAttribute("role","button");
+    dateCell.setAttribute("aria-label",
       formatDateWithWeekday(snapshot.asOfDate) + "の履歴を編集");
 
-    appendFxHistoryTableCellS5h(
-      row,
-      formatDateWithWeekday(snapshot.asOfDate),
-      "fx-history-date-cell"
-    );
-
-    for (const column of columns.slice(1,-1)) {
-      let value = "";
-      if (column.pair) {
-        const rates = snapshot.rates;
-        const rate = rates &&
-          typeof rates === "object" &&
-          !Array.isArray(rates) &&
-          Object.prototype.hasOwnProperty.call(rates,column.pair)
-            ? rates[column.pair]
-            : null;
-        value = rate === null || rate === undefined ||
-          !Number.isFinite(rate)
-            ? ""
-            : formatFxRateValue(rate);
-      } else {
-        value = getFxHistoryCellTextS5h(
-          snapshot[column.key],
-          Boolean(column.signed)
-        );
-      }
-      appendFxHistoryTableCellS5h(row,value);
-    }
-
-    appendFxHistoryTableCellS5h(
-      row,
-      typeof snapshot.memo === "string" ? snapshot.memo : ""
-    );
-
     const openEditor = () => {
-      selectedFxHistoryAccountIdS5h = null;
-      editSnapshot(snapshot.id);
-      window.scrollTo(0,0);
+      openFxHistoryInlineFormS11a(account,snapshot);
     };
-    row.addEventListener("click",openEditor);
-    row.addEventListener("keydown",event => {
+
+    dateCell.addEventListener("click",openEditor);
+    dateCell.addEventListener("keydown",event => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         openEditor();
       }
     });
+    row.appendChild(dateCell);
+
+    for (const column of columns.slice(1,-1)) {
+      if (!column.editable) continue;
+
+      const cell = column.pair
+        ? renderFxHistoryEditableCellS11a(
+            snapshot,
+            "rates",
+            {pair:column.pair}
+          )
+        : renderFxHistoryEditableCellS11a(
+            snapshot,
+            column.key
+          );
+
+      row.appendChild(cell);
+    }
+
+    const memoCell = document.createElement("td");
+    memoCell.textContent = typeof snapshot.memo === "string"
+      ? snapshot.memo
+      : "";
+    memoCell.className = "fx-history-memo-cell";
+    memoCell.tabIndex = 0;
+    memoCell.setAttribute("role","button");
+    memoCell.setAttribute("aria-label",
+      formatDateWithWeekday(snapshot.asOfDate) + "のメモ・日付を編集");
+    memoCell.addEventListener("click",openEditor);
+    memoCell.addEventListener("keydown",event => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        openEditor();
+      }
+    });
+    row.appendChild(memoCell);
+
     body.appendChild(row);
+
+    if (fxHistoryEditStateS11a.openSnapshotId === snapshot.id) {
+      body.appendChild(
+        renderFxHistoryInlineFormRowS11a(account,snapshot)
+      );
+    }
   }
 
   table.appendChild(body);
   scroll.appendChild(table);
+
   section.appendChild(el(
     "div",
     "help",
-    "行をタップすると、その日の履歴編集画面を開きます。表は左右にスクロールできます。"
+    "日付またはメモをタップすると行内編集を開きます。金額・評価レートのセルをタップすると直接編集できます。変更は「まとめて保存」まで保存されません。表は左右にスクロールできます。"
   ));
+
+  section.appendChild(renderFxHistoryEditStateS11a(account));
   section.appendChild(scroll);
   return section;
 }
@@ -235,7 +257,10 @@ function renderFxHistoryPageS5h(account) {
     "secondary"
   );
   back.addEventListener("click",() => {
+    if (!confirmFxHistoryLeaveS11a()) return;
+
     selectedFxHistoryAccountIdS5h = null;
+    resetFxHistoryEditStateS11a(null);
     render();
     window.scrollTo(0,0);
   });
