@@ -427,8 +427,7 @@ function registerFxDailyTests(context) {
     const originalHistoryAccountId = selectedFxHistoryAccountIdS5h;
     const originalSelectedAccountId = selectedAccountId;
     const originalEditingId = editingSnapshotId;
-    const originalEditSnapshot = editSnapshot;
-    let editedSnapshotId = null;
+    const originalFxHistoryEditState = fxHistoryEditStateS11a;
 
     try {
       const accountId = "fx-history-s5h-test";
@@ -469,7 +468,6 @@ function registerFxDailyTests(context) {
       selectedFxHistoryAccountIdS5h = accountId;
       selectedAccountId = accountId;
       editingSnapshotId = null;
-      editSnapshot = id => { editedSnapshotId = id; };
 
       const before = JSON.stringify(appData);
       renderFxHistoryPageS5h(account);
@@ -496,14 +494,23 @@ function registerFxDailyTests(context) {
       assert(rows[1].cells[7].textContent === "3.2" && rows[1].cells[8].textContent === "","通貨ペアごとにratesの値を対応する列へ表示する必要があります。");
       assert(JSON.stringify(appData) === before,"履歴ページの描画で保存データを変更してはいけません。");
 
-      rows[0].click();
-      assert(editedSnapshotId === "s5h-fallback","履歴行のタップで既存の履歴編集画面を開く必要があります。");
+      const dateCell = rows[0].querySelector(".fx-history-date-cell");
+      assert(dateCell !== null,"履歴日付セルが表示される必要があります。");
+      dateCell.click();
+      assert(
+        fxHistoryEditStateS11a.openSnapshotId === "s5h-fallback",
+        "対象日のセルをタップすると対象履歴の編集状態を開く必要があります。"
+      );
+      assert(
+        app.querySelector(".fx-history-inline-form-row") !== null,
+        "対象履歴の直下に行内編集フォームを展開する必要があります。"
+      );
     } finally {
       appData = originalData;
       selectedFxHistoryAccountIdS5h = originalHistoryAccountId;
       selectedAccountId = originalSelectedAccountId;
       editingSnapshotId = originalEditingId;
-      editSnapshot = originalEditSnapshot;
+      fxHistoryEditStateS11a = originalFxHistoryEditState;
       app.replaceChildren(...originalChildren);
     }
   });
