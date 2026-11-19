@@ -8,10 +8,15 @@ const OCR_TEST_DATA = {
     note:"仕様書12-12の架空テスト用ルール",
     formats:[
       {
-        formatId:"summary",
-        label:"口座サマリー",
+        formatId:"account-inquiry",
+        label:"口座照会",
         identify:{
-          all:["口座サマリー"],
+          all:[
+            "口座残高",
+            "建玉評価損益",
+            "純資産額",
+            "必要証拠金"
+          ],
           none:[]
         },
         date:{
@@ -22,27 +27,25 @@ const OCR_TEST_DATA = {
         fields:{
           value:{
             labels:["純資産額"],
-            layout:"sameLine",
+            layout:"nextLine",
             required:true
           },
           effectivePrincipal:{
             labels:["口座残高"],
-            layout:"sameLine",
+            layout:"nextLine",
             required:true
           },
           pnl:{
             labels:["建玉評価損益"],
-            layout:"sameLine",
+            layout:"nextLine",
             required:true
           },
           realizedPnlTotal:{
-            labels:["累積確定損益"],
-            layout:"sameLine",
-            required:false
+            show:false
           },
           swapTotal:{
             labels:["スワップ"],
-            layout:"sameLine",
+            layout:"nextLine",
             required:true
           }
         }
@@ -98,20 +101,36 @@ const OCR_TEST_DATA = {
   },
 
   normalText:
-    "口座サマリー\n" +
-    "2026/11/19 15:30 現在\n" +
-    "純資産額 1,246,912円\n" +
-    "口座残高 1,500,000円\n" +
-    "建玉評価損益 -265,433円\n" +
-    "スワップ 12,345円",
+    "口座残高\n" +
+    "80,000円\n" +
+    "約定評価損益\n" +
+    "0円\n" +
+    "建玉評価損益\n" +
+    "-5,000円\n" +
+    "スワップ\n" +
+    "25,000円\n" +
+    "純資産額\n" +
+    "100,000円\n" +
+    "必要証拠金\n" +
+    "10,000円\n" +
+    "注文証拠金\n" +
+    "0円\n" +
+    "更新日時\n" +
+    "0円\n" +
+    "2026/11/19 15:30:00",
 
   reversedText:
-    "口座サマリー\n" +
-    "2026/11/19 15:30 現在\n" +
-    "スワップ 12,345円\n" +
-    "建玉評価損益 -265,433円\n" +
-    "口座残高 1,500,000円\n" +
-    "純資産額 1,246,912円",
+    "口座残高\n" +
+    "80,000円\n" +
+    "建玉評価損益\n" +
+    "-5,000円\n" +
+    "スワップ\n" +
+    "25,000円\n" +
+    "純資産額\n" +
+    "100,000円\n" +
+    "必要証拠金\n" +
+    "10,000円\n" +
+    "2026/11/19 15:30:00",
 
   otherAccountText:
     "口座清算価値\n" +
@@ -127,39 +146,54 @@ const OCR_TEST_DATA = {
   cases:[
     {
       id:"normal",
-      description:"正常・同じ行にラベルと値",
+      description:"LIGHT FX・ラベルと値が別行・日時が末尾",
       text:
-        "口座サマリー\n" +
-        "2026/11/19 15:30 現在\n" +
-        "純資産額 1,246,912円\n" +
-        "口座残高 1,500,000円\n" +
-        "建玉評価損益 -265,433円\n" +
-        "スワップ 12,345円",
+        "口座残高\n" +
+        "80,000円\n" +
+        "約定評価損益\n" +
+        "0円\n" +
+        "建玉評価損益\n" +
+        "-5,000円\n" +
+        "スワップ\n" +
+        "25,000円\n" +
+        "純資産額\n" +
+        "100,000円\n" +
+        "必要証拠金\n" +
+        "10,000円\n" +
+        "更新日時\n" +
+        "0円\n" +
+        "2026/11/19 15:30:00",
       expected:{
         date:"2026-11-19",
-        value:1246912,
-        effectivePrincipal:1500000,
-        pnl:-265433,
-        swapTotal:12345,
-        status:"recognized"
+        value:100000,
+        effectivePrincipal:80000,
+        pnl:-5000,
+        swapTotal:25000,
+        status:"recognized",
+        unrecognizedContains:"約定評価損益"
       }
     },
     {
       id:"reversed-order",
-      description:"項目の並び順が逆",
+      description:"項目の並び順が異なっても取得できる",
       text:
-        "口座サマリー\n" +
-        "2026/11/19 15:30 現在\n" +
-        "スワップ 12,345円\n" +
-        "建玉評価損益 -265,433円\n" +
-        "口座残高 1,500,000円\n" +
-        "純資産額 1,246,912円",
+        "口座残高\n" +
+        "80,000円\n" +
+        "建玉評価損益\n" +
+        "-5,000円\n" +
+        "スワップ\n" +
+        "25,000円\n" +
+        "純資産額\n" +
+        "100,000円\n" +
+        "必要証拠金\n" +
+        "10,000円\n" +
+        "2026/11/19 15:30:00",
       expected:{
         date:"2026-11-19",
-        value:1246912,
-        effectivePrincipal:1500000,
-        pnl:-265433,
-        swapTotal:12345,
+        value:100000,
+        effectivePrincipal:80000,
+        pnl:-5000,
+        swapTotal:25000,
         status:"recognized"
       }
     },
@@ -167,15 +201,20 @@ const OCR_TEST_DATA = {
       id:"different-label",
       description:"別の項目名を誤って割り当てない",
       text:
-        "口座サマリー\n" +
-        "2026/11/19\n" +
-        "純資産額 1,246,912円\n" +
-        "未決済建玉評価損益 -265,433円",
+        "口座残高\n" +
+        "80,000円\n" +
+        "純資産額\n" +
+        "100,000円\n" +
+        "未決済建玉評価損益\n" +
+        "-5,000円\n" +
+        "スワップ\n" +
+        "25,000円\n" +
+        "2026/11/19",
       expected:{
         date:"2026-11-19",
-        value:1246912,
+        value:100000,
         pnl:null,
-        pnlStatus:"missing",
+        pnlStatus:"missing-required",
         unrecognizedContains:"未決済建玉評価損益"
       }
     },
@@ -183,44 +222,57 @@ const OCR_TEST_DATA = {
       id:"unreadable-number",
       description:"数値に英字が混在",
       text:
-        "口座サマリー\n" +
-        "2026/11/19\n" +
-        "純資産額 1,246,912円\n" +
-        "口座残高 1,500,000円\n" +
-        "建玉評価損益 -265,4S3円\n" +
-        "スワップ 12,345円",
+        "口座残高\n" +
+        "80,000円\n" +
+        "純資産額\n" +
+        "100,000円\n" +
+        "建玉評価損益\n" +
+        "-5,00S円\n" +
+        "スワップ\n" +
+        "25,000円\n" +
+        "2026/11/19",
       expected:{
         date:"2026-11-19",
-        value:1246912,
+        value:100000,
         pnl:null,
         pnlStatus:"unreadable",
-        pnlOriginal:"-265,4S3円",
-        swapTotal:12345
+        pnlOriginal:"-5,00S円",
+        swapTotal:25000
       }
     },
     {
       id:"multiple-value",
       description:"総資産の候補が2件",
       text:
-        "口座サマリー\n" +
-        "2026/11/19\n" +
-        "純資産額 1,246,912円\n" +
-        "純資産額 1,246,921円",
+        "口座残高\n" +
+        "80,000円\n" +
+        "純資産額\n" +
+        "100,000円\n" +
+        "純資産額\n" +
+        "100,001円\n" +
+        "建玉評価損益\n" +
+        "-5,000円\n" +
+        "スワップ\n" +
+        "25,000円\n" +
+        "2026/11/19",
       expected:{
         date:"2026-11-19",
         value:null,
         valueStatus:"multiple",
-        candidateValues:[1246912,1246921]
+        candidateValues:[100000,100001]
       }
     },
     {
       id:"missing-required",
       description:"必須の総資産がない",
       text:
-        "口座サマリー\n" +
-        "2026/11/19\n" +
-        "口座残高 1,500,000円\n" +
-        "建玉評価損益 -265,433円",
+        "口座残高\n" +
+        "80,000円\n" +
+        "建玉評価損益\n" +
+        "-5,000円\n" +
+        "スワップ\n" +
+        "25,000円\n" +
+        "2026/11/19",
       expected:{
         date:"2026-11-19",
         value:null,
