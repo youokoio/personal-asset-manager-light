@@ -157,7 +157,7 @@ function registerOcrTests(context) {
       value => value.id === "missing-required"
     );
 
-    const result = parseOcrText(item.text,data.lightFxRule);
+    const result = parseOcrText(item.text,data.lightFxRule,"account-inquiry");
     const value = getField(result,"value");
 
     assert(value.value === null,
