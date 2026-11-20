@@ -415,7 +415,7 @@ function registerBulkTests(context) {
     );
   });
 
-  runTest("S3b：列不足は空欄・列超過はエラー・500行上限",() => {
+  runTest("S3b：列不足は空欄・10列超過はエラー・500行上限",() => {
     const shortRow = parseBulkImportTsv(
       "2026-11-05\tGMOコイン\t100"
     );
@@ -426,7 +426,7 @@ function registerBulkTests(context) {
       "不足したメモ列が空欄になっていません。");
 
     const longRow = parseBulkImportTsv(
-      "2026-11-05\tGMOコイン\t100\t\t\t\t\t\t余分"
+      "2026-11-05\tGMOコイン\t100\t\t\t\t\t\t\t余分"
     );
     const account = createInitialData().accounts;
     const classified = classifyBulkImportRows(
@@ -435,7 +435,7 @@ function registerBulkTests(context) {
       []
     );
     assert(classified[0].status === "error",
-      "9列の行がエラーになっていません。");
+      "10列の行がエラーになっていません。");
 
     const tooManyRows = Array.from(
       {length:501},
