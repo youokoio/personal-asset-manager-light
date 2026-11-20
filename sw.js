@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "pam2-s12a-split-v1";
+const CACHE_NAME = "pam2-s12-ocr-load-v1";
 const APP_FILES = [
   "./index.html",
   "./style.css",
@@ -19,6 +19,8 @@ const APP_FILES = [
   "./js/calc-fx-batch.js",
   "./js/calc-import.js",
   "./js/calc-import-save.js",
+  "./js/ocr-rules.js",
+  "./js/calc-ocr.js",
   "./js/calc-history-edit.js",
   "./js/calc-chart.js",
   "./js/ui-common.js",
@@ -57,6 +59,8 @@ const APP_FILES = [
   "./js/tests-fx-swap-estimate.js",
   "./js/tests-fx-position-batch.js",
   "./js/tests-loan.js",
+  "./js/tests-ocr-data.js",
+  "./js/tests-ocr.js",
   "./js/tests.js"
 ];
 
