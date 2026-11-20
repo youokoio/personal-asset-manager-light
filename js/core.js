@@ -2,7 +2,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S12a-split-v1";
+const APP_VERSION = "S12-ocr-load-v1";
 const SPEC_VERSION = "v1.17";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
