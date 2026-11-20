@@ -11,12 +11,7 @@ const OCR_ACCOUNT_RULES = Object.freeze([
         formatId:"account-inquiry",
         label:"口座照会",
         identify:{
-          all:[
-            "口座残高",
-            "建玉評価損益",
-            "純資産額",
-            "必要証拠金"
-          ],
+          all:["口座残高","建玉評価損益","純資産額"],
           none:[]
         },
         date:{
