@@ -553,4 +553,197 @@ function registerOcrTests(context) {
     assert(getField(result,"swapTotal").value === 150000,
       "累計スワップの正常値が失われています。");
   });
+
+  runTest("S12b2：同じamount項目の値の入れ替わりはidentityStrictで要確認",() => {
+    const swappedText = data.blockCentralTanshiText
+      .replace("2,000,000円","__SWAP_VALUE__")
+      .replace("1,750,000円","2,000,000円")
+      .replace("__SWAP_VALUE__","1,750,000円");
+    const result = parseOcrText(swappedText,data.blockCentralTanshiRule,null,{
+      manualDate:"2026-11-19"
+    });
+
+    assert(result.identityReview.required === true,
+      "恒等式の不一致が要確認になっていません。");
+    assert(result.identityReview.difference === 500000,
+      "恒等式の差額が500,000円ではありません。");
+    for (const name of ["value","effectivePrincipal","pnl","swapTotal"]) {
+      assert(getField(result,name).status === "identity-unconfirmed",
+        name + "が要確認になっていません。");
+      assert(getField(result,name).value !== null,
+        name + "の元の解析値が失われています。");
+    }
+    assert(isOcrResultAddable(result).allowed === false,
+      "恒等式未確認の結果を表へ追加できてしまいます。");
+
+    const confirmed = parseOcrText(swappedText,data.blockCentralTanshiRule,null,{
+      manualDate:"2026-11-19",
+      identityConfirmed:true
+    });
+    assert(confirmed.identityReview.confirmed === true,
+      "「このままで確定」の入力を受け付けていません。");
+    assert(getField(confirmed,"value").status === "recognized",
+      "確定後も総資産が要確認のままです。");
+    assert(isOcrResultAddable(confirmed).allowed === true,
+      "恒等式を確定した結果を表へ追加できません。");
+
+    const missingDate = parseOcrText(
+      data.blockCentralTanshiText,data.blockCentralTanshiRule
+    );
+    assert(isOcrResultAddable(missingDate).allowed === false,
+      "manual日付が未入力なのに表へ追加できます。");
+  });
+
+  runTest("S12b2：1円の恒等式差額はidentityStrictの有無で扱いが異なる",() => {
+    const text = data.blockCentralTanshiText.replace(
+      "1,750,000円","1,750,001円"
+    );
+    const strictRule = JSON.parse(JSON.stringify(data.blockCentralTanshiRule));
+    const looseRule = JSON.parse(JSON.stringify(data.blockCentralTanshiRule));
+    looseRule.formats[0].identityStrict = false;
+
+    const strictResult = parseOcrText(text,strictRule,null,{
+      manualDate:"2026-11-19"
+    });
+    const looseResult = parseOcrText(text,looseRule,null,{
+      manualDate:"2026-11-19"
+    });
+
+    assert(strictResult.identityReview.required === true,
+      "identityStrict=trueで1円差額が要確認になっていません。");
+    assert(strictResult.identityReview.difference === 1,
+      "identityStrict=trueの差額が1円ではありません。");
+    assert(getField(strictResult,"value").status === "identity-unconfirmed",
+      "identityStrict=trueの項目が要確認になっていません。");
+    assert(looseResult.identityStrict === false,
+      "identityStrict=falseが反映されていません。");
+    assert(looseResult.identityReview.required === false,
+      "identityStrict=falseでも恒等式の確認を強制しています。");
+    assert(getField(looseResult,"value").status === "recognized",
+      "identityStrict=falseで通常の認識状態を維持できていません。");
+  });
+
+  runTest("S12b2：manual日付はOCR本文を使わずscreen日付は指定patternだけ",() => {
+    const manualResult = parseOcrText(
+      "2026/11/19\n" + data.blockCentralTanshiText,
+      data.blockCentralTanshiRule,
+      null,
+      {manualDate:"2026-11-20"}
+    );
+    assert(manualResult.date.source === "manual",
+      "manualの取得元が保持されていません。");
+    assert(manualResult.date.value === "2026-11-20",
+      "manualで入力した日付を使っていません。");
+    assert(manualResult.date.candidates.length === 0,
+      "manualでOCR本文から日付候補を取得しています。");
+
+    const screenRule = {formats:[{
+      formatId:"screen-date",
+      label:"画面日付",
+      identify:{all:["口座サマリー"],none:[]},
+      date:{
+        source:"screen",
+        labels:["更新日時"],
+        patterns:["YYYY/M/D"],
+        required:true
+      },
+      fields:{value:{labels:["総資産"],required:true}}
+    }]};
+    const screenResult = parseOcrText(
+      "口座サマリー\n更新日時\n0円\n総資産 100",
+      screenRule
+    );
+    assert(screenResult.date.source === "screen",
+      "screenの取得元が保持されていません。");
+    assert(screenResult.date.value === null,
+      "更新日時の次の0円を日付として取得しています。");
+    assert(screenResult.date.candidates.length === 0,
+      "patternsに一致しない0円を日付候補にしています。");
+
+    const noYearResult = parseOcrText(
+      "口座サマリー\n更新日時\n11/19\n総資産 100",
+      screenRule
+    );
+    assert(noYearResult.date.value === null,
+      "年のない日付を推測して取得しています。");
+  });
+
+  runTest("S12b2：ブロック候補行の8桁以上の数字を伏せ字にする",() => {
+    const text = data.blockCentralTanshiText.replace(
+      "当日損益\n",
+      "当日損益\n口座番号123456789012\n"
+    );
+    const result = parseOcrText(text,data.blockCentralTanshiRule,null,{
+      manualDate:"2026-11-19"
+    });
+    const block = result.blocks[0];
+    const candidate = block.candidateLines.find(line =>
+      line.text.includes("口座番号")
+    );
+
+    assert(block.status === "unconfirmed",
+      "不明な項目行があるブロックを未確定にできていません。");
+    assert(candidate !== undefined,
+      "不明な候補行が保持されていません。");
+    assert(candidate.text === "口座番号●●●●●●●●●●●●",
+      "ブロック候補行の8桁以上の数字が伏せ字になっていません。");
+    assert(!JSON.stringify(result).includes("123456789012"),
+      "解析結果に伏せ字前の数字が残っています。");
+  });
+
+  runTest("S12b2：解析結果にOCR原文全体や原文保存用の項目を持たない",() => {
+    const source = data.blockCentralTanshiText +
+      "\n未認識メモ：OCR_RAW_SENTINEL_20261120";
+    const result = parseOcrText(source,data.blockCentralTanshiRule,null,{
+      manualDate:"2026-11-19"
+    });
+    const serialized = JSON.stringify(result);
+
+    assert(!serialized.includes(source),
+      "解析結果にOCR原文全体が保持されています。");
+    assert(!Object.prototype.hasOwnProperty.call(result,"ocrText") &&
+      !Object.prototype.hasOwnProperty.call(result,"sourceText") &&
+      !Object.prototype.hasOwnProperty.call(result,"rawText"),
+      "解析結果にOCR原文保存用の項目があります。");
+  });
+
+  runTest("S12b2：OCRルール自己診断のブロック⑥・日付⑦",() => {
+    const validRule = JSON.parse(JSON.stringify(data.blockCentralTanshiRule));
+    validRule.formats[0].date.patterns = [];
+    const valid = checkOcrRuleConsistency(
+      [{name:"架空セントラル短資FX"}],
+      [validRule]
+    );
+    assert(valid.success === true,
+      "field:nullを含む正しいブロック定義を正常と判定できていません。");
+
+    const invalidBlockRule = JSON.parse(JSON.stringify(validRule));
+    invalidBlockRule.formats[0].blocks[0].entries[1].label =
+      invalidBlockRule.formats[0].blocks[0].entries[0].label;
+    const invalidBlock = checkOcrRuleConsistency(
+      [{name:"架空セントラル短資FX"}],
+      [invalidBlockRule]
+    );
+    assert(invalidBlock.success === false,
+      "ブロック内の重複labelを検出できていません。");
+
+    const invalidDateRule = JSON.parse(JSON.stringify(validRule));
+    invalidDateRule.formats[0].date.patterns = ["YYYY/M/D"];
+    const invalidDate = checkOcrRuleConsistency(
+      [{name:"架空セントラル短資FX"}],
+      [invalidDateRule]
+    );
+    assert(invalidDate.success === false,
+      "manualの日付ルールにpatternsがある不整合を検出できていません。");
+
+    const missingSourceRule = JSON.parse(JSON.stringify(validRule));
+    delete missingSourceRule.formats[0].date.source;
+    const missingSource = checkOcrRuleConsistency(
+      [{name:"架空セントラル短資FX"}],
+      [missingSourceRule]
+    );
+    assert(missingSource.success === false,
+      "date.sourceが未指定のルールを検出できていません。");
+  });
+
 }
