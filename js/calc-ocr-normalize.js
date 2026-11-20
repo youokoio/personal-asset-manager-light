@@ -239,6 +239,16 @@ function parseOcrDateCandidates(value,patterns) {
 
 function findOcrDateCandidates(lines,dateRule) {
   const rule = dateRule || {};
+  const source = rule.source === "manual" ? "manual" : "screen";
+
+  if (source === "manual") {
+    return {
+      source,
+      candidates:[],
+      usedLineNumbers:[]
+    };
+  }
+
   const labels = normalizeOcrWordList(rule.labels);
   const patterns = normalizeOcrWordList(rule.patterns);
   const searchLines = [];
@@ -294,6 +304,7 @@ function findOcrDateCandidates(lines,dateRule) {
   }
 
   return {
+    source,
     candidates,
     usedLineNumbers:Array.from(usedLineNumbers)
   };
