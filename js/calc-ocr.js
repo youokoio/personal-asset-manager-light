@@ -185,10 +185,57 @@ function getOcrBlockFieldResults(lines,format) {
   return result;
 }
 
+/* ---------- manual 日付の検証 ---------- */
+
+function createOcrManualDateResult(manualDate,dateRule) {
+  const source = String(manualDate === null ||
+    manualDate === undefined ? "" : manualDate).trim();
+
+  if (!source) {
+    return {
+      source:"manual",
+      status:"manual-required",
+      value:null,
+      original:null,
+      candidates:[],
+      required:dateRule.required !== false
+    };
+  }
+
+  const candidates = parseOcrDateCandidates(
+    source,
+    ["YYYY-MM-DD"]
+  );
+
+  if (candidates.length !== 1 || candidates[0].error ||
+      candidates[0].value === null) {
+    return {
+      source:"manual",
+      status:"unreadable",
+      value:null,
+      original:source,
+      candidates,
+      required:dateRule.required !== false
+    };
+  }
+
+  return {
+    source:"manual",
+    status:"recognized",
+    value:candidates[0].value,
+    original:source,
+    candidates,
+    required:dateRule.required !== false
+  };
+}
+
 /* ---------- OCR解析の実行 ---------- */
 
-function parseOcrText(text,rule,formatId = null) {
+function parseOcrText(text,rule,formatId = null,options = {}) {
   const source = String(text === null || text === undefined ? "" : text);
+  const parseOptions = options && typeof options === "object"
+    ? options
+    : {};
 
   if (!rule || !Array.isArray(rule.formats) ||
       rule.formats.length === 0) {
@@ -262,16 +309,16 @@ function parseOcrText(text,rule,formatId = null) {
   const dateRequired = dateRule.required !== false;
   const dateSource = dateResult.source || "screen";
 
-  let date = {
-    source:dateSource,
-    status:dateSource === "manual"
-      ? "manual-required"
-      : dateRequired ? "missing-required" : "missing",
-    value:null,
-    original:null,
-    candidates:[],
-    required:dateRequired
-  };
+  let date = dateSource === "manual"
+    ? createOcrManualDateResult(parseOptions.manualDate,dateRule)
+    : {
+      source:dateSource,
+      status:dateRequired ? "missing-required" : "missing",
+      value:null,
+      original:null,
+      candidates:[],
+      required:dateRequired
+    };
 
   if (dateSource !== "manual" &&
       dateResult.candidates.length === 1) {
@@ -360,7 +407,7 @@ function parseOcrText(text,rule,formatId = null) {
       if (!unrecognizedMap.has(line.lineNumber)) {
         unrecognizedMap.set(line.lineNumber,{
           lineNumber:line.lineNumber,
-          text:line.text
+          text:maskOcrSensitiveDigits(line.text)
         });
       }
     }
@@ -414,7 +461,7 @@ function parseOcrText(text,rule,formatId = null) {
   applyOcrIdentityStrict(
     result,
     selectedFormat.identityStrict === true,
-    false
+    parseOptions.identityConfirmed === true
   );
 
   if (result.identityReview && result.identityReview.required &&
