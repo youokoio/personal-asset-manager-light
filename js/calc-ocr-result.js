@@ -8,7 +8,7 @@ function maskOcrSensitiveDigits(value) {
 }
 
 
-/* ---------- OCR解析結果の警告・一括入力行への変換 ---------- */
+/* ---------- OCR解析結果の警告・恒等式 ---------- */
 
 function buildOcrWarnings(result,previousValue,accountType) {
   const warnings = [];
@@ -39,8 +39,12 @@ function buildOcrWarnings(result,previousValue,accountType) {
       const difference = total - principal - pnl - swap;
       if (difference !== 0) {
         warnings.push({
-          code:"fx-identity",
-          message:"FXの恒等式に差額があります。値は自動修正しません。",
+          code:result.identityStrict === true
+            ? "fx-identity-strict"
+            : "fx-identity",
+          message:result.identityStrict === true
+            ? "FXの恒等式に差額があります。4項目の対応を確認してください。"
+            : "FXの恒等式に差額があります。値は自動修正しません。",
           difference
         });
       }
@@ -50,24 +54,91 @@ function buildOcrWarnings(result,previousValue,accountType) {
   return warnings;
 }
 
-function isOcrResultAddable(result) {
+/* ---------- identityStrict の確認状態 ---------- */
+
+function applyOcrIdentityStrict(result,identityStrict,identityConfirmed) {
+  if (!result || !result.fields) return result;
+
+  result.identityStrict = identityStrict === true;
+  result.identityReview = {
+    required:false,
+    confirmed:false,
+    difference:null
+  };
+
+  if (!result.identityStrict) return result;
+
+  const fieldNames = [
+    "value",
+    "effectivePrincipal",
+    "pnl",
+    "swapTotal"
+  ];
+
+  const values = fieldNames.map(fieldName => {
+    const field = result.fields[fieldName];
+    return field && field.status === "recognized" &&
+      typeof field.value === "number" &&
+      Number.isFinite(field.value)
+      ? field.value
+      : null;
+  });
+
+  if (values.some(value => value === null)) return result;
+
+  const difference = values[0] - values[1] - values[2] - values[3];
+
+  if (difference === 0) return result;
+
+  result.identityReview = {
+    required:true,
+    confirmed:identityConfirmed === true,
+    difference
+  };
+
+  if (identityConfirmed === true) return result;
+
+  for (const fieldName of fieldNames) {
+    const field = result.fields[fieldName];
+    field.status = "identity-unconfirmed";
+  }
+
+  return result;
+}
+
+/* ---------- OCR解析結果の警告・一括入力行への変換 ---------- */
+
+function isOcrResultAddable(result,identityConfirmed) {
   const reasons = [];
   if (!result || result.success !== true) {
     reasons.push("解析形式を確定できていません。");
     return {allowed:false,reasons};
   }
+
   if (!result.date || result.date.status !== "recognized" ||
       !result.date.value) {
     reasons.push("対象日を確定してください。");
   }
+
+  if (result.date && result.date.source === "manual" &&
+      !result.date.value) {
+    reasons.push("対象日を入力してください。");
+  }
+
   if (!result.fields || !result.fields.value ||
       result.fields.value.status !== "recognized" ||
       typeof result.fields.value.value !== "number") {
     reasons.push("総資産を確定してください。");
   }
+
   if (result.fields) {
     for (const field of Object.values(result.fields)) {
-      if (["unreadable","multiple"].includes(field.status)) {
+      if ([
+        "unreadable",
+        "multiple",
+        "block-unconfirmed",
+        "identity-unconfirmed"
+      ].includes(field.status)) {
         reasons.push("要確認の項目を確定してください。");
         break;
       }
@@ -77,6 +148,13 @@ function isOcrResultAddable(result) {
       }
     }
   }
+
+  if (result.identityReview && result.identityReview.required &&
+      result.identityReview.confirmed !== true &&
+      identityConfirmed !== true) {
+    reasons.push("恒等式の差額を確認し、「このままで確定」を選択してください。");
+  }
+
   return {allowed:reasons.length === 0,reasons};
 }
 
@@ -177,6 +255,40 @@ function checkOcrRuleConsistency(accounts,rules) {
       }
       if (!format.date || format.date.required === false) {
         errors.push("必須の対象日がありません：" + format.formatId);
+      }
+
+      const blockIds = new Set();
+      for (const block of Array.isArray(format.blocks) ? format.blocks : []) {
+        if (!block || typeof block.blockId !== "string" || !block.blockId) {
+          errors.push("ブロックIDがありません：" + format.formatId);
+          continue;
+        }
+        if (blockIds.has(block.blockId)) {
+          errors.push("ブロックIDが重複しています：" + block.blockId);
+        }
+        blockIds.add(block.blockId);
+
+        if (!Array.isArray(block.entries) || block.entries.length === 0) {
+          errors.push("ブロックの項目定義がありません：" + block.blockId);
+        }
+
+        for (const entry of Array.isArray(block.entries) ? block.entries : []) {
+          if (!entry || typeof entry.label !== "string" ||
+              !entry.label.trim() ||
+              typeof entry.field !== "string" ||
+              !entry.field ||
+              !["amount","percent","multiple","text"].includes(entry.kind)) {
+            errors.push("ブロックの項目定義が不正です：" + block.blockId);
+          }
+        }
+      }
+
+      if (format.date && !["screen","manual",undefined].includes(format.date.source)) {
+        errors.push("日付の取得元が不正です：" + format.formatId);
+      }
+      if (format.identityStrict !== undefined &&
+          typeof format.identityStrict !== "boolean") {
+        errors.push("identityStrict の指定が不正です：" + format.formatId);
       }
     }
   }
