@@ -10,6 +10,7 @@ const BULK_IMPORT_FIELDS = [
   "pnl",
   "realizedPnlTotal",
   "cash",
+  "swapTotal",
   "memo"
 ];
 
@@ -21,7 +22,20 @@ const BULK_IMPORT_HEADERS = [
   "評価損益",
   "累積確定損益",
   "現金",
+  "累計スワップ",
   "メモ"
+];
+
+const BULK_IMPORT_TSV_FIELDS = [
+  "asOfDate",
+  "accountName",
+  "value",
+  "effectivePrincipal",
+  "pnl",
+  "realizedPnlTotal",
+  "cash",
+  "memo",
+  "swapTotal"
 ];
 
 const BULK_IMPORT_NUMERIC_FIELDS = [
@@ -29,7 +43,8 @@ const BULK_IMPORT_NUMERIC_FIELDS = [
   "effectivePrincipal",
   "pnl",
   "realizedPnlTotal",
-  "cash"
+  "cash",
+  "swapTotal"
 ];
 
 const BULK_IMPORT_MAX_ROWS = 500;
@@ -123,6 +138,7 @@ function createBulkImportRow(rowNumber) {
     pnl:null,
     realizedPnlTotal:null,
     cash:null,
+    swapTotal:null,
     memo:"",
     parseErrors:{},
     status:"error",
@@ -135,8 +151,8 @@ function parseBulkImportRow(cells,rowNumber) {
   const row = createBulkImportRow(rowNumber);
   const parseErrors = {};
 
-  for (let index = 0; index < BULK_IMPORT_FIELDS.length; index += 1) {
-    const field = BULK_IMPORT_FIELDS[index];
+  for (let index = 0; index < BULK_IMPORT_TSV_FIELDS.length; index += 1) {
+    const field = BULK_IMPORT_TSV_FIELDS[index];
     const raw = cells[index] === undefined ? "" : String(cells[index]);
 
     if (field === "asOfDate") {
@@ -154,8 +170,8 @@ function parseBulkImportRow(cells,rowNumber) {
     }
   }
 
-  if (cells.length > BULK_IMPORT_FIELDS.length) {
-    parseErrors.__extra = "列が8列を超えています。";
+  if (cells.length > BULK_IMPORT_TSV_FIELDS.length) {
+    parseErrors.__extra = "列が9列を超えています。";
   }
 
   row.parseErrors = parseErrors;
@@ -327,7 +343,8 @@ function classifyBulkImportRows(rows,accounts,snapshots) {
         "effectivePrincipal",
         "pnl",
         "realizedPnlTotal",
-        "cash"
+        "cash",
+        "swapTotal"
       ];
       if (prohibitedFields.some(field =>
         row[field] !== null && row[field] !== ""
@@ -336,6 +353,10 @@ function classifyBulkImportRows(rows,accounts,snapshots) {
           "銀行口座は総資産・メモ以外の金額項目を使えません。"
         );
       }
+    } else if (account && account.type !== "fx" &&
+               account.type !== "bank" &&
+               row.swapTotal !== null && row.swapTotal !== "") {
+      row.reasons.push("FX口座以外では累計スワップを使えません。");
     }
 
     const canCheckDuplicate =
