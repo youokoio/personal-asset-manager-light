@@ -289,9 +289,22 @@ function registerBulkSwapTests(context) {
       "2026-11-05\tLIGHT FX\t5000000\t1000000\t-100\t200\t100000\tテスト\t12345\t余分";
 
     const parsed = parseBulkImportTsv(tsv);
+    assert(parsed.error === null,
+      "10列TSVの行解析自体が失敗しました。");
 
-    assert(parsed.error !== null,
-      "10列のTSVがエラーとして拒否されていません。");
+    const data = createInitialData();
+    const rows = classifyBulkImportRows(
+      parsed.rows,
+      data.accounts,
+      data.snapshots
+    );
+
+    assert(rows.length === 1,
+      "10列TSVが1行として解析されていません。");
+    assert(rows[0].status === "error",
+      "10列のTSVが行単位のエラーになっていません。");
+    assert(rows[0].reasons.includes("列が9列を超えています。"),
+      "10列目が余分な列として検出されていません。");
   });
 }
 
