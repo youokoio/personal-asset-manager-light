@@ -45,7 +45,7 @@ function saveBulkImportRows(data,rows,storage,options = {}) {
       pnl:row.pnl,
       realizedPnlTotal:row.realizedPnlTotal,
       cash:row.cash,
-      swapTotal:null,
+      swapTotal:account.type === "fx" ? row.swapTotal : null,
       requiredMargin:null,
       principal:null,
       memo:String(row.memo || "")
