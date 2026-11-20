@@ -486,7 +486,7 @@ function registerOcrTests(context) {
 
   runTest("S12b2：ブロックの値不足・余分な数値行は全項目未確定",() => {
     const missingText = data.blockCentralTanshiText.replace(
-      "1,250,000円\n",
+      "1,250,000円",
       ""
     );
     const missingResult = parseOcrText(
