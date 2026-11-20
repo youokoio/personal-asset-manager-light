@@ -8,6 +8,25 @@ function registerOcrTests(context) {
     return result.fields[name];
   }
 
+  function assertBlockUnconfirmed(result,message) {
+    assert(result.blocks.length === 1,
+      message + " ブロック結果が1件ではありません。");
+    assert(result.blocks[0].status === "unconfirmed",
+      message + " ブロック全体が未確定になっていません。");
+
+    for (const name of [
+      "value",
+      "effectivePrincipal",
+      "pnl",
+      "swapTotal"
+    ]) {
+      assert(getField(result,name).value === null,
+        message + " " + name + " に部分的な値が残っています。");
+      assert(getField(result,name).status === "block-unconfirmed",
+        message + " " + name + " が未確定になっていません。");
+    }
+  }
+
   runTest("S12：OCR形式の識別（一致なし・1件・複数）",() => {
     const normal = identifyOcrFormats(
       data.normalText,
@@ -355,5 +374,183 @@ function registerOcrTests(context) {
 
     assert(!serialized.includes("123456789012"),
       "解析結果に伏せ字前の連続数字が残っています。");
+  });
+
+  runTest("S12b2：セントラル短資FXのブロック形式を解析",() => {
+    const result = parseOcrText(
+      data.blockCentralTanshiText,
+      data.blockCentralTanshiRule
+    );
+
+    assert(result.blocks.length === 1,
+      "ブロック結果が1件ではありません。");
+    assert(result.blocks[0].status === "recognized",
+      "項目名のまとまりと値のまとまりを認識できていません。");
+    assert(getField(result,"value").value === 1750000,
+      "口座清算価値が1,750,000円になっていません。");
+    assert(getField(result,"effectivePrincipal").value === 2000000,
+      "口座資産が2,000,000円になっていません。");
+    assert(getField(result,"pnl").value === -400000,
+      "建玉評価損益が-400,000円になっていません。");
+    assert(getField(result,"swapTotal").value === 150000,
+      "未決済スワップが150,000円になっていません。");
+    assert(
+      2000000 - 400000 + 150000 === 1750000,
+      "セントラル短資FXの恒等式検算が一致しません。"
+    );
+  });
+
+  runTest("S12b2：クリック365のブロック形式と無視行",() => {
+    const result = parseOcrText(
+      data.blockClick365Text,
+      data.blockClick365Rule
+    );
+
+    assert(result.blocks.length === 1,
+      "ブロック結果が1件ではありません。");
+    assert(result.blocks[0].status === "recognized",
+      "クリック365の項目名と値のまとまりを認識できていません。");
+    assert(getField(result,"value").value === 2000000,
+      "時価評価総額が2,000,000円になっていません。");
+    assert(getField(result,"effectivePrincipal").value === 500000,
+      "口座残高が500,000円になっていません。");
+    assert(getField(result,"pnl").value === 500000,
+      "未決済建玉評価損益が500,000円になっていません。");
+    assert(getField(result,"swapTotal").value === 1000000,
+      "累計スワップが1,000,000円になっていません。");
+    assert(
+      500000 + 500000 + 1000000 === 2000000,
+      "クリック365の恒等式検算が一致しません。"
+    );
+    assert(
+      result.unrecognizedLines.every(line =>
+        !["余力確認","戻る","三、365株"].includes(line.text)
+      ),
+      "ignoreLinesで指定した画面要素が未認識行に残っています。"
+    );
+  });
+
+  runTest("S12b2：ブロックのラベル欠落は全項目未確定",() => {
+    const text = data.blockCentralTanshiText.replace(
+      "建玉評価損益\n",
+      ""
+    );
+    const result = parseOcrText(
+      text,
+      data.blockCentralTanshiRule
+    );
+
+    assertBlockUnconfirmed(result,"ラベル欠落");
+  });
+
+  runTest("S12b2：項目名のまとまり内の不明行は全項目未確定",() => {
+    const text = data.blockCentralTanshiText.replace(
+      "当日損益\n",
+      "当日損益\n不明な項目\n"
+    );
+    const result = parseOcrText(
+      text,
+      data.blockCentralTanshiRule
+    );
+
+    assertBlockUnconfirmed(result,"項目名のまとまり内の不明行");
+  });
+
+  runTest("S12b2：ignoreLinesを追加しても解析値は変わらない",() => {
+    const base = parseOcrText(
+      data.blockClick365Text,
+      data.blockClick365Rule
+    );
+    const textWithIgnoredLines =
+      "余力確認\n戻る\n三、365株\n" +
+      data.blockClick365Text;
+    const withIgnored = parseOcrText(
+      textWithIgnoredLines,
+      data.blockClick365Rule
+    );
+
+    for (const name of [
+      "value",
+      "effectivePrincipal",
+      "pnl",
+      "swapTotal"
+    ]) {
+      assert(
+        getField(base,name).value === getField(withIgnored,name).value,
+        "ignoreLinesの追加で" + name + "の値が変わっています。"
+      );
+    }
+    assert(withIgnored.blocks[0].status === "recognized",
+      "ignoreLinesを追加した結果、ブロックが未確定になっています。");
+  });
+
+  runTest("S12b2：ブロックの値不足・余分な数値行は全項目未確定",() => {
+    const missingText = data.blockCentralTanshiText.replace(
+      "1,250,000円\n",
+      ""
+    );
+    const missingResult = parseOcrText(
+      missingText,
+      data.blockCentralTanshiRule
+    );
+
+    assertBlockUnconfirmed(missingResult,"値不足");
+
+    const extraText = data.blockCentralTanshiText + "\n999円";
+    const extraResult = parseOcrText(
+      extraText,
+      data.blockCentralTanshiRule
+    );
+
+    assertBlockUnconfirmed(extraResult,"余分な数値行");
+  });
+
+  runTest("S12b2：値の種類が違う場合は全項目未確定",() => {
+    const text = data.blockCentralTanshiText.replace(
+      "900%\n",
+      "900円\n"
+    );
+    const result = parseOcrText(
+      text,
+      data.blockCentralTanshiRule
+    );
+
+    assertBlockUnconfirmed(result,"値の種類違い");
+  });
+
+  runTest("S12b2：ブロックの起点が2件ある場合は全項目未確定",() => {
+    const text =
+      data.blockCentralTanshiText +
+      "\n口座資産";
+    const result = parseOcrText(
+      text,
+      data.blockCentralTanshiRule
+    );
+
+    assertBlockUnconfirmed(result,"起点重複");
+  });
+
+  runTest("S12b2：金額の読取失敗は該当項目だけ",() => {
+    const text = data.blockCentralTanshiText.replace(
+      "2,000,000円\n",
+      "2,00S,000円\n"
+    );
+    const result = parseOcrText(
+      text,
+      data.blockCentralTanshiRule
+    );
+
+    assert(result.blocks[0].status === "recognized",
+      "金額の読取失敗でブロック全体が未確定になっています。");
+    assert(getField(result,"effectivePrincipal").value === null,
+      "読めない金額が数値として取得されています。");
+    assert(getField(result,"effectivePrincipal").status === "unreadable",
+      "読めない金額がunreadableになっていません。");
+    assert(getField(result,"value").value === 1750000,
+      "総資産の正常値が失われています。");
+    assert(getField(result,"pnl").value === -400000,
+      "評価損益の正常値が失われています。");
+    assert(getField(result,"swapTotal").value === 150000,
+      "累計スワップの正常値が失われています。");
   });
 }
