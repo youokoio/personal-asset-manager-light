@@ -104,6 +104,15 @@ function parseOcrBlockFields(lines,blocks,fieldRules) {
         cursor += 1;
       }
 
+      while (!reason && cursor < searchable.length &&
+             headings.includes(
+               normalizeOcrWidth(searchable[cursor].text)
+             )) {
+        headingLines.push(searchable[cursor]);
+        scannedLines.push(searchable[cursor]);
+        cursor += 1;
+      }
+
       if (!reason) {
         for (let i = 0; i < entries.length; i += 1) {
           const line = searchable[cursor + i];
