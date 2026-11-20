@@ -16,7 +16,7 @@ function registerOcrTests(context) {
 
     assert(normal.status === "identified",
       "一致する形式を1件に特定できていません。");
-    assert(normal.format.formatId === "summary",
+    assert(normal.format.formatId === "account-inquiry",
       "特定した形式が正しくありません。");
 
     const none = identifyOcrFormats(
@@ -43,7 +43,7 @@ function registerOcrTests(context) {
     };
 
     const multiple = identifyOcrFormats(
-      data.normalText,
+      "口座サマリー\n" + data.normalText,
       multipleRule
     );
 
@@ -53,7 +53,7 @@ function registerOcrTests(context) {
       "一致した形式をすべて保持できていません。");
   });
 
-  runTest("S12：OCR正常解析・同じ行の項目",() => {
+  runTest("S12：OCR正常解析・ラベルと値が別行",() => {
     const result = parseOcrText(
       data.normalText,
       data.lightFxRule
@@ -65,16 +65,16 @@ function registerOcrTests(context) {
       "正常な解析結果が認識済みになっていません。");
     assert(result.date.value === "2026-11-19",
       "対象日が2026-11-19になっていません。");
-    assert(getField(result,"value").value === 1246912,
-      "総資産が1,246,912円になっていません。");
-    assert(getField(result,"effectivePrincipal").value === 1500000,
-      "有効元本が1,500,000円になっていません。");
-    assert(getField(result,"pnl").value === -265433,
-      "評価損益が-265,433円になっていません。");
-    assert(getField(result,"swapTotal").value === 12345,
-      "累計スワップが12,345円になっていません。");
+    assert(getField(result,"value").value === 100000,
+      "総資産が100,000円になっていません。");
+    assert(getField(result,"effectivePrincipal").value === 80000,
+      "有効元本が80,000円になっていません。");
+    assert(getField(result,"pnl").value === -5000,
+      "評価損益が-5,000円になっていません。");
+    assert(getField(result,"swapTotal").value === 25000,
+      "累計スワップが25,000円になっていません。");
     assert(
-      1500000 - 265433 + 12345 === 1246912,
+      80000 - 5000 + 25000 === 100000,
       "架空データの総資産の検算値が一致しません。"
     );
   });
@@ -87,11 +87,11 @@ function registerOcrTests(context) {
 
     assert(result.status === "recognized",
       "並び順を変えたテキストを認識できていません。");
-    assert(getField(result,"value").value === 1246912,
+    assert(getField(result,"value").value === 100000,
       "並び順の変更で総資産が変わっています。");
-    assert(getField(result,"pnl").value === -265433,
+    assert(getField(result,"pnl").value === -5000,
       "並び順の変更で評価損益が変わっています。");
-    assert(getField(result,"swapTotal").value === 12345,
+    assert(getField(result,"swapTotal").value === 25000,
       "並び順の変更で累計スワップが変わっています。");
   });
 
@@ -126,9 +126,9 @@ function registerOcrTests(context) {
       "読めない数値がnullになっていません。");
     assert(pnl.status === "unreadable",
       "読めない数値が要確認になっていません。");
-    assert(pnl.original === "-265,4S3円",
+    assert(pnl.original === "-5,00S円",
       "確認用の原文が保持されていません。");
-    assert(getField(result,"value").value === 1246912,
+    assert(getField(result,"value").value === 100000,
       "別項目の正常値が変わっています。");
   });
 
@@ -146,9 +146,9 @@ function registerOcrTests(context) {
       "複数候補が確認対象になっていません。");
     assert(value.candidates.length === 2,
       "候補2件を保持できていません。");
-    assert(value.candidates[0].value === 1246912,
+    assert(value.candidates[0].value === 100000,
       "1件目の候補値が正しくありません。");
-    assert(value.candidates[1].value === 1246921,
+    assert(value.candidates[1].value === 100001,
       "2件目の候補値が正しくありません。");
   });
 
@@ -227,11 +227,7 @@ function registerOcrTests(context) {
   });
 
   runTest("S12：日付が複数ある場合は未選択",() => {
-    const text =
-      "口座サマリー\n" +
-      "2026/11/18\n" +
-      "2026/11/19\n" +
-      "純資産額 1,246,912円";
+    const text = data.normalText + "\n2026/11/18";
 
     const result = parseOcrText(text,data.lightFxRule);
 
@@ -311,7 +307,7 @@ function registerOcrTests(context) {
     );
 
     assert(
-      originalLightResult.fields.pnl.value === -265433,
+      originalLightResult.fields.pnl.value === -5000,
       "複製前のLIGHT FXルールの結果が正しくありません。"
     );
     assert(
@@ -344,7 +340,7 @@ function registerOcrTests(context) {
 
     assert(line !== undefined,
       "未認識行が一覧にありません。");
-    assert(line.lineNumber === 7,
+    assert(line.lineNumber === 18,
       "未認識行の元の行番号が保持されていません。");
     assert(
       line.text === "取引番号●●●●●●●●●●●●",
@@ -353,8 +349,8 @@ function registerOcrTests(context) {
   });
 
   runTest("S12：OCR原文を未認識行にそのまま残さない",() => {
-    const source = "口座サマリー\n取引番号123456789012";
-    const result = parseOcrText(source,data.lightFxRule);
+    const source = data.normalText + "\n取引番号123456789012";
+    const result = parseOcrText(source,data.lightFxRule,"account-inquiry");
     const serialized = JSON.stringify(result);
 
     assert(!serialized.includes("123456789012"),
