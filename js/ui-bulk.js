@@ -138,7 +138,7 @@ function renderBulkInput() {
   app.appendChild(el(
     "div",
     "notice",
-    "対象日・口座名・総資産・有効元本・評価損益・累積確定損益・現金・メモの順で、タブ区切りのテキストを貼り付けてください。累計投資元本の列はありません。FX口座の有効元本欄には口座残高を入力します。"
+    "対象日・口座名・総資産・有効元本・評価損益・累積確定損益・現金・メモ・累計スワップの順で、タブ区切りのテキストを貼り付けてください。累計投資元本の列はありません。FX口座の有効元本欄には口座残高を入力します。"
   ));
 
   const pasteCard = el("section","card");
@@ -153,7 +153,7 @@ function renderBulkInput() {
   pasteArea.rows = 6;
   pasteArea.value = bulkImportPasteText;
   pasteArea.placeholder =
-    "対象日\t口座名\t総資産\t有効元本\t評価損益\t累積確定損益\t現金\tメモ";
+    "対象日\t口座名\t総資産\t有効元本\t評価損益\t累積確定損益\t現金\tメモ\t累計スワップ";
   pasteArea.addEventListener("input",() => {
     bulkImportPasteText = pasteArea.value;
   });
