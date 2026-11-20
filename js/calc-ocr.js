@@ -214,7 +214,7 @@ function createOcrManualDateResult(manualDate,dateRule) {
       status:"unreadable",
       value:null,
       original:source,
-      candidates,
+      candidates:[],
       required:dateRule.required !== false
     };
   }
@@ -224,7 +224,7 @@ function createOcrManualDateResult(manualDate,dateRule) {
     status:"recognized",
     value:candidates[0].value,
     original:source,
-    candidates,
+    candidates:[],
     required:dateRule.required !== false
   };
 }
@@ -297,17 +297,23 @@ function parseOcrText(text,rule,formatId = null,options = {}) {
   const usedLineNumbers = new Set();
 
   const dateRule = selectedFormat.date || {};
-  const dateResult = findOcrDateCandidates(
-    lines,
-    dateRule
-  );
+  const dateResult = dateRule.source === "manual"
+    ? {
+      source:"manual",
+      candidates:[],
+      usedLineNumbers:[]
+    }
+    : findOcrDateCandidates(
+      lines,
+      dateRule
+    );
 
   for (const lineNumber of dateResult.usedLineNumbers) {
     usedLineNumbers.add(lineNumber);
   }
 
   const dateRequired = dateRule.required !== false;
-  const dateSource = dateResult.source || "screen";
+  const dateSource = dateRule.source || dateResult.source || "screen";
 
   let date = dateSource === "manual"
     ? createOcrManualDateResult(parseOptions.manualDate,dateRule)
