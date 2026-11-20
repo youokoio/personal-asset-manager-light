@@ -257,9 +257,15 @@ function checkOcrRuleConsistency(accounts,rules) {
         errors.push("必須の対象日がありません：" + format.formatId);
       }
 
+      const blocks = Array.isArray(format.blocks)
+        ? format.blocks
+        : [];
       const blockIds = new Set();
-      for (const block of Array.isArray(format.blocks) ? format.blocks : []) {
-        if (!block || typeof block.blockId !== "string" || !block.blockId) {
+      const blocksById = new Map();
+
+      for (const block of blocks) {
+        if (!block || typeof block.blockId !== "string" ||
+            !block.blockId) {
           errors.push("ブロックIDがありません：" + format.formatId);
           continue;
         }
@@ -267,25 +273,117 @@ function checkOcrRuleConsistency(accounts,rules) {
           errors.push("ブロックIDが重複しています：" + block.blockId);
         }
         blockIds.add(block.blockId);
+        blocksById.set(block.blockId,block);
 
-        if (!Array.isArray(block.entries) || block.entries.length === 0) {
+        const entries = Array.isArray(block.entries)
+          ? block.entries
+          : [];
+        if (entries.length === 0) {
           errors.push("ブロックの項目定義がありません：" + block.blockId);
         }
 
-        for (const entry of Array.isArray(block.entries) ? block.entries : []) {
+        const entryLabels = new Set();
+        const entryFields = new Set();
+
+        for (const entry of entries) {
           if (!entry || typeof entry.label !== "string" ||
               !entry.label.trim() ||
-              typeof entry.field !== "string" ||
-              !entry.field ||
+              !(entry.field === null ||
+                (typeof entry.field === "string" && entry.field)) ||
               !["amount","percent","multiple","text"].includes(entry.kind)) {
             errors.push("ブロックの項目定義が不正です：" + block.blockId);
+            continue;
+          }
+
+          if (entryLabels.has(entry.label)) {
+            errors.push("ブロック内の項目名が重複しています：" +
+              block.blockId + " / " + entry.label);
+          }
+          entryLabels.add(entry.label);
+
+          if (entry.field === null) continue;
+
+          if (entryFields.has(entry.field)) {
+            errors.push("複数のブロック項目が同じ共通項目を参照しています：" +
+              block.blockId + " / " + entry.field);
+          }
+          entryFields.add(entry.field);
+
+          if (!Object.prototype.hasOwnProperty.call(fields,entry.field)) {
+            errors.push("ブロック項目の共通項目がありません：" +
+              block.blockId + " / " + entry.field);
+            continue;
+          }
+
+          const fieldRule = fields[entry.field] || {};
+          if (fieldRule.layout !== "block" ||
+              fieldRule.blockId !== block.blockId) {
+            errors.push("ブロック項目とfieldsのblockIdが一致しません：" +
+              block.blockId + " / " + entry.field);
+          }
+
+          if (!normalizeOcrWordList(fieldRule.labels).includes(entry.label)) {
+            errors.push("ブロック項目とfieldsのlabelsが一致しません：" +
+              block.blockId + " / " + entry.field);
+          }
+        }
+
+        for (const heading of normalizeOcrWordList(block.headingLabels)) {
+          if (entryLabels.has(heading)) {
+            errors.push("headingLabelsとentriesの項目名が重複しています：" +
+              block.blockId + " / " + heading);
+          }
+        }
+
+        for (const ignored of normalizeOcrWordList(block.ignoreLines)) {
+          if (entryLabels.has(ignored)) {
+            errors.push("ignoreLinesとentriesの項目名が重複しています：" +
+              block.blockId + " / " + ignored);
           }
         }
       }
 
-      if (format.date && !["screen","manual",undefined].includes(format.date.source)) {
+      for (const [fieldName,fieldRule] of Object.entries(fields)) {
+        if (!fieldRule || fieldRule.layout !== "block") continue;
+
+        const block = blocksById.get(fieldRule.blockId);
+        if (!block) {
+          errors.push("fieldsが存在しないblockIdを参照しています：" +
+            format.formatId + " / " + fieldName);
+          continue;
+        }
+
+        const mappedEntries = (Array.isArray(block.entries)
+          ? block.entries
+          : []).filter(entry =>
+          entry && entry.field === fieldName
+        );
+
+        if (mappedEntries.length !== 1) {
+          errors.push("fieldsとブロック項目の対応が1対1ではありません：" +
+            block.blockId + " / " + fieldName);
+          continue;
+        }
+
+        if (!normalizeOcrWordList(fieldRule.labels)
+          .includes(mappedEntries[0].label)) {
+          errors.push("fieldsのlabelsがブロック項目を参照していません：" +
+            block.blockId + " / " + fieldName);
+        }
+      }
+
+      if (format.date &&
+          !["screen","manual",undefined].includes(format.date.source)) {
         errors.push("日付の取得元が不正です：" + format.formatId);
       }
+
+      if (format.date && format.date.source === "manual" &&
+          (normalizeOcrWordList(format.date.labels).length > 0 ||
+           normalizeOcrWordList(format.date.patterns).length > 0)) {
+        errors.push("manualの日付ルールにlabels・patternsを定義できません：" +
+          format.formatId);
+      }
+
       if (format.identityStrict !== undefined &&
           typeof format.identityStrict !== "boolean") {
         errors.push("identityStrict の指定が不正です：" + format.formatId);
