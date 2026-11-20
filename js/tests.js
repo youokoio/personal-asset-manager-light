@@ -100,6 +100,7 @@ function runAllTests() {
   registerSummaryTests(context);
   registerInputTests(context);
   registerBulkTests(context);
+  registerBulkSwapTests(context);
   registerChartTests(context);
   registerHoldingsTests(context);
   registerFxTests(context);
@@ -113,6 +114,185 @@ function runAllTests() {
   registerOcrTests(context);
 
   return results;
+}
+
+function registerBulkSwapTests(context) {
+  const {assert,runTest} = context;
+
+  runTest("S12a⑩：FX累計スワップの数値入力と保存",() => {
+    const data = createInitialData();
+    const tsv = [
+      "対象日\t口座名\t総資産\t有効元本\t評価損益\t累積確定損益\t現金\tメモ\t累計スワップ",
+      "2026-11-05\tLIGHT FX\t5000000\t1000000\t-100\t200\t100000\tテスト\t12345"
+    ].join("\n");
+
+    const parsed = parseBulkImportTsv(tsv);
+    assert(parsed.error === null,"FX累計スワップのTSV解析に失敗しました。");
+
+    const rows = classifyBulkImportRows(
+      parsed.rows,
+      data.accounts,
+      data.snapshots
+    );
+
+    assert(rows[0].status === "planned",
+      "FXの累計スワップ数値が取込予定になっていません。");
+    assert(rows[0].swapTotal === 12345,
+      "FXの累計スワップ数値が12345として解析されていません。");
+
+    const rawBefore = JSON.stringify(data);
+    const storageMap = new Map([[STORAGE_KEY,rawBefore]]);
+    const fakeStorage = {
+      getItem(key) {
+        return storageMap.has(key) ? storageMap.get(key) : null;
+      },
+      setItem(key,value) {
+        storageMap.set(key,String(value));
+      }
+    };
+
+    const saved = saveBulkImportRows(
+      data,
+      rows,
+      fakeStorage,
+      {
+        recordedAt:"2026-11-13T10:00:00.000Z",
+        idFactory:() => "bulk-swap-numeric"
+      }
+    );
+
+    assert(saved.addedCount === 1,"FX履歴が1件保存されていません。");
+
+    const snapshot = saved.data.snapshots.find(
+      item => item.id === "bulk-swap-numeric"
+    );
+    assert(snapshot.swapTotal === 12345,
+      "累計スワップ12345が保存データに反映されていません。");
+    validateData(saved.data);
+  });
+
+  runTest("S12a⑪：FX累計スワップの空欄",() => {
+    const data = createInitialData();
+    const tsv = [
+      "対象日\t口座名\t総資産\t有効元本\t評価損益\t累積確定損益\t現金\tメモ\t累計スワップ",
+      "2026-11-05\tLIGHT FX\t5000000\t1000000\t-100\t200\t100000\tテスト\t"
+    ].join("\n");
+
+    const parsed = parseBulkImportTsv(tsv);
+    assert(parsed.error === null,"空欄のTSV解析に失敗しました。");
+
+    const rows = classifyBulkImportRows(
+      parsed.rows,
+      data.accounts,
+      data.snapshots
+    );
+
+    assert(rows[0].status === "planned",
+      "FX累計スワップの空欄が取込予定になっていません。");
+    assert(rows[0].swapTotal === null,
+      "FX累計スワップの空欄がnullになっていません。");
+  });
+
+  runTest("S12a⑫：FX累計スワップの不正値",() => {
+    const data = createInitialData();
+    const tsv = [
+      "対象日\t口座名\t総資産\t有効元本\t評価損益\t累積確定損益\t現金\tメモ\t累計スワップ",
+      "2026-11-05\tLIGHT FX\t5000000\t1000000\t-100\t200\t100000\tテスト\tabc"
+    ].join("\n");
+
+    const parsed = parseBulkImportTsv(tsv);
+    assert(parsed.error === null,"不正値テストのTSV解析自体が失敗しました。");
+
+    const rows = classifyBulkImportRows(
+      parsed.rows,
+      data.accounts,
+      data.snapshots
+    );
+
+    assert(rows[0].status === "error",
+      "FX累計スワップの不正値がエラーになっていません。");
+  });
+
+  runTest("S12a⑬：銀行口座の累計スワップ入力制限",() => {
+    const data = createInitialData();
+    const tsv = [
+      "対象日\t口座名\t総資産\t有効元本\t評価損益\t累積確定損益\t現金\tメモ\t累計スワップ",
+      "2026-11-05\tUFJ1\t100000\t\t\t\t100000\tテスト\t100"
+    ].join("\n");
+
+    const parsed = parseBulkImportTsv(tsv);
+    assert(parsed.error === null,"銀行口座テストのTSV解析に失敗しました。");
+
+    const rows = classifyBulkImportRows(
+      parsed.rows,
+      data.accounts,
+      data.snapshots
+    );
+
+    assert(rows[0].status === "error",
+      "銀行口座の累計スワップ入力がエラーになっていません。");
+  });
+
+  runTest("S12a⑭：証券口座など非FX口座の累計スワップ入力制限",() => {
+    const data = createInitialData();
+    const account = data.accounts.find(
+      item => item.name === "楽天証券"
+    );
+
+    assert(account !== undefined,"テスト対象の楽天証券口座がありません。");
+
+    const tsv = [
+      "対象日\t口座名\t総資産\t有効元本\t評価損益\t累積確定損益\t現金\tメモ\t累計スワップ",
+      "2026-11-05\t楽天証券\t1000000\t800000\t200000\t\t\tテスト\t100"
+    ].join("\n");
+
+    const parsed = parseBulkImportTsv(tsv);
+    assert(parsed.error === null,"証券口座テストのTSV解析に失敗しました。");
+
+    const rows = classifyBulkImportRows(
+      parsed.rows,
+      data.accounts,
+      data.snapshots
+    );
+
+    assert(rows[0].status === "error",
+      "非FX口座の累計スワップ入力がエラーになっていません。");
+  });
+
+  runTest("S12a⑮：従来の8列TSVとの互換性",() => {
+    const data = createInitialData();
+    const tsv = [
+      "対象日\t口座名\t総資産\t有効元本\t評価損益\t累積確定損益\t現金\tメモ",
+      "2026-11-05\tLIGHT FX\t5000000\t1000000\t-100\t200\t100000\t従来形式"
+    ].join("\n");
+
+    const parsed = parseBulkImportTsv(tsv);
+    assert(parsed.error === null,"従来8列TSVの解析に失敗しました。");
+    assert(parsed.rows.length === 1,"従来8列TSVが1行に展開されていません。");
+
+    const rows = classifyBulkImportRows(
+      parsed.rows,
+      data.accounts,
+      data.snapshots
+    );
+
+    assert(rows[0].status === "planned",
+      "従来8列TSVが取込予定になっていません。");
+    assert(rows[0].memo === "従来形式",
+      "従来8列TSVのメモが保持されていません。");
+    assert(rows[0].swapTotal === null,
+      "従来8列TSVの累計スワップがnullになっていません。");
+  });
+
+  runTest("S12a⑯：10列以上のTSVをエラーにする",() => {
+    const tsv =
+      "2026-11-05\tLIGHT FX\t5000000\t1000000\t-100\t200\t100000\tテスト\t12345\t余分";
+
+    const parsed = parseBulkImportTsv(tsv);
+
+    assert(parsed.error !== null,
+      "10列のTSVがエラーとして拒否されていません。");
+  });
 }
 
 if (document.body && document.body.dataset.testRunner === "true") {
