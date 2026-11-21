@@ -323,12 +323,14 @@ app.addEventListener("click",event => {
       saveLoanFromForm();
     } catch (error) {
       showMessage(error.message || "住宅ローンを保存できませんでした。",true);
+      render();
     }
   } else if (action === "loan-snapshot-save") {
     try {
       saveLoanSnapshotFromForm();
     } catch (error) {
       showMessage(error.message || "残高・金利を保存できませんでした。",true);
+      render();
     }
   }
 });
@@ -415,6 +417,7 @@ async function runTestsAndRender() {
     "./js/tests-loan.js",
     "./js/tests-ocr-data.js",
     "./js/tests-ocr.js",
+    "./js/tests-bulk-ocr.js",
     "./js/tests.js"
   ];
 
