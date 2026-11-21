@@ -576,7 +576,7 @@ function registerMigrationTests(context) {
       result.name === "積立・売却確認の整合"
     );
     assert(warningItem.status === "ok" &&
-      warningItem.detail.includes("保有・積立予定にありません"),
+      warningItem.detail.includes("保有商品・積立予定にありません"),
       "商品名の注意表示がOK/NG判定と分けて表示されません。");
 
     const invalidData = cloneTestData(data);
