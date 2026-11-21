@@ -56,6 +56,9 @@ function createInitialData() {
     fxSwapLedger:[],
     loans:[],
     loanSnapshots:[],
+    contributionPlans:[],
+    contributions:[],
+    saleChecks:[],
     settings:{
       taxRatePct:20.315,
       fxYtdRealized:0,
@@ -65,12 +68,26 @@ function createInitialData() {
   };
 }
 
-function loadData() {
-  const raw = localStorage.getItem(STORAGE_KEY);
+function migrateAndSaveV3Data(data,rawV3,storage) {
+  const backupKey = "pam2_pre_v4";
+
+  if (storage.getItem(backupKey) === null) {
+    storage.setItem(backupKey,rawV3);
+  }
+
+  const migrated = migrateDataV3ToV4(data);
+  validateData(migrated);
+  storage.setItem(STORAGE_KEY,JSON.stringify(migrated));
+
+  return migrated;
+}
+
+function loadData(storage = localStorage) {
+  const raw = storage.getItem(STORAGE_KEY);
 
   if (raw === null) {
     const initial = createInitialData();
-    saveData(initial);
+    saveData(initial,storage);
     return initial;
   }
 
@@ -79,43 +96,80 @@ function loadData() {
   if (parsed && parsed.schemaVersion === 1) {
     const backupV1Key = "pam2_pre_v2";
 
-    if (localStorage.getItem(backupV1Key) === null) {
-      localStorage.setItem(backupV1Key,raw);
+    if (storage.getItem(backupV1Key) === null) {
+      storage.setItem(backupV1Key,raw);
     }
 
     const migratedV2 = migrateDataV1ToV2(parsed);
     const backupV3Key = "pam2_pre_v3";
 
-    if (localStorage.getItem(backupV3Key) === null) {
-      localStorage.setItem(backupV3Key,JSON.stringify(migratedV2));
+    if (storage.getItem(backupV3Key) === null) {
+      storage.setItem(backupV3Key,JSON.stringify(migratedV2));
     }
 
     const migratedV3 = migrateDataV2ToV3(migratedV2);
-    validateData(migratedV3);
-    localStorage.setItem(STORAGE_KEY,JSON.stringify(migratedV3));
-
-    return migratedV3;
+    return migrateAndSaveV3Data(
+      migratedV3,
+      JSON.stringify(migratedV3),
+      storage
+    );
   }
 
   if (parsed && parsed.schemaVersion === 2) {
     const backupKey = "pam2_pre_v3";
 
-    if (localStorage.getItem(backupKey) === null) {
-      localStorage.setItem(backupKey,raw);
+    if (storage.getItem(backupKey) === null) {
+      storage.setItem(backupKey,raw);
     }
 
-    const migrated = migrateDataV2ToV3(parsed);
-    validateData(migrated);
-    localStorage.setItem(STORAGE_KEY,JSON.stringify(migrated));
+    const migratedV3 = migrateDataV2ToV3(parsed);
+    return migrateAndSaveV3Data(
+      migratedV3,
+      JSON.stringify(migratedV3),
+      storage
+    );
+  }
 
-    return migrated;
+  if (parsed && parsed.schemaVersion === 3) {
+    return migrateAndSaveV3Data(parsed,raw,storage);
   }
 
   validateData(parsed);
   return parsed;
 }
 
-function saveData(data) {
+function saveData(data,storage = localStorage) {
   validateData(data);
-  localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
+  storage.setItem(STORAGE_KEY,JSON.stringify(data));
+}
+
+/*
+ * 積立・売却確認の共通保存。
+ * kind は "contribution" または "saleCheck"。
+ * updateData は複製したデータをメモリ上で変更する関数。
+ */
+function saveStockTrackingData(kind,updateData,storage = localStorage) {
+  const backupKeys = {
+    contribution:"pam2_pre_contrib",
+    saleCheck:"pam2_pre_salecheck"
+  };
+  const backupKey = backupKeys[kind];
+
+  if (!backupKey || typeof updateData !== "function") {
+    throw new Error("積立・売却確認の保存指定が正しくありません。");
+  }
+
+  const currentRaw = storage.getItem(STORAGE_KEY);
+  if (currentRaw === null) {
+    throw new Error("保存データがありません。");
+  }
+
+  const nextData = JSON.parse(currentRaw);
+
+  storage.setItem(backupKey,currentRaw);
+  updateData(nextData);
+  validateData(nextData);
+  storage.setItem(STORAGE_KEY,JSON.stringify(nextData));
+
+  return nextData;
 }
