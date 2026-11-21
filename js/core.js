@@ -2,7 +2,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S12b2-v3";
+const APP_VERSION = "S12c-v1";
 const SPEC_VERSION = "v1.20";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
