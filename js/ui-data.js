@@ -7,6 +7,50 @@ let dataTestResults = null;
 let dataTestLoading = false;
 let fxMappingPreview = null;
 
+function runStockTrackingSelfDiagnosis(data) {
+  const errors = collectStockTrackingValidationErrors(data);
+  const warnings = [];
+  const holdings = Array.isArray(data.holdings) ? data.holdings : [];
+  const plans = Array.isArray(data.contributionPlans)
+    ? data.contributionPlans
+    : [];
+  const contributions = Array.isArray(data.contributions)
+    ? data.contributions
+    : [];
+  const saleChecks = Array.isArray(data.saleChecks) ? data.saleChecks : [];
+
+  for (const contribution of contributions) {
+    if (!contribution ||
+        typeof contribution.productName !== "string") continue;
+
+    const hasHolding = holdings.some(item =>
+      item &&
+      item.accountId === contribution.accountId &&
+      item.name === contribution.productName
+    );
+    const hasPlan = plans.some(item =>
+      item &&
+      item.accountId === contribution.accountId &&
+      item.productName === contribution.productName
+    );
+
+    if (!hasHolding && !hasPlan) {
+      warnings.push(
+        "積立実績の商品「" + contribution.productName +
+        "」は、同じ口座の保有商品・積立予定にありません。"
+      );
+    }
+  }
+
+  if (saleChecks.length > 0) {
+    warnings.push(
+      "売却確認の候補との照合は、候補検出機能（S13d）実装後に確認します。"
+    );
+  }
+
+  return {errors,warnings};
+}
+
 function runDataSelfDiagnosis(data,serviceWorkerRegistered) {
   const items = [];
   const add = (name,status,detail) => items.push({name,status,detail});
@@ -47,11 +91,25 @@ function runDataSelfDiagnosis(data,serviceWorkerRegistered) {
     for (const item of data.loanSnapshots) {
       if (!loanIds.has(item.loanId)) errors.push("ローン履歴 " + item.id + " のローンがありません。");
     }
+    for (const collectionName of [
+      "contributionPlans","contributions","saleChecks"
+    ]) {
+      const collection = Array.isArray(data[collectionName])
+        ? data[collectionName]
+        : [];
+      for (const item of collection) {
+        if (!accountIds.has(item.accountId)) {
+          errors.push(collectionName + " " + item.id + " の口座がありません。");
+        }
+      }
+    }
 
     add(
       "口座・ローンの参照整合",
       errors.length === 0 ? "ok" : "ng",
-      errors.length === 0 ? "履歴・商品別保有・FX建玉・ローン履歴の参照先が存在します。" : errors.join(" ")
+      errors.length === 0
+        ? "履歴・商品別保有・FX建玉・積立予定・積立実績・売却確認・ローン履歴の参照先が存在します。"
+        : errors.join(" ")
     );
   } catch (error) {
     add("口座・ローンの参照整合","ng",error.message || "参照整合を確認できません。");
@@ -146,6 +204,29 @@ function runDataSelfDiagnosis(data,serviceWorkerRegistered) {
     serviceWorkerRegistered ? "Service Workerの登録を確認しました。" : "Service Workerの登録を確認できません。"
   );
 
+  try {
+    const stockTracking = runStockTrackingSelfDiagnosis(data);
+    const detailParts = stockTracking.errors.length > 0
+      ? stockTracking.errors
+      : ["積立予定・積立実績・売却確認の整合に問題はありません。"];
+
+    if (stockTracking.warnings.length > 0) {
+      detailParts.push("注意：" + stockTracking.warnings.join(" "));
+    }
+
+    add(
+      "積立・売却確認の整合",
+      stockTracking.errors.length === 0 ? "ok" : "ng",
+      detailParts.join(" ")
+    );
+  } catch (error) {
+    add(
+      "積立・売却確認の整合",
+      "ng",
+      error.message || "積立・売却確認の整合を確認できません。"
+    );
+  }
+
   const ngCount = items.filter(item => item.status === "ng").length;
   return {items,ngCount,allOk:ngCount === 0};
 }
@@ -230,8 +311,7 @@ function getTemporaryBackupKeys() {
 
 /*
  * JSONバックアップの準備
- * v1はv2へ移行してから検証する。
- * v2は複製してから検証する。
+ * v1・v2・v3はv4へ移行してから検証する。
  * 元の読み込みデータは直接変更しない。
  */
 function prepareImportedData(parsed) {
@@ -245,9 +325,13 @@ function prepareImportedData(parsed) {
 
   if (parsed.schemaVersion === 1) {
     const migratedV2 = migrateDataV1ToV2(parsed);
-    imported = migrateDataV2ToV3(migratedV2);
+    const migratedV3 = migrateDataV2ToV3(migratedV2);
+    imported = migrateDataV3ToV4(migratedV3);
   } else if (parsed.schemaVersion === 2) {
-    imported = migrateDataV2ToV3(parsed);
+    const migratedV3 = migrateDataV2ToV3(parsed);
+    imported = migrateDataV3ToV4(migratedV3);
+  } else if (parsed.schemaVersion === 3) {
+    imported = migrateDataV3ToV4(parsed);
   } else if (parsed.schemaVersion === SCHEMA_VERSION) {
     imported = JSON.parse(JSON.stringify(parsed));
   } else {
@@ -304,7 +388,7 @@ function renderDataManagement() {
   fileField.append(fileLabel,fileInput);
   restoreCard.appendChild(fileField);
   restoreCard.appendChild(el("p","help",
-    "対応形式：schemaVersion 1・2（v3へ移行後に検証）または現在のschemaVersion 3。"
+    "対応形式：schemaVersion 1・2・3（v4へ移行後に検証）または現在のschemaVersion 4。"
   ));
   app.appendChild(restoreCard);
 
@@ -384,7 +468,7 @@ function renderDataManagement() {
 
   const diagnosisCard = el("section","card");
   diagnosisCard.appendChild(el("h3","","自己診断"));
-  diagnosisCard.appendChild(el("p","help","保存データを変更せず、仕様書13章の6項目を確認します。"));
+  diagnosisCard.appendChild(el("p","help","保存データを変更せず、仕様書13章の自己診断項目を確認します。"));
   diagnosisCard.appendChild(makeButton("自己診断を実行","run-self-diagnosis"));
   if (dataDiagnosisResults) {
     diagnosisCard.appendChild(el(
