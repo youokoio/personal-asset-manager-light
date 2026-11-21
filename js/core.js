@@ -2,8 +2,8 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S12d-v1";
-const SPEC_VERSION = "v1.20";
+const APP_VERSION = "S13a-split-v1";
+const SPEC_VERSION = "v1.21";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 3;
 
