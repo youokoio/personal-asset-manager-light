@@ -8,11 +8,17 @@ function registerOcrTests(context) {
     return result.fields[name];
   }
 
-  function assertBlockUnconfirmed(result,message) {
-    assert(result.blocks.length === 1,
-      message + " ブロック結果が1件ではありません。");
-    assert(result.blocks[0].status === "unconfirmed",
-      message + " ブロック全体が未確定になっていません。");
+  function parseManual(text,rule,date = "2026-11-20") {
+    return parseOcrText(text,rule,null,{
+      manualDate:date
+    });
+  }
+
+  function assertIdentityUnconfirmed(result,message) {
+    assert(result.identityReview.required === true,
+      message + " 恒等式の確認が必要になっていません。");
+    assert(result.identityReview.difference === 1,
+      message + " 差額が1円ではありません。");
 
     for (const name of [
       "value",
@@ -20,195 +26,602 @@ function registerOcrTests(context) {
       "pnl",
       "swapTotal"
     ]) {
-      assert(getField(result,name).value === null,
-        message + " " + name + " に部分的な値が残っています。");
-      assert(getField(result,name).status === "block-unconfirmed",
-        message + " " + name + " が未確定になっていません。");
+      assert(getField(result,name).status === "identity-unconfirmed",
+        message + " " + name + " が要確認になっていません。");
     }
+
+    assert(isOcrResultAddable(result).allowed === false,
+      message + " 恒等式未確認のまま表へ追加できます。");
   }
 
-  runTest("S12：OCR形式の識別（一致なし・1件・複数）",() => {
-    const normal = identifyOcrFormats(
-      data.normalText,
-      data.lightFxRule
+  runTest("S12d・1：4口座の正常解析",() => {
+    const light = parseOcrText(data.normalText,data.lightFxRule);
+    const central = parseManual(
+      data.centralTanshiText,
+      data.centralTanshiRule
+    );
+    const click365 = parseManual(
+      data.click365Text,
+      data.click365Rule
+    );
+    const lion = parseManual(
+      data.lionFxText,
+      data.lionFxRule
     );
 
-    assert(normal.status === "identified",
-      "一致する形式を1件に特定できていません。");
-    assert(normal.format.formatId === "account-inquiry",
-      "特定した形式が正しくありません。");
+    for (const [name,result] of [
+      ["LIGHT FX",light],
+      ["セントラル短資FX",central],
+      ["クリック365",click365],
+      ["LION FX",lion]
+    ]) {
+      assert(result.success === true,
+        name + " の解析に失敗しています。");
+      assert(result.status === "recognized",
+        name + " の解析結果が認識済みではありません。");
+      assert(getField(result,"value").value === 900000,
+        name + " の総資産が900,000円ではありません。");
+      assert(getField(result,"effectivePrincipal").value === 800000,
+        name + " の有効元本が800,000円ではありません。");
+      assert(getField(result,"pnl").value === -100000,
+        name + " の評価損益が-100,000円ではありません。");
+      assert(getField(result,"swapTotal").value === 200000,
+        name + " の累計スワップが200,000円ではありません。");
+      assert(getField(result,"realizedPnlTotal").value === null,
+        name + " の累積確定損益がnullではありません。");
+    }
 
-    const none = identifyOcrFormats(
-      "別の画面です",
-      data.lightFxRule
-    );
-
-    assert(none.status === "unidentified",
-      "一致しない形式を正しく判定できていません。");
-
-    const multipleRule = {
-      formats:[
-        {
-          formatId:"a",
-          label:"形式A",
-          identify:{all:["口座サマリー"],none:[]}
-        },
-        {
-          formatId:"b",
-          label:"形式B",
-          identify:{all:["口座サマリー"],none:[]}
-        }
-      ]
-    };
-
-    const multiple = identifyOcrFormats(
-      "口座サマリー\n" + data.normalText,
-      multipleRule
-    );
-
-    assert(multiple.status === "multiple",
-      "複数形式への一致を検出できていません。");
-    assert(multiple.matches.length === 2,
-      "一致した形式をすべて保持できていません。");
+    for (const result of [light,central,click365,lion]) {
+      assert(
+        800000 - 100000 + 200000 === 900000,
+        "架空データの恒等式検算が一致しません。"
+      );
+      assert(result.identityReview.required === false,
+        "正常値で恒等式の確認が必要になっています。");
+    }
   });
 
-  runTest("S12：OCR正常解析・ラベルと値が別行",() => {
-    const result = parseOcrText(
-      data.normalText,
+  runTest("S12d・2：日付の取得元と追加可否",() => {
+    const light = parseOcrText(data.normalText,data.lightFxRule);
+    const centralWithoutDate = parseOcrText(
+      "2026/11/20\n" + data.centralTanshiText,
+      data.centralTanshiRule
+    );
+    const clickWithoutDate = parseOcrText(
+      "2026/11/20\n" + data.click365Text,
+      data.click365Rule
+    );
+    const lionWithoutDate = parseOcrText(
+      "2026/11/20\n" + data.lionFxText,
+      data.lionFxRule
+    );
+
+    assert(light.date.value === "2026-11-20",
+      "LIGHT FXの画面日付を取得できていません。");
+    assert(light.date.source === "screen",
+      "LIGHT FXの日付取得元がscreenではありません。");
+    assert(centralWithoutDate.date.value === null,
+      "セントラル短資FXがOCR本文から日付を取得しています。");
+    assert(clickWithoutDate.date.value === null,
+      "クリック365がOCR本文から日付を取得しています。");
+    assert(lionWithoutDate.date.value === null,
+      "LION FXがOCR本文から日付を取得しています。");
+
+    for (const result of [
+      centralWithoutDate,
+      clickWithoutDate,
+      lionWithoutDate
+    ]) {
+      assert(result.date.source === "manual",
+        "手入力対象口座の日付取得元がmanualではありません。");
+      assert(isOcrResultAddable(result).allowed === false,
+        "対象日が未入力なのに表へ追加できます。");
+    }
+
+    const centralWithDate = parseManual(
+      data.centralTanshiText,
+      data.centralTanshiRule
+    );
+    assert(centralWithDate.date.value === "2026-11-20",
+      "手入力した対象日が反映されていません。");
+    assert(isOcrResultAddable(centralWithDate).allowed === true,
+      "対象日を入力した正常結果を表へ追加できません。");
+
+    const noYear = parseOcrText(
+      data.normalText.replace("2026/11/20","11/20"),
       data.lightFxRule
     );
-
-    assert(result.success === true,
-      "正常なOCRテキストの解析に失敗しています。");
-    assert(result.status === "recognized",
-      "正常な解析結果が認識済みになっていません。");
-    assert(result.date.value === "2026-11-19",
-      "対象日が2026-11-19になっていません。");
-    assert(getField(result,"value").value === 100000,
-      "総資産が100,000円になっていません。");
-    assert(getField(result,"effectivePrincipal").value === 80000,
-      "有効元本が80,000円になっていません。");
-    assert(getField(result,"pnl").value === -5000,
-      "評価損益が-5,000円になっていません。");
-    assert(getField(result,"swapTotal").value === 25000,
-      "累計スワップが25,000円になっていません。");
-    assert(
-      80000 - 5000 + 25000 === 100000,
-      "架空データの総資産の検算値が一致しません。"
-    );
+    assert(noYear.date.value === null,
+      "年のない日付を推測して取得しています。");
   });
 
-  runTest("S12：OCR項目の並び順が違っても同じ結果",() => {
-    const result = parseOcrText(
-      data.reversedText,
-      data.lightFxRule
+  runTest("S12d・3：必須の総資産項目が欠落した場合",() => {
+    const lightText = data.normalText.replace("純資産額\n","");
+    const centralText = data.centralTanshiText.replace(
+      "口座清算価値\n",
+      ""
+    );
+    const clickText = data.click365Text.replace(
+      "時価評価総額\n",
+      ""
+    );
+    const lionText = data.lionFxText.replace(
+      "有効証拠金\n",
+      ""
     );
 
-    assert(result.status === "recognized",
-      "並び順を変えたテキストを認識できていません。");
-    assert(getField(result,"value").value === 100000,
-      "並び順の変更で総資産が変わっています。");
-    assert(getField(result,"pnl").value === -5000,
-      "並び順の変更で評価損益が変わっています。");
-    assert(getField(result,"swapTotal").value === 25000,
-      "並び順の変更で累計スワップが変わっています。");
+    const light = parseOcrText(lightText,data.lightFxRule);
+    const central = parseManual(centralText,data.centralTanshiRule);
+    const click365 = parseManual(clickText,data.click365Rule);
+    const lion = parseManual(lionText,data.lionFxRule);
+
+    for (const [name,result] of [
+      ["LIGHT FX",light],
+      ["セントラル短資FX",central],
+      ["LION FX",lion]
+    ]) {
+      assert(getField(result,"value").value === null,
+        name + " の総資産がnullではありません。");
+      assert(getField(result,"value").status === "missing-required",
+        name + " の総資産が未取得（必須）になっていません。");
+      assert(isOcrResultAddable(result).allowed === false,
+        name + " の必須項目欠落を表へ追加できます。");
+    }
+
+    assert(click365.blocks[0].status === "unconfirmed",
+      "クリック365の必須ラベル欠落でブロック全体が未確定になっていません。");
+    for (const name of [
+      "value",
+      "effectivePrincipal",
+      "pnl",
+      "swapTotal"
+    ]) {
+      assert(getField(click365,name).value === null,
+        "クリック365の " + name + " に部分的な値が残っています。");
+    }
+    assert(isOcrResultAddable(click365).allowed === false,
+      "クリック365の不完全なブロックを表へ追加できます。");
   });
 
-  runTest("S12：異なる項目名を誤って割り当てない",() => {
-    const item = data.cases.find(value =>
-      value.id === "different-label"
+  runTest("S12d・4：数値の読み取り失敗は該当項目だけ要確認",() => {
+    const lightText = data.normalText.replace(
+      "-100,000円",
+      "-1,00S,000円"
     );
-    const result = parseOcrText(item.text,data.lightFxRule);
-    const pnl = getField(result,"pnl");
+    const centralText = data.centralTanshiText.replace(
+      "900,000円",
+      "1,2S0,000円"
+    );
+    const clickText = data.click365Text.replace(
+      "900,000円",
+      "1,2S0,000円"
+    );
+    const lionText = data.lionFxText.replace(
+      "900,000円",
+      "1,2S0,000円"
+    );
 
-    assert(pnl.value === null,
-      "別の項目名を評価損益に割り当てています。");
-    assert(pnl.status === "missing-required",
-      "必須の評価損益が未取得（必須）になっていません。");
-    assert(
-      result.unrecognizedLines.some(line =>
-        line.text.includes("未決済建玉評価損益")
-      ),
-      "認識できない項目名が未認識行に残っていません。"
-    );
+    const results = [
+      parseOcrText(lightText,data.lightFxRule),
+      parseManual(centralText,data.centralTanshiRule),
+      parseManual(clickText,data.click365Rule),
+      parseManual(lionText,data.lionFxRule)
+    ];
+
+    for (const result of results) {
+      assert(getField(result,"value").value === null,
+        "読めない総資産がnullになっていません。");
+      assert(getField(result,"value").status === "unreadable",
+        "読めない総資産が要確認になっていません。");
+      assert(getField(result,"effectivePrincipal").value === 800000,
+        "有効元本の正常値が変わっています。");
+      assert(getField(result,"pnl").value === -100000,
+        "評価損益の正常値が変わっています。");
+      assert(getField(result,"swapTotal").value === 200000,
+        "累計スワップの正常値が変わっています。");
+    }
   });
 
-  runTest("S12：数値として読めない値はnullで原文を保持",() => {
-    const item = data.cases.find(
-      value => value.id === "unreadable-number"
+  runTest("S12d・5：同じ項目の複数候補を自動選択しない",() => {
+    const centralText =
+      data.centralTanshiText +
+      "\n口座清算価値\n900,001円";
+    const central = parseManual(
+      centralText,
+      data.centralTanshiRule
     );
 
-    const result = parseOcrText(item.text,data.lightFxRule);
-    const pnl = getField(result,"pnl");
+    const clickText =
+      data.click365Text +
+      "\n時価評価総額\n";
+    const click365 = parseManual(
+      clickText,
+      data.click365Rule
+    );
 
-    assert(pnl.value === null,
-      "読めない数値がnullになっていません。");
-    assert(pnl.status === "unreadable",
-      "読めない数値が要確認になっていません。");
-    assert(pnl.original === "-5,00S円",
-      "確認用の原文が保持されていません。");
-    assert(getField(result,"value").value === 100000,
+    assert(getField(central,"value").value === null,
+      "セントラル短資FXの複数候補から値を選択しています。");
+    assert(getField(central,"value").status === "multiple",
+      "セントラル短資FXの複数候補が要確認になっていません。");
+    assert(getField(central,"value").candidates.length === 2,
+      "セントラル短資FXの候補が2件保持されていません。");
+
+    assert(click365.blocks[0].status === "unconfirmed",
+      "クリック365のブロック起点重複が未確定になっていません。");
+    assert(isOcrResultAddable(click365).allowed === false,
+      "クリック365の起点重複を表へ追加できます。");
+  });
+
+  runTest("S12d・6：余分な画面要素と未知行の扱い",() => {
+    const clickWithIgnored =
+      "余力確認\n戻る\n•ll 5G\n365株\n" +
+      data.click365Text;
+    const click = parseManual(
+      clickWithIgnored,
+      data.click365Rule
+    );
+
+    assert(click.blocks[0].status === "recognized",
+      "指定したignoreLinesを読み飛ばせていません。");
+    for (const name of [
+      "value",
+      "effectivePrincipal",
+      "pnl",
+      "swapTotal"
+    ]) {
+      assert(getField(click,name).value === 900000 ||
+        name !== "value",
+        "ignoreLinesにより総資産が変わっています。");
+    }
+
+    const unknownBlock = data.click365Text.replace(
+      "口座残高\n",
+      "不明な画面行\n口座残高\n"
+    );
+    const unknownBlockResult = parseManual(
+      unknownBlock,
+      data.click365Rule
+    );
+    assert(unknownBlockResult.blocks[0].status === "unconfirmed",
+      "クリック365の未知行を含むブロックが未確定になっていません。");
+
+    const unknownNextLine = data.centralTanshiText.replace(
+      "口座清算価値\n900,000円",
+      "口座清算価値\n不明な画面行\n900,000円"
+    );
+    const unknownNextResult = parseManual(
+      unknownNextLine,
+      data.centralTanshiRule
+    );
+    assert(getField(unknownNextResult,"value").value === null,
+      "セントラル短資FXが次の行より先の値を補完しています。");
+    assert(getField(unknownNextResult,"effectivePrincipal").value === 800000,
       "別項目の正常値が変わっています。");
   });
 
-  runTest("S12：同一項目の複数候補を自動選択しない",() => {
-    const item = data.cases.find(
-      value => value.id === "multiple-value"
+  runTest("S12d・7：項目名と値の行数が合わない場合",() => {
+    const centralMissingValue = data.centralTanshiText.replace(
+      "口座清算価値\n900,000円",
+      "口座清算価値"
+    );
+    const centralMissingLabel = data.centralTanshiText.replace(
+      "口座清算価値\n900,000円",
+      "900,000円"
+    );
+    const centralA = parseManual(
+      centralMissingValue,
+      data.centralTanshiRule
+    );
+    const centralB = parseManual(
+      centralMissingLabel,
+      data.centralTanshiRule
     );
 
-    const result = parseOcrText(item.text,data.lightFxRule);
-    const value = getField(result,"value");
+    assert(getField(centralA,"value").value === null,
+      "次の項目名を総資産の値として使っています。");
+    assert(getField(centralA,"effectivePrincipal").value === 800000,
+      "次の項目の有効元本が変わっています。");
+    assert(getField(centralB,"value").status === "missing-required",
+      "項目名の欠落が未取得（必須）になっていません。");
+    assert(getField(centralB,"effectivePrincipal").value === 800000,
+      "項目名の欠落で前後の項目がずれています。");
 
-    assert(value.value === null,
-      "複数候補から値を自動選択しています。");
-    assert(value.status === "multiple",
-      "複数候補が確認対象になっていません。");
-    assert(value.candidates.length === 2,
-      "候補2件を保持できていません。");
-    assert(value.candidates[0].value === 100000,
-      "1件目の候補値が正しくありません。");
-    assert(value.candidates[1].value === 100001,
-      "2件目の候補値が正しくありません。");
+    const clickMissingValue = data.click365Text.replace(
+      "900,000円\n",
+      ""
+    );
+    const clickExtraValue = data.click365Text + "\n999円";
+    const clickMissingLabel = data.click365Text.replace(
+      "時価評価総額\n",
+      ""
+    );
+
+    for (const text of [
+      clickMissingValue,
+      clickExtraValue,
+      clickMissingLabel
+    ]) {
+      const result = parseManual(text,data.click365Rule);
+      assert(result.blocks[0].status === "unconfirmed",
+        "クリック365の項目数・値数の不一致を検出できていません。");
+      for (const name of [
+        "value",
+        "effectivePrincipal",
+        "pnl",
+        "swapTotal"
+      ]) {
+        assert(getField(result,name).value === null,
+          "クリック365の不一致で " + name + " に値が残っています。");
+      }
+    }
   });
 
-  runTest("S12：必須項目がない場合は未取得（必須）",() => {
-    const item = data.cases.find(
-      value => value.id === "missing-required"
+  runTest("S12d・8：クリック365の同じ種類の値の順序違い",() => {
+    const swappedText = data.click365Text
+      .replace("900,000円","__SWAP_VALUE__")
+      .replace("800,000円","900,000円")
+      .replace("__SWAP_VALUE__","800,000円");
+
+    const result = parseManual(
+      swappedText,
+      data.click365Rule
     );
 
-    const result = parseOcrText(item.text,data.lightFxRule,"account-inquiry");
-    const value = getField(result,"value");
+    assert(result.blocks[0].status === "recognized",
+      "同じ種類の値の入れ替えでブロック構造まで不成立になっています。");
+    assert(result.identityReview.required === true,
+      "値の対応ずれによる恒等式の不一致を検出できていません。");
+    assert(isOcrResultAddable(result).allowed === false,
+      "値の対応ずれがある結果を表へ追加できます。");
 
-    assert(value.value === null,
-      "必須項目の欠落がnullになっていません。");
-    assert(value.status === "missing-required",
-      "必須項目の欠落が正しく表示されていません。");
-    assert(result.status === "needs-confirmation",
-      "必須項目の欠落が確認対象になっていません。");
+    const extraAmount = data.click365Text.replace(
+      "1,800,000円\n",
+      "999円\n1,800,000円\n"
+    );
+    const extraResult = parseManual(
+      extraAmount,
+      data.click365Rule
+    );
+    assert(extraResult.blocks[0].status === "unconfirmed",
+      "値のまとまり先頭の余分な金額を検出できていません。");
   });
 
-  runTest("S12：別口座の次行形式を共通項目に変換",() => {
-    const result = parseOcrText(
-      data.otherAccountText,
-      data.otherAccountRule
+  runTest("S12d・9：4口座すべてidentityStrictで1円差を要確認にする",() => {
+    const lightText = data.normalText.replace(
+      "900,000円",
+      "900,001円"
+    );
+    const centralText = data.centralTanshiText.replace(
+      "900,000円",
+      "900,001円"
+    );
+    const clickText = data.click365Text.replace(
+      "900,000円",
+      "900,001円"
+    );
+    const lionText = data.lionFxText.replace(
+      "900,000円",
+      "900,001円"
     );
 
-    assert(result.status === "recognized",
-      "次行形式のテキストを認識できていません。");
-    assert(result.date.value === "2026-11-19",
-      "別口座の対象日が正しくありません。");
-    assert(getField(result,"value").value === 3210000,
-      "総資産が3,210,000円になっていません。");
-    assert(getField(result,"effectivePrincipal").value === 3300000,
-      "有効元本が3,300,000円になっていません。");
+    const results = [
+      parseOcrText(lightText,data.lightFxRule),
+      parseManual(centralText,data.centralTanshiRule),
+      parseManual(clickText,data.click365Rule),
+      parseManual(lionText,data.lionFxRule)
+    ];
+
+    for (const [index,result] of results.entries()) {
+      assertIdentityUnconfirmed(result,"口座番号 " + (index + 1));
+    }
+  });
+
+  runTest("S12d・10：未認識テキストの行番号と数字の伏せ字",() => {
+    const source =
+      "口座番号 12345678\n" + data.normalText;
+    const result = parseOcrText(source,data.lightFxRule);
+    const line = result.unrecognizedLines.find(item =>
+      item.text.includes("口座番号")
+    );
+
+    assert(line !== undefined,
+      "未認識テキストが一覧にありません。");
+    assert(line.lineNumber === 1,
+      "未認識テキストの行番号が保持されていません。");
+    assert(line.text === "口座番号 ●●●●●●●●",
+      "8桁の数字が伏せ字になっていません。");
+    assert(getField(result,"value").value === 900000,
+      "未認識テキストが解析値に影響しています。");
+  });
+
+  runTest("S12d・11：解析結果にOCR原文を保存しない",() => {
+    const sentinel = "OCR_RAW_SENTINEL_20261120";
+    const source = data.normalText + "\n" + sentinel;
+    const result = parseOcrText(source,data.lightFxRule);
+    const serialized = JSON.stringify(result);
+
+    assert(!serialized.includes(sentinel),
+      "解析結果にOCR原文の識別文字列が残っています。");
+    assert(!Object.prototype.hasOwnProperty.call(result,"ocrText") &&
+      !Object.prototype.hasOwnProperty.call(result,"sourceText") &&
+      !Object.prototype.hasOwnProperty.call(result,"rawText"),
+      "解析結果にOCR原文保存用の項目があります。");
+  });
+
+  runTest("S12d・12：解析結果を一括入力の表へ渡せる条件",() => {
+    const light = parseOcrText(data.normalText,data.lightFxRule);
+    const central = parseManual(
+      data.centralTanshiText,
+      data.centralTanshiRule
+    );
+    const click365 = parseManual(
+      data.click365Text,
+      data.click365Rule
+    );
+    const lion = parseManual(
+      data.lionFxText,
+      data.lionFxRule
+    );
+
+    for (const result of [light,central,click365,lion]) {
+      assert(isOcrResultAddable(result).allowed === true,
+        "正常な4項目と対象日の結果を表へ追加できません。");
+      assert(getField(result,"realizedPnlTotal").value === null,
+        "累積確定損益がnullではありません。");
+      assert(result.date.value === "2026-11-20",
+        "対象日が正しくありません。");
+    }
+  });
+
+  runTest("S12d・13：同一口座・同一対象日の重複候補を識別できる",() => {
+    const first = parseOcrText(data.normalText,data.lightFxRule);
+    const second = parseOcrText(data.normalText,data.lightFxRule);
+
+    assert(first.date.value === second.date.value,
+      "同じ対象日を解析できていません。");
+    assert(first.fields.value.value === second.fields.value.value,
+      "同じOCRテキストの解析値が一致しません。");
+    assert(first.format.formatId === second.format.formatId,
+      "同じ口座形式を特定できていません。");
+  });
+
+  runTest("S12d・14：口座ごとのルールが独立し、別口座テキストを識別しない",() => {
+    const rules = [
+      data.lightFxRule,
+      data.centralTanshiRule,
+      data.click365Rule,
+      data.lionFxRule
+    ];
+    const texts = [
+      data.normalText,
+      data.centralTanshiText,
+      data.click365Text,
+      data.lionFxText
+    ];
+
+    for (let i = 0;i < rules.length;i++) {
+      const copied = JSON.parse(JSON.stringify(rules[i]));
+      copied.formats[0].fields.pnl.labels = ["変更テスト用ラベル"];
+
+      const ownOriginal = identifyOcrFormats(texts[i],rules[i]);
+      const ownChanged = identifyOcrFormats(texts[i],copied);
+
+      assert(ownOriginal.status === "identified",
+        "口座 " + (i + 1) + " の形式を特定できません。");
+      assert(ownChanged.status === "identified",
+        "複製したルールの識別結果が変わっています。");
+
+      for (let j = 0;j < rules.length;j++) {
+        if (i === j) continue;
+        const otherBefore = identifyOcrFormats(texts[j],rules[j]);
+        const otherAfter = identifyOcrFormats(texts[j],rules[j]);
+
+        assert(otherBefore.status === otherAfter.status,
+          "別口座 " + (j + 1) + " の識別結果が変わっています。");
+      }
+    }
+
+    for (let i = 0;i < rules.length;i++) {
+      for (let j = 0;j < rules.length;j++) {
+        if (i === j) continue;
+        const result = identifyOcrFormats(texts[j],rules[i]);
+        assert(result.status === "unidentified",
+          "別口座のテキストを口座 " + (i + 1) + " の形式として識別しています。");
+      }
+    }
+  });
+
+  runTest("S12d・15：LION FXのポジション損益とロック以外の行",() => {
+    const result = parseManual(data.lionFxText,data.lionFxRule);
+
     assert(getField(result,"pnl").value === -100000,
-      "評価損益が-100,000円になっていません。");
-    assert(getField(result,"swapTotal").value === 10000,
-      "累計スワップが10,000円になっていません。");
-    assert(
-      3300000 - 100000 + 10000 === 3210000,
-      "別口座の総資産の検算値が一致しません。"
+      "評価損益ではなくポジション損益を取得できていません。");
+    assert(getField(result,"swapTotal").value === 200000,
+      "未実現スワップを取得できていません。");
+
+    const changedSuffixText = data.lionFxText
+      .replace("評価損益（ロック以外）\n\n100,000円",
+        "評価損益（ロック以外）\n\n999,999円")
+      .replace("ポジション損益（ロック以外）\n\n−100,000円",
+        "ポジション損益（ロック以外）\n\n999,999円")
+      .replace("未実現スワップ（ロック以外）\n200,000円",
+        "未実現スワップ（ロック以外）\n999,999円");
+
+    const changed = parseManual(changedSuffixText,data.lionFxRule);
+
+    for (const name of [
+      "value",
+      "effectivePrincipal",
+      "pnl",
+      "swapTotal"
+    ]) {
+      assert(getField(changed,name).value === getField(result,name).value,
+        "ロック以外の値の変更で " + name + " が変わっています。");
+    }
+
+    const noBlankLines = data.lionFxText.replace(/\n\n/g,"\n");
+    const noBlankResult = parseManual(noBlankLines,data.lionFxRule);
+
+    for (const name of [
+      "value",
+      "effectivePrincipal",
+      "pnl",
+      "swapTotal"
+    ]) {
+      assert(getField(noBlankResult,name).value === getField(result,name).value,
+        "空行の有無でLION FXの " + name + " が変わっています。");
+    }
+  });
+
+  runTest("S12d・16：セントラル短資FX固有の項目と並び順",() => {
+    const original = parseManual(
+      data.centralTanshiText,
+      data.centralTanshiRule
     );
+
+    const changedUnmapped = data.centralTanshiText
+      .replace("当日損益\n0円","当日損益\n999,999円")
+      .replace("出金依頼額\n0円","出金依頼額\n888,888円");
+    const changedResult = parseManual(
+      changedUnmapped,
+      data.centralTanshiRule
+    );
+
+    for (const name of [
+      "value",
+      "effectivePrincipal",
+      "pnl",
+      "swapTotal"
+    ]) {
+      assert(getField(changedResult,name).value === getField(original,name).value,
+        "対象外項目の変更で " + name + " が変わっています。");
+    }
+
+    const reordered =
+      "口座内容照会\n" +
+      "口座清算価値\n900,000円\n" +
+      "通貨別\n" +
+      "未決済スワップ\n200,000円\n" +
+      "合計（円換算）\n" +
+      "建玉評価損益\n-100,000円\n" +
+      "口座資産\n800,000円\n" +
+      "当日損益\n0円\n" +
+      "出金依頼額\n0円";
+
+    const reorderedResult = parseManual(
+      reordered,
+      data.centralTanshiRule
+    );
+
+    for (const name of [
+      "value",
+      "effectivePrincipal",
+      "pnl",
+      "swapTotal"
+    ]) {
+      assert(getField(reorderedResult,name).value === getField(original,name).value,
+        "項目名と値のペアの並び替えで " + name + " が変わっています。");
+    }
   });
 
   runTest("S12：金額の正規化",() => {
@@ -245,505 +658,18 @@ function registerOcrTests(context) {
     }
   });
 
-  runTest("S12：日付が複数ある場合は未選択",() => {
-    const text = data.normalText + "\n2026/11/18";
-
-    const result = parseOcrText(text,data.lightFxRule);
-
-    assert(result.date.status === "multiple",
-      "複数の日付を確認対象にできていません。");
-    assert(result.date.value === null,
-      "複数の日付から自動選択しています。");
-    assert(result.date.candidates.length === 2,
-      "日付候補を2件保持できていません。");
-  });
-
-  runTest("S12：解析形式を明示選択できる",() => {
-    const rule = {
-      formats:[
-        {
-          formatId:"a",
-          label:"形式A",
-          identify:{all:["共通語"],none:[]},
-          date:{patterns:["YYYY/M/D"],required:true},
-          fields:{
-            value:{labels:["総資産"],required:true}
-          }
-        },
-        {
-          formatId:"b",
-          label:"形式B",
-          identify:{all:["共通語"],none:[]},
-          date:{patterns:["YYYY/M/D"],required:true},
-          fields:{
-            value:{labels:["資産合計"],required:true}
-          }
-        }
-      ]
-    };
-
-    const result = parseOcrText(
-      "共通語\n2026/11/19\n総資産 100",
-      rule,
-      "a"
+  runTest("S12：OCRルール自己診断の項目8",() => {
+    const result = checkOcrRuleConsistency(
+      [
+        {name:"LIGHT FX"},
+        {name:"セントラル短資FX"},
+        {name:"クリック365"},
+        {name:"LION FX"}
+      ],
+      OCR_ACCOUNT_RULES
     );
 
     assert(result.success === true,
-      "形式を指定した解析に失敗しています。");
-    assert(result.format.formatId === "a",
-      "指定した形式Aを使っていません。");
-    assert(getField(result,"value").value === 100,
-      "指定した形式の値を取得できていません。");
+      "実際の4口座名と解析ルールの整合がOKではありません。");
   });
-
-  runTest("S12：口座ごとの解析ルールが独立している",() => {
-    const originalLightResult = parseOcrText(
-      data.normalText,
-      data.lightFxRule
-    );
-
-    const copiedRule = JSON.parse(
-      JSON.stringify(data.lightFxRule)
-    );
-
-    copiedRule.formats[0].fields.pnl.labels = [
-      data.ruleIsolation.changedLabel
-    ];
-
-    const changedLightResult = parseOcrText(
-      data.normalText,
-      copiedRule
-    );
-
-    const otherBefore = parseOcrText(
-      data.otherAccountText,
-      data.otherAccountRule
-    );
-
-    const otherAfter = parseOcrText(
-      data.otherAccountText,
-      data.otherAccountRule
-    );
-
-    assert(
-      originalLightResult.fields.pnl.value === -5000,
-      "複製前のLIGHT FXルールの結果が正しくありません。"
-    );
-    assert(
-      changedLightResult.fields.pnl.value === null,
-      "複製ルールの変更が解析結果に反映されていません。"
-    );
-    assert(
-      otherBefore.fields.value.value === otherAfter.fields.value.value,
-      "別口座の総資産の解析結果が変わっています。"
-    );
-    assert(
-      otherBefore.fields.pnl.value === otherAfter.fields.pnl.value,
-      "別口座の評価損益の解析結果が変わっています。"
-    );
-    assert(
-      data.lightFxRule.formats[0].fields.pnl.labels[0] === "建玉評価損益",
-      "元のルールが変更されています。"
-    );
-  });
-
-  runTest("S12：未認識行の行番号と伏せ字",() => {
-    const result = parseOcrText(
-      data.normalText + "\n取引番号123456789012",
-      data.lightFxRule
-    );
-
-    const line = result.unrecognizedLines.find(item =>
-      item.text.includes("取引番号")
-    );
-
-    assert(line !== undefined,
-      "未認識行が一覧にありません。");
-    assert(line.lineNumber === 18,
-      "未認識行の元の行番号が保持されていません。");
-    assert(
-      line.text === "取引番号●●●●●●●●●●●●",
-      "8桁以上の数字が伏せ字になっていません。"
-    );
-  });
-
-  runTest("S12：OCR原文を未認識行にそのまま残さない",() => {
-    const source = data.normalText + "\n取引番号123456789012";
-    const result = parseOcrText(source,data.lightFxRule,"account-inquiry");
-    const serialized = JSON.stringify(result);
-
-    assert(!serialized.includes("123456789012"),
-      "解析結果に伏せ字前の連続数字が残っています。");
-  });
-
-  runTest("S12b2：セントラル短資FXのブロック形式を解析",() => {
-    const result = parseOcrText(
-      data.blockCentralTanshiText,
-      data.blockCentralTanshiRule
-    );
-
-    assert(result.blocks.length === 1,
-      "ブロック結果が1件ではありません。");
-    assert(result.blocks[0].status === "recognized",
-      "項目名のまとまりと値のまとまりを認識できていません。");
-    assert(getField(result,"value").value === 1750000,
-      "口座清算価値が1,750,000円になっていません。");
-    assert(getField(result,"effectivePrincipal").value === 2000000,
-      "口座資産が2,000,000円になっていません。");
-    assert(getField(result,"pnl").value === -400000,
-      "建玉評価損益が-400,000円になっていません。");
-    assert(getField(result,"swapTotal").value === 150000,
-      "未決済スワップが150,000円になっていません。");
-    assert(
-      2000000 - 400000 + 150000 === 1750000,
-      "セントラル短資FXの恒等式検算が一致しません。"
-    );
-  });
-
-  runTest("S12b2：クリック365のブロック形式と無視行",() => {
-    const result = parseOcrText(
-      data.blockClick365Text,
-      data.blockClick365Rule
-    );
-
-    assert(result.blocks.length === 1,
-      "ブロック結果が1件ではありません。");
-    assert(result.blocks[0].status === "recognized",
-      "クリック365の項目名と値のまとまりを認識できていません。");
-    assert(getField(result,"value").value === 2000000,
-      "時価評価総額が2,000,000円になっていません。");
-    assert(getField(result,"effectivePrincipal").value === 500000,
-      "口座残高が500,000円になっていません。");
-    assert(getField(result,"pnl").value === 500000,
-      "未決済建玉評価損益が500,000円になっていません。");
-    assert(getField(result,"swapTotal").value === 1000000,
-      "累計スワップが1,000,000円になっていません。");
-    assert(
-      500000 + 500000 + 1000000 === 2000000,
-      "クリック365の恒等式検算が一致しません。"
-    );
-    assert(
-      result.unrecognizedLines.every(line =>
-        !["余力確認","戻る","三、365株"].includes(line.text)
-      ),
-      "ignoreLinesで指定した画面要素が未認識行に残っています。"
-    );
-  });
-
-  runTest("S12b2：ブロックのラベル欠落は全項目未確定",() => {
-    const text = data.blockCentralTanshiText.replace(
-      "建玉評価損益\n",
-      ""
-    );
-    const result = parseOcrText(
-      text,
-      data.blockCentralTanshiRule
-    );
-
-    assertBlockUnconfirmed(result,"ラベル欠落");
-  });
-
-  runTest("S12b2：項目名のまとまり内の不明行は全項目未確定",() => {
-    const text = data.blockCentralTanshiText.replace(
-      "当日損益\n",
-      "当日損益\n不明な項目\n"
-    );
-    const result = parseOcrText(
-      text,
-      data.blockCentralTanshiRule
-    );
-
-    assertBlockUnconfirmed(result,"項目名のまとまり内の不明行");
-  });
-
-  runTest("S12b2：ignoreLinesを追加しても解析値は変わらない",() => {
-    const base = parseOcrText(
-      data.blockClick365Text,
-      data.blockClick365Rule
-    );
-    const textWithIgnoredLines =
-      "余力確認\n戻る\n三、365株\n" +
-      data.blockClick365Text;
-    const withIgnored = parseOcrText(
-      textWithIgnoredLines,
-      data.blockClick365Rule
-    );
-
-    for (const name of [
-      "value",
-      "effectivePrincipal",
-      "pnl",
-      "swapTotal"
-    ]) {
-      assert(
-        getField(base,name).value === getField(withIgnored,name).value,
-        "ignoreLinesの追加で" + name + "の値が変わっています。"
-      );
-    }
-    assert(withIgnored.blocks[0].status === "recognized",
-      "ignoreLinesを追加した結果、ブロックが未確定になっています。");
-  });
-
-  runTest("S12b2：ブロックの値不足・余分な数値行は全項目未確定",() => {
-    const missingText = data.blockCentralTanshiText.replace(
-      "1,250,000円",
-      ""
-    );
-    const missingResult = parseOcrText(
-      missingText,
-      data.blockCentralTanshiRule
-    );
-
-    assertBlockUnconfirmed(missingResult,"値不足");
-
-    const extraText = data.blockCentralTanshiText + "\n999円";
-    const extraResult = parseOcrText(
-      extraText,
-      data.blockCentralTanshiRule
-    );
-
-    assertBlockUnconfirmed(extraResult,"余分な数値行");
-  });
-
-  runTest("S12b2：値の種類が違う場合は全項目未確定",() => {
-    const text = data.blockCentralTanshiText.replace(
-      "900%\n",
-      "900円\n"
-    );
-    const result = parseOcrText(
-      text,
-      data.blockCentralTanshiRule
-    );
-
-    assertBlockUnconfirmed(result,"値の種類違い");
-  });
-
-  runTest("S12b2：ブロックの起点が2件ある場合は全項目未確定",() => {
-    const text =
-      data.blockCentralTanshiText +
-      "\n口座資産";
-    const result = parseOcrText(
-      text,
-      data.blockCentralTanshiRule
-    );
-
-    assertBlockUnconfirmed(result,"起点重複");
-  });
-
-  runTest("S12b2：金額の読取失敗は該当項目だけ",() => {
-    const text = data.blockCentralTanshiText.replace(
-      "2,000,000円\n",
-      "2,00S,000円\n"
-    );
-    const result = parseOcrText(
-      text,
-      data.blockCentralTanshiRule
-    );
-
-    assert(result.blocks[0].status === "recognized",
-      "金額の読取失敗でブロック全体が未確定になっています。");
-    assert(getField(result,"effectivePrincipal").value === null,
-      "読めない金額が数値として取得されています。");
-    assert(getField(result,"effectivePrincipal").status === "unreadable",
-      "読めない金額がunreadableになっていません。");
-    assert(getField(result,"value").value === 1750000,
-      "総資産の正常値が失われています。");
-    assert(getField(result,"pnl").value === -400000,
-      "評価損益の正常値が失われています。");
-    assert(getField(result,"swapTotal").value === 150000,
-      "累計スワップの正常値が失われています。");
-  });
-
-  runTest("S12b2：同じamount項目の値の入れ替わりはidentityStrictで要確認",() => {
-    const swappedText = data.blockCentralTanshiText
-      .replace("2,000,000円","__SWAP_VALUE__")
-      .replace("1,750,000円","2,000,000円")
-      .replace("__SWAP_VALUE__","1,750,000円");
-    const result = parseOcrText(swappedText,data.blockCentralTanshiRule,null,{
-      manualDate:"2026-11-19"
-    });
-
-    assert(result.identityReview.required === true,
-      "恒等式の不一致が要確認になっていません。");
-    assert(result.identityReview.difference === 500000,
-      "恒等式の差額が500,000円ではありません。");
-    for (const name of ["value","effectivePrincipal","pnl","swapTotal"]) {
-      assert(getField(result,name).status === "identity-unconfirmed",
-        name + "が要確認になっていません。");
-      assert(getField(result,name).value !== null,
-        name + "の元の解析値が失われています。");
-    }
-    assert(isOcrResultAddable(result).allowed === false,
-      "恒等式未確認の結果を表へ追加できてしまいます。");
-
-    const confirmed = parseOcrText(swappedText,data.blockCentralTanshiRule,null,{
-      manualDate:"2026-11-19",
-      identityConfirmed:true
-    });
-    assert(confirmed.identityReview.confirmed === true,
-      "「このままで確定」の入力を受け付けていません。");
-    assert(getField(confirmed,"value").status === "recognized",
-      "確定後も総資産が要確認のままです。");
-    assert(isOcrResultAddable(confirmed).allowed === true,
-      "恒等式を確定した結果を表へ追加できません。");
-
-    const missingDate = parseOcrText(
-      data.blockCentralTanshiText,data.blockCentralTanshiRule
-    );
-    assert(isOcrResultAddable(missingDate).allowed === false,
-      "manual日付が未入力なのに表へ追加できます。");
-  });
-
-  runTest("S12b2：1円の恒等式差額はidentityStrictの有無で扱いが異なる",() => {
-    const text = data.blockCentralTanshiText.replace(
-      "1,750,000円","1,750,001円"
-    );
-    const strictRule = JSON.parse(JSON.stringify(data.blockCentralTanshiRule));
-    const looseRule = JSON.parse(JSON.stringify(data.blockCentralTanshiRule));
-    looseRule.formats[0].identityStrict = false;
-
-    const strictResult = parseOcrText(text,strictRule,null,{
-      manualDate:"2026-11-19"
-    });
-    const looseResult = parseOcrText(text,looseRule,null,{
-      manualDate:"2026-11-19"
-    });
-
-    assert(strictResult.identityReview.required === true,
-      "identityStrict=trueで1円差額が要確認になっていません。");
-    assert(strictResult.identityReview.difference === 1,
-      "identityStrict=trueの差額が1円ではありません。");
-    assert(getField(strictResult,"value").status === "identity-unconfirmed",
-      "identityStrict=trueの項目が要確認になっていません。");
-    assert(looseResult.identityStrict === false,
-      "identityStrict=falseが反映されていません。");
-    assert(looseResult.identityReview.required === false,
-      "identityStrict=falseでも恒等式の確認を強制しています。");
-    assert(getField(looseResult,"value").status === "recognized",
-      "identityStrict=falseで通常の認識状態を維持できていません。");
-  });
-
-  runTest("S12b2：manual日付はOCR本文を使わずscreen日付は指定patternだけ",() => {
-    const manualResult = parseOcrText(
-      "2026/11/19\n" + data.blockCentralTanshiText,
-      data.blockCentralTanshiRule,
-      null,
-      {manualDate:"2026-11-20"}
-    );
-    assert(manualResult.date.source === "manual",
-      "manualの取得元が保持されていません。");
-    assert(manualResult.date.value === "2026-11-20",
-      "manualで入力した日付を使っていません。");
-    assert(manualResult.date.candidates.length === 0,
-      "manualでOCR本文から日付候補を取得しています。");
-
-    const screenRule = {formats:[{
-      formatId:"screen-date",
-      label:"画面日付",
-      identify:{all:["口座サマリー"],none:[]},
-      date:{
-        source:"screen",
-        labels:["更新日時"],
-        patterns:["YYYY/M/D"],
-        required:true
-      },
-      fields:{value:{labels:["総資産"],required:true}}
-    }]};
-    const screenResult = parseOcrText(
-      "口座サマリー\n更新日時\n0円\n総資産 100",
-      screenRule
-    );
-    assert(screenResult.date.source === "screen",
-      "screenの取得元が保持されていません。");
-    assert(screenResult.date.value === null,
-      "更新日時の次の0円を日付として取得しています。");
-    assert(screenResult.date.candidates.length === 0,
-      "patternsに一致しない0円を日付候補にしています。");
-
-    const noYearResult = parseOcrText(
-      "口座サマリー\n更新日時\n11/19\n総資産 100",
-      screenRule
-    );
-    assert(noYearResult.date.value === null,
-      "年のない日付を推測して取得しています。");
-  });
-
-  runTest("S12b2：ブロック候補行の8桁以上の数字を伏せ字にする",() => {
-    const text = data.blockCentralTanshiText.replace(
-      "当日損益\n",
-      "当日損益\n口座番号123456789012\n"
-    );
-    const result = parseOcrText(text,data.blockCentralTanshiRule,null,{
-      manualDate:"2026-11-19"
-    });
-    const block = result.blocks[0];
-    const candidate = block.candidateLines.find(line =>
-      line.text.includes("口座番号")
-    );
-
-    assert(block.status === "unconfirmed",
-      "不明な項目行があるブロックを未確定にできていません。");
-    assert(candidate !== undefined,
-      "不明な候補行が保持されていません。");
-    assert(candidate.text === "口座番号●●●●●●●●●●●●",
-      "ブロック候補行の8桁以上の数字が伏せ字になっていません。");
-    assert(!JSON.stringify(result).includes("123456789012"),
-      "解析結果に伏せ字前の数字が残っています。");
-  });
-
-  runTest("S12b2：解析結果にOCR原文全体や原文保存用の項目を持たない",() => {
-    const source = data.blockCentralTanshiText +
-      "\n未認識メモ：OCR_RAW_SENTINEL_20261120";
-    const result = parseOcrText(source,data.blockCentralTanshiRule,null,{
-      manualDate:"2026-11-19"
-    });
-    const serialized = JSON.stringify(result);
-
-    assert(!serialized.includes(source),
-      "解析結果にOCR原文全体が保持されています。");
-    assert(!Object.prototype.hasOwnProperty.call(result,"ocrText") &&
-      !Object.prototype.hasOwnProperty.call(result,"sourceText") &&
-      !Object.prototype.hasOwnProperty.call(result,"rawText"),
-      "解析結果にOCR原文保存用の項目があります。");
-  });
-
-  runTest("S12b2：OCRルール自己診断のブロック⑥・日付⑦",() => {
-    const validRule = JSON.parse(JSON.stringify(data.blockCentralTanshiRule));
-    validRule.formats[0].date.patterns = [];
-    const valid = checkOcrRuleConsistency(
-      [{name:"架空セントラル短資FX"}],
-      [validRule]
-    );
-    assert(valid.success === true,
-      "field:nullを含む正しいブロック定義を正常と判定できていません。");
-
-    const invalidBlockRule = JSON.parse(JSON.stringify(validRule));
-    invalidBlockRule.formats[0].blocks[0].entries[1].label =
-      invalidBlockRule.formats[0].blocks[0].entries[0].label;
-    const invalidBlock = checkOcrRuleConsistency(
-      [{name:"架空セントラル短資FX"}],
-      [invalidBlockRule]
-    );
-    assert(invalidBlock.success === false,
-      "ブロック内の重複labelを検出できていません。");
-
-    const invalidDateRule = JSON.parse(JSON.stringify(validRule));
-    invalidDateRule.formats[0].date.patterns = ["YYYY/M/D"];
-    const invalidDate = checkOcrRuleConsistency(
-      [{name:"架空セントラル短資FX"}],
-      [invalidDateRule]
-    );
-    assert(invalidDate.success === false,
-      "manualの日付ルールにpatternsがある不整合を検出できていません。");
-
-    const missingSourceRule = JSON.parse(JSON.stringify(validRule));
-    delete missingSourceRule.formats[0].date.source;
-    const missingSource = checkOcrRuleConsistency(
-      [{name:"架空セントラル短資FX"}],
-      [missingSourceRule]
-    );
-    assert(missingSource.success === false,
-      "date.sourceが未指定のルールを検出できていません。");
-  });
-
 }
