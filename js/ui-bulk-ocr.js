@@ -631,22 +631,23 @@ function bulkOcrApplyDateInput(value) {
 
   if (current.status === "date-conflict" &&
       bulkOcrDateConflict) {
-    if (!value) {
+    const screenDate = bulkOcrDateConflict.screenDate;
+
+    if (!value || value === screenDate) {
       bulkOcrDateConflict = null;
       bulkOcrResult.date = {
         ...current,
         source:"screen",
         status:"recognized",
-        value:bulkOcrDateConflict
-          ? bulkOcrDateConflict.screenDate
-          : current.value
+        value:screenDate,
+        original:screenDate
       };
-      bulkOcrManualDate = "";
+      bulkOcrManualDate = value ? screenDate : "";
       return;
     }
 
     bulkOcrDateConflict = {
-      screenDate:bulkOcrDateConflict.screenDate,
+      screenDate,
       manualDate:value
     };
     return;
