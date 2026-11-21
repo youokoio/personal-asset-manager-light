@@ -2,10 +2,10 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S13a-split-v1";
+const APP_VERSION = "S13a-v1";
 const SPEC_VERSION = "v1.21";
 const STORAGE_KEY = "pam2";
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const INITIAL_ACCOUNTS = [
   {name:"LIGHT FX", type:"fx", category:"fx"},
@@ -277,6 +277,77 @@ const HOLDING_WRAPPERS = [
   "企業型DC",
   "なし"
 ];
+
+/* ---------- 積立実績の月範囲 ---------- */
+
+function findContributionMonthOverlaps(contributions) {
+  if (!Array.isArray(contributions)) return [];
+
+  const overlaps = [];
+  const validMonth = value =>
+    typeof value === "string" &&
+    /^\d{4}-(0[1-9]|1[0-2])$/.test(value) &&
+    Number(value.slice(0,4)) > 0;
+
+  for (let firstIndex = 0; firstIndex < contributions.length; firstIndex += 1) {
+    const first = contributions[firstIndex];
+    if (!first ||
+        !validMonth(first.fromMonth) ||
+        !validMonth(first.toMonth) ||
+        first.toMonth < first.fromMonth) {
+      continue;
+    }
+
+    for (let secondIndex = firstIndex + 1;
+         secondIndex < contributions.length;
+         secondIndex += 1) {
+      const second = contributions[secondIndex];
+      if (!second ||
+          first.accountId !== second.accountId ||
+          !validMonth(second.fromMonth) ||
+          !validMonth(second.toMonth) ||
+          second.toMonth < second.fromMonth) {
+        continue;
+      }
+
+      const firstAccountWide = first.productName === null;
+      const secondAccountWide = second.productName === null;
+      const sameUnit = firstAccountWide ||
+        secondAccountWide ||
+        (first.productName === second.productName &&
+         first.wrapper === second.wrapper);
+
+      if (!sameUnit) continue;
+
+      const overlapFrom = first.fromMonth > second.fromMonth
+        ? first.fromMonth
+        : second.fromMonth;
+      const overlapTo = first.toMonth < second.toMonth
+        ? first.toMonth
+        : second.toMonth;
+
+      if (overlapFrom <= overlapTo) {
+        overlaps.push({
+          firstIndex,
+          secondIndex,
+          firstId:first.id || null,
+          secondId:second.id || null,
+          accountId:first.accountId,
+          productName:firstAccountWide || secondAccountWide
+            ? null
+            : first.productName,
+          wrapper:firstAccountWide || secondAccountWide
+            ? null
+            : first.wrapper,
+          fromMonth:overlapFrom,
+          toMonth:overlapTo
+        });
+      }
+    }
+  }
+
+  return overlaps;
+}
 
 const HOLDING_KINDS = [
   "投信",
