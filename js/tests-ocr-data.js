@@ -4,25 +4,23 @@ const OCR_TEST_DATA = {
   lightFxRule:{
     ruleId:"test-light-fx",
     accountNames:["LIGHT FX"],
-    ruleVersion:"2026-11-20",
-    note:"仕様書12-12の架空テスト用ルール",
+    ruleVersion:"2026-11-21",
+    note:"S12dの架空テスト用LIGHT FXルール",
     formats:[
       {
         formatId:"account-inquiry",
         label:"口座照会",
         identify:{
-          all:[
-            "口座残高",
-            "建玉評価損益",
-            "純資産額"
-          ],
+          all:["口座残高","建玉評価損益","純資産額"],
           none:[]
         },
         date:{
+          source:"screen",
           labels:[],
           patterns:["YYYY/M/D"],
           required:true
         },
+        identityStrict:true,
         fields:{
           value:{
             labels:["純資産額"],
@@ -52,24 +50,26 @@ const OCR_TEST_DATA = {
     ]
   },
 
-  otherAccountRule:{
-    ruleId:"test-other-account",
-    accountNames:["架空口座A"],
-    ruleVersion:"2026-11-20",
-    note:"仕様書12-12の別口座形式テスト用",
+  centralTanshiRule:{
+    ruleId:"test-central-tanshi-fx",
+    accountNames:["セントラル短資FX"],
+    ruleVersion:"2026-11-21",
+    note:"S12dの架空テスト用セントラル短資FXルール",
     formats:[
       {
-        formatId:"settlement",
-        label:"口座清算価値",
+        formatId:"account-inquiry",
+        label:"口座内容照会",
         identify:{
-          all:["口座清算価値"],
+          all:["口座資産","口座清算価値","未決済スワップ"],
           none:[]
         },
         date:{
+          source:"manual",
           labels:[],
-          patterns:["YYYY/M/D"],
+          patterns:[],
           required:true
         },
+        identityStrict:true,
         fields:{
           value:{
             labels:["口座清算価値"],
@@ -99,98 +99,23 @@ const OCR_TEST_DATA = {
     ]
   },
 
-  blockCentralTanshiRule:{
-    ruleId:"test-block-central-tanshi",
-    accountNames:["架空セントラル短資FX"],
-    ruleVersion:"2026-11-20",
-    note:"仕様書12-12例13の架空ブロック形式テスト用",
+  click365Rule:{
+    ruleId:"test-click365",
+    accountNames:["クリック365"],
+    ruleVersion:"2026-11-21",
+    note:"S12dの架空テスト用クリック365ルール",
     formats:[
       {
         formatId:"account-block",
         label:"口座情報",
         identify:{
-          all:["口座清算価値","口座資産"],
+          all:["時価評価総額","未決済建玉評価損益","累計スワップ"],
           none:[]
         },
         date:{
-          labels:[],
-          patterns:["YYYY/M/D"],
           source:"manual",
-          required:true
-        },
-        identityStrict:true,
-        fields:{
-          value:{
-            labels:["口座清算価値"],
-            layout:"block",
-            blockId:"account",
-            required:true
-          },
-          effectivePrincipal:{
-            labels:["口座資産"],
-            layout:"block",
-            blockId:"account",
-            required:true
-          },
-          pnl:{
-            labels:["建玉評価損益"],
-            layout:"block",
-            blockId:"account",
-            required:true
-          },
-          realizedPnlTotal:{
-            show:false
-          },
-          swapTotal:{
-            labels:["未決済スワップ"],
-            layout:"block",
-            blockId:"account",
-            required:true
-          }
-        },
-        blocks:[
-          {
-            blockId:"account",
-            entries:[
-              {label:"口座資産",field:"effectivePrincipal",kind:"amount"},
-              {label:"当日損益",field:null,kind:"amount"},
-              {label:"建玉評価損益",field:"pnl",kind:"amount"},
-              {label:"未決済スワップ",field:"swapTotal",kind:"amount"},
-              {label:"証拠金維持率",field:null,kind:"percent"},
-              {label:"実効レバレッジ",field:null,kind:"multiple"},
-              {label:"証拠金ステータス",field:null,kind:"text"},
-              {label:"出金依頼額",field:null,kind:"amount"},
-              {label:"口座清算価値",field:"value",kind:"amount"},
-              {label:"必要証拠金",field:null,kind:"amount"},
-              {label:"注文中証拠金",field:null,kind:"amount"},
-              {label:"維持証拠金",field:null,kind:"amount"},
-              {label:"超過証拠金",field:null,kind:"amount"}
-            ],
-            headingLabels:["通貨別"],
-            ignoreLines:[]
-          }
-        ]
-      }
-    ]
-  },
-
-  blockClick365Rule:{
-    ruleId:"test-block-click365",
-    accountNames:["架空クリック365"],
-    ruleVersion:"2026-11-20",
-    note:"仕様書12-12例14の架空ブロック形式テスト用",
-    formats:[
-      {
-        formatId:"account-block",
-        label:"口座情報",
-        identify:{
-          all:["時価評価総額","口座残高"],
-          none:[]
-        },
-        date:{
           labels:[],
-          patterns:["YYYY/M/D"],
-          source:"manual",
+          patterns:[],
           required:true
         },
         identityStrict:true,
@@ -244,89 +169,163 @@ const OCR_TEST_DATA = {
               {label:"手数料合計",field:null,kind:"amount"}
             ],
             headingLabels:[],
-            ignoreLines:["余力確認","戻る","三、365株"]
+            ignoreLines:["余力確認","戻る","•ll 5G","365株"]
           }
         ]
       }
     ]
   },
 
+  lionFxRule:{
+    ruleId:"test-lion-fx",
+    accountNames:["LION FX"],
+    ruleVersion:"2026-11-21",
+    note:"S12dの架空テスト用LION FXルール",
+    formats:[
+      {
+        formatId:"account-inquiry",
+        label:"口座/入出金",
+        identify:{
+          all:["有効証拠金","預託証拠金","未実現スワップ"],
+          none:[]
+        },
+        date:{
+          source:"manual",
+          labels:[],
+          patterns:[],
+          required:true
+        },
+        identityStrict:true,
+        fields:{
+          value:{
+            labels:["有効証拠金"],
+            layout:"nextLine",
+            required:true
+          },
+          effectivePrincipal:{
+            labels:["預託証拠金"],
+            layout:"nextLine",
+            required:true
+          },
+          pnl:{
+            labels:["ポジション損益"],
+            layout:"nextLine",
+            required:true
+          },
+          realizedPnlTotal:{
+            show:false
+          },
+          swapTotal:{
+            labels:["未実現スワップ"],
+            layout:"nextLine",
+            required:true
+          }
+        }
+      }
+    ]
+  },
+
+  otherAccountRule:{
+    ruleId:"test-other-account",
+    accountNames:["架空口座A"],
+    ruleVersion:"2026-11-20",
+    note:"仕様書12-12の別口座形式テスト用",
+    formats:[
+      {
+        formatId:"settlement",
+        label:"口座清算価値",
+        identify:{
+          all:["口座清算価値"],
+          none:[]
+        },
+        date:{
+          source:"screen",
+          labels:[],
+          patterns:["YYYY/M/D"],
+          required:true
+        },
+        fields:{
+          value:{
+            labels:["口座清算価値"],
+            layout:"nextLine",
+            required:true
+          },
+          effectivePrincipal:{
+            labels:["口座資産"],
+            layout:"nextLine",
+            required:true
+          },
+          pnl:{
+            labels:["建玉評価損益"],
+            layout:"nextLine",
+            required:true
+          },
+          realizedPnlTotal:{
+            show:false
+          },
+          swapTotal:{
+            labels:["未決済スワップ"],
+            layout:"nextLine",
+            required:true
+          }
+        }
+      }
+    ]
+  },
+
   normalText:
+    "口座照会\n" +
     "口座残高\n" +
-    "80,000円\n" +
+    "800,000円\n" +
     "約定評価損益\n" +
     "0円\n" +
     "建玉評価損益\n" +
-    "-5,000円\n" +
+    "-100,000円\n" +
     "スワップ\n" +
-    "25,000円\n" +
+    "200,000円\n" +
     "純資産額\n" +
-    "100,000円\n" +
-    "必要証拠金\n" +
-    "10,000円\n" +
-    "注文証拠金\n" +
+    "900,000円\n" +
     "0円\n" +
+    "振替画面\n" +
     "更新日時\n" +
-    "0円\n" +
-    "2026/11/19 15:30:00",
+    "2026/11/20 18:54:58",
 
   reversedText:
+    "口座照会\n" +
     "口座残高\n" +
-    "80,000円\n" +
+    "800,000円\n" +
     "建玉評価損益\n" +
-    "-5,000円\n" +
+    "-100,000円\n" +
     "スワップ\n" +
-    "25,000円\n" +
+    "200,000円\n" +
     "純資産額\n" +
-    "100,000円\n" +
+    "900,000円\n" +
     "必要証拠金\n" +
     "10,000円\n" +
-    "2026/11/19 15:30:00",
+    "2026/11/20 18:54:58",
 
-  otherAccountText:
-    "口座清算価値\n" +
-    "3,210,000\n" +
-    "口座資産\n" +
-    "3,300,000\n" +
-    "建玉評価損益\n" +
-    "-100,000\n" +
-    "未決済スワップ\n" +
-    "10,000\n" +
-    "2026/11/19",
-
-  blockCentralTanshiText:
-    "口座資産\n" +
-    "当日損益\n" +
-    "建玉評価損益\n" +
-    "未決済スワップ\n" +
-    "証拠金維持率\n" +
-    "実効レバレッジ\n" +
-    "証拠金ステータス\n" +
-    "出金依頼額\n" +
-    "口座清算価値\n" +
-    "必要証拠金\n" +
-    "注文中証拠金\n" +
-    "維持証拠金\n" +
-    "超過証拠金\n" +
+  centralTanshiText:
+    "口座内容照会\n" +
+    "合計（円換算）\n" +
     "通貨別\n" +
-    "2,000,000円\n" +
+    "口座資産\n" +
+    "800,000円\n" +
+    "当日損益\n" +
     "0円\n" +
-    "-400,000円\n" +
-    "150,000円\n" +
-    "900%\n" +
-    "3.0倍\n" +
-    "適正\n" +
+    "建玉評価損益\n" +
+    "-100,000円\n" +
+    "未決済スワップ\n" +
+    "200,000円\n" +
+    "出金依頼額\n" +
     "0円\n" +
-    "1,750,000円\n" +
-    "500,000円\n" +
-    "0円\n" +
-    "250,000円\n" +
-    "1,250,000円",
+    "口座清算価値\n" +
+    "900,000円\n" +
+    "証拠金維持率\n" +
+    "900.00%",
 
-  blockClick365Text:
-    "余力確認\n" +
-    "戻る\n" +
-    "三、365株\n" +
+  click365Text:
+    "365FX\n" +
+    "口座情報\n" +
     "取引余力\n" +
     "振替可能額\n" +
     "証拠金維持率\n" +
@@ -342,21 +341,62 @@ const OCR_TEST_DATA = {
     "既決済取引損益\n" +
     "スワップ損益\n" +
     "手数料合計\n" +
+    "余力確認\n" +
+    "戻る\n" +
+    "•ll 5G\n" +
+    "365株\n" +
     "1,800,000円\n" +
     "100,000円\n" +
     "1,000.00%\n" +
     "200,000円\n" +
     "200,000円\n" +
     "0円\n" +
-    "2,000,000円\n" +
-    "1,500,000円\n" +
-    "+500,000円\n" +
-    "1,000,000円\n" +
+    "900,000円\n" +
     "500,000円\n" +
-    "500,000円\n" +
+    "-100,000円\n" +
+    "200,000円\n" +
+    "800,000円\n" +
+    "800,000円\n" +
     "0円\n" +
     "0円\n" +
     "0円",
+
+  lionFxText:
+    "口座/入出金\n" +
+    "預託証拠金\n" +
+    "\n" +
+    "800,000円\n" +
+    "有効証拠金\n" +
+    "900,000円\n" +
+    "必要証拠金\n" +
+    "100,000円\n" +
+    "発注証拠金\n" +
+    "0円\n" +
+    "評価損益\n" +
+    "100,000円\n" +
+    "評価損益（ロック以外）\n" +
+    "\n" +
+    "100,000円\n" +
+    "ポジション損益\n" +
+    "−100,000円\n" +
+    "ポジション損益（ロック以外）\n" +
+    "\n" +
+    "−100,000円\n" +
+    "未実現スワップ\n" +
+    "200,000円\n" +
+    "未実現スワップ（ロック以外）\n" +
+    "200,000円",
+
+  otherAccountText:
+    "口座清算価値\n" +
+    "3,210,000\n" +
+    "口座資産\n" +
+    "3,300,000\n" +
+    "建玉評価損益\n" +
+    "-100,000\n" +
+    "未決済スワップ\n" +
+    "10,000\n" +
+    "2026/11/19",
 
   cases:[
     {
@@ -364,26 +404,25 @@ const OCR_TEST_DATA = {
       description:"LIGHT FX・ラベルと値が別行・日時が末尾",
       text:
         "口座残高\n" +
-        "80,000円\n" +
+        "800,000円\n" +
         "約定評価損益\n" +
         "0円\n" +
         "建玉評価損益\n" +
-        "-5,000円\n" +
+        "-100,000円\n" +
         "スワップ\n" +
-        "25,000円\n" +
+        "200,000円\n" +
         "純資産額\n" +
-        "100,000円\n" +
-        "必要証拠金\n" +
-        "10,000円\n" +
-        "更新日時\n" +
+        "900,000円\n" +
         "0円\n" +
-        "2026/11/19 15:30:00",
+        "振替画面\n" +
+        "更新日時\n" +
+        "2026/11/20 18:54:58",
       expected:{
-        date:"2026-11-19",
-        value:100000,
-        effectivePrincipal:80000,
-        pnl:-5000,
-        swapTotal:25000,
+        date:"2026-11-20",
+        value:900000,
+        effectivePrincipal:800000,
+        pnl:-100000,
+        swapTotal:200000,
         status:"recognized",
         unrecognizedContains:"約定評価損益"
       }
@@ -393,22 +432,22 @@ const OCR_TEST_DATA = {
       description:"項目の並び順が異なっても取得できる",
       text:
         "口座残高\n" +
-        "80,000円\n" +
+        "800,000円\n" +
         "建玉評価損益\n" +
-        "-5,000円\n" +
+        "-100,000円\n" +
         "スワップ\n" +
-        "25,000円\n" +
+        "200,000円\n" +
         "純資産額\n" +
-        "100,000円\n" +
+        "900,000円\n" +
         "必要証拠金\n" +
         "10,000円\n" +
-        "2026/11/19 15:30:00",
+        "2026/11/20 18:54:58",
       expected:{
-        date:"2026-11-19",
-        value:100000,
-        effectivePrincipal:80000,
-        pnl:-5000,
-        swapTotal:25000,
+        date:"2026-11-20",
+        value:900000,
+        effectivePrincipal:800000,
+        pnl:-100000,
+        swapTotal:200000,
         status:"recognized"
       }
     },
@@ -417,17 +456,17 @@ const OCR_TEST_DATA = {
       description:"別の項目名を誤って割り当てない",
       text:
         "口座残高\n" +
-        "80,000円\n" +
+        "800,000円\n" +
         "純資産額\n" +
-        "100,000円\n" +
+        "900,000円\n" +
         "未決済建玉評価損益\n" +
-        "-5,000円\n" +
+        "-100,000円\n" +
         "スワップ\n" +
-        "25,000円\n" +
-        "2026/11/19",
+        "200,000円\n" +
+        "2026/11/20",
       expected:{
-        date:"2026-11-19",
-        value:100000,
+        date:"2026-11-20",
+        value:900000,
         pnl:null,
         pnlStatus:"missing-required",
         unrecognizedContains:"未決済建玉評価損益"
@@ -438,21 +477,21 @@ const OCR_TEST_DATA = {
       description:"数値に英字が混在",
       text:
         "口座残高\n" +
-        "80,000円\n" +
+        "800,000円\n" +
         "純資産額\n" +
-        "100,000円\n" +
+        "900,000円\n" +
         "建玉評価損益\n" +
-        "-5,00S円\n" +
+        "-1,00S,000円\n" +
         "スワップ\n" +
-        "25,000円\n" +
-        "2026/11/19",
+        "200,000円\n" +
+        "2026/11/20",
       expected:{
-        date:"2026-11-19",
-        value:100000,
+        date:"2026-11-20",
+        value:900000,
         pnl:null,
         pnlStatus:"unreadable",
-        pnlOriginal:"-5,00S円",
-        swapTotal:25000
+        pnlOriginal:"-1,00S,000円",
+        swapTotal:200000
       }
     },
     {
@@ -460,21 +499,21 @@ const OCR_TEST_DATA = {
       description:"総資産の候補が2件",
       text:
         "口座残高\n" +
-        "80,000円\n" +
+        "800,000円\n" +
         "純資産額\n" +
-        "100,000円\n" +
+        "900,000円\n" +
         "純資産額\n" +
-        "100,001円\n" +
+        "900,001円\n" +
         "建玉評価損益\n" +
-        "-5,000円\n" +
+        "-100,000円\n" +
         "スワップ\n" +
-        "25,000円\n" +
-        "2026/11/19",
+        "200,000円\n" +
+        "2026/11/20",
       expected:{
-        date:"2026-11-19",
+        date:"2026-11-20",
         value:null,
         valueStatus:"multiple",
-        candidateValues:[100000,100001]
+        candidateValues:[900000,900001]
       }
     },
     {
@@ -482,14 +521,14 @@ const OCR_TEST_DATA = {
       description:"必須の総資産がない",
       text:
         "口座残高\n" +
-        "80,000円\n" +
+        "800,000円\n" +
         "建玉評価損益\n" +
-        "-5,000円\n" +
+        "-100,000円\n" +
         "スワップ\n" +
-        "25,000円\n" +
-        "2026/11/19",
+        "200,000円\n" +
+        "2026/11/20",
       expected:{
-        date:"2026-11-19",
+        date:"2026-11-20",
         value:null,
         valueStatus:"missing-required",
         canAdd:false
