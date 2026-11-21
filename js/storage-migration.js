@@ -236,3 +236,22 @@ function migrateDataV2ToV3(oldData) {
 
   return data;
 }
+
+/* ---------- v3 → v4 移行 ---------- */
+
+function migrateDataV3ToV4(oldData) {
+  if (!oldData ||
+      oldData.schemaVersion !== 3 ||
+      !Array.isArray(oldData.accounts) ||
+      !Array.isArray(oldData.snapshots)) {
+    throw new Error("v3データの形式が正しくありません。");
+  }
+
+  const data = JSON.parse(JSON.stringify(oldData));
+  data.schemaVersion = 4;
+  data.contributionPlans = [];
+  data.contributions = [];
+  data.saleChecks = [];
+
+  return data;
+}
