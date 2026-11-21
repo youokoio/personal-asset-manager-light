@@ -14,6 +14,12 @@ function registerOcrTests(context) {
     });
   }
 
+  function parseManualWithFormat(text,rule,formatId,date = "2026-11-20") {
+    return parseOcrText(text,rule,formatId,{
+      manualDate:date
+    });
+  }
+
   function assertIdentityUnconfirmed(result,message) {
     assert(result.identityReview.required === true,
       message + " 恒等式の確認が必要になっていません。");
@@ -150,10 +156,26 @@ function registerOcrTests(context) {
       ""
     );
 
-    const light = parseOcrText(lightText,data.lightFxRule);
-    const central = parseManual(centralText,data.centralTanshiRule);
-    const click365 = parseManual(clickText,data.click365Rule);
-    const lion = parseManual(lionText,data.lionFxRule);
+    const light = parseOcrText(
+      lightText,
+      data.lightFxRule,
+      "account-inquiry"
+    );
+    const central = parseManualWithFormat(
+      centralText,
+      data.centralTanshiRule,
+      "account-inquiry"
+    );
+    const click365 = parseManualWithFormat(
+      clickText,
+      data.click365Rule,
+      "account-block"
+    );
+    const lion = parseManualWithFormat(
+      lionText,
+      data.lionFxRule,
+      "account-inquiry"
+    );
 
     for (const [name,result] of [
       ["LIGHT FX",light],
@@ -185,8 +207,8 @@ function registerOcrTests(context) {
 
   runTest("S12d・4：数値の読み取り失敗は該当項目だけ要確認",() => {
     const lightText = data.normalText.replace(
-      "-100,000円",
-      "-1,00S,000円"
+      "900,000円",
+      "1,2S0,000円"
     );
     const centralText = data.centralTanshiText.replace(
       "900,000円",
@@ -202,23 +224,29 @@ function registerOcrTests(context) {
     );
 
     const results = [
-      parseOcrText(lightText,data.lightFxRule),
-      parseManual(centralText,data.centralTanshiRule),
-      parseManual(clickText,data.click365Rule),
-      parseManual(lionText,data.lionFxRule)
+      ["LIGHT FX",lightText,data.normalText,data.lightFxRule,"account-inquiry",false],
+      ["セントラル短資FX",centralText,data.centralTanshiText,data.centralTanshiRule,"account-inquiry",true],
+      ["クリック365",clickText,data.click365Text,data.click365Rule,"account-block",true],
+      ["LION FX",lionText,data.lionFxText,data.lionFxRule,"account-inquiry",true]
     ];
 
-    for (const result of results) {
+    for (const [name,text,original,rule,formatId,manual] of results) {
+      assert(text !== original,
+        name + " のテスト用金額置換が実行されていません。");
+      const result = manual
+        ? parseManualWithFormat(text,rule,formatId)
+        : parseOcrText(text,rule,formatId);
+
       assert(getField(result,"value").value === null,
-        "読めない総資産がnullになっていません。");
+        name + "：読めない総資産がnullになっていません。");
       assert(getField(result,"value").status === "unreadable",
-        "読めない総資産が要確認になっていません。");
+        name + "：読めない総資産が要確認になっていません。");
       assert(getField(result,"effectivePrincipal").value === 800000,
-        "有効元本の正常値が変わっています。");
+        name + "：有効元本の正常値が変わっています。");
       assert(getField(result,"pnl").value === -100000,
-        "評価損益の正常値が変わっています。");
+        name + "：評価損益の正常値が変わっています。");
       assert(getField(result,"swapTotal").value === 200000,
-        "累計スワップの正常値が変わっています。");
+        name + "：累計スワップの正常値が変わっています。");
     }
   });
 
@@ -233,10 +261,11 @@ function registerOcrTests(context) {
 
     const clickText =
       data.click365Text +
-      "\n時価評価総額\n";
-    const click365 = parseManual(
+      "\n取引余力\n";
+    const click365 = parseManualWithFormat(
       clickText,
-      data.click365Rule
+      data.click365Rule,
+      "account-block"
     );
 
     assert(getField(central,"value").value === null,
@@ -312,9 +341,10 @@ function registerOcrTests(context) {
       centralMissingValue,
       data.centralTanshiRule
     );
-    const centralB = parseManual(
+    const centralB = parseManualWithFormat(
       centralMissingLabel,
-      data.centralTanshiRule
+      data.centralTanshiRule,
+      "account-inquiry"
     );
 
     assert(getField(centralA,"value").value === null,
@@ -341,7 +371,11 @@ function registerOcrTests(context) {
       clickExtraValue,
       clickMissingLabel
     ]) {
-      const result = parseManual(text,data.click365Rule);
+      const result = parseManualWithFormat(
+        text,
+        data.click365Rule,
+        "account-block"
+      );
       assert(result.blocks[0].status === "unconfirmed",
         "クリック365の項目数・値数の不一致を検出できていません。");
       for (const name of [
