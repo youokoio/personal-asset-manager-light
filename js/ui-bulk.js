@@ -5,6 +5,7 @@
 let bulkImportRows = [];
 let bulkImportPasteText = "";
 let bulkImportLastResult = null;
+let bulkImportActiveTab = "ocr";
 
 function bulkImportStatusLabel(status) {
   if (status === "planned") return "取込予定";
@@ -132,9 +133,7 @@ function renderBulkImportTable() {
   return wrapper;
 }
 
-function renderBulkInput() {
-  app.appendChild(heading("履歴の一括入力"));
-
+function renderBulkTsvInput() {
   app.appendChild(el(
     "div",
     "notice",
@@ -175,6 +174,17 @@ function renderBulkInput() {
     "展開した行は表の末尾に追加されます。一度に展開できるのは500行までです。"
   ));
   app.appendChild(pasteCard);
+}
+
+function renderBulkInput() {
+  app.appendChild(heading("履歴の一括入力"));
+  app.appendChild(renderBulkInputTabs());
+
+  if (bulkImportActiveTab === "ocr") {
+    app.appendChild(renderBulkOcrInput());
+  } else {
+    renderBulkTsvInput();
+  }
 
   const summary = summarizeBulkImportRows(bulkImportRows);
   const summaryCard = el("section","card");
@@ -213,7 +223,9 @@ function renderBulkInput() {
     summaryCard.appendChild(el(
       "p",
       "empty",
-      "まだ行がありません。上の欄にTSVを貼り付けて「表に展開」を押してください。"
+      bulkImportActiveTab === "ocr"
+        ? "まだ行がありません。OCRテキストまたはTSVを表へ追加してください。"
+        : "まだ行がありません。上の欄にTSVを貼り付けて「表に展開」を押してください。"
     ));
   } else {
     summaryCard.appendChild(el(
