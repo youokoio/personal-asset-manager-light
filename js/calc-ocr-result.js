@@ -1,3 +1,4 @@
+
 "use strict";
 
 /* ---------- 表示用の伏せ字 ---------- */
@@ -372,8 +373,8 @@ function checkOcrRuleConsistency(accounts,rules) {
         }
       }
 
-      if (format.date &&
-          !["screen","manual",undefined].includes(format.date.source)) {
+      if (!format.date ||
+          !["screen","manual"].includes(format.date.source)) {
         errors.push("日付の取得元が不正です：" + format.formatId);
       }
 
