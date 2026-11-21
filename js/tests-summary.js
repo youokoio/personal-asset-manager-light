@@ -489,7 +489,7 @@ function registerSummaryTests(context) {
     );
   });
 
-  runTest("S2b：自己診断6項目が架空データで正常",() => {
+  runTest("S2b：自己診断7項目が架空データで正常",() => {
     const data = createInitialData();
     const account = data.accounts[0];
     data.snapshots.push({
@@ -509,7 +509,9 @@ function registerSummaryTests(context) {
     });
 
     const report = runDataSelfDiagnosis(data,true);
-    assert(report.items.length === 6,"診断項目が6件ではありません。");
+    assert(report.items.length === 7,"診断項目が7件ではありません。");
+    assert(report.items.find(item => item.name === "積立・売却確認の整合").status === "ok",
+      "S13aの積立・売却確認の整合が正常判定になりません。");
     assert(report.ngCount === 0,"正常データで診断NGが発生しました。");
     assert(report.items.find(item => item.name === "版情報").status === "info",
       "版情報がOK/NG判定から分離されていません。");
