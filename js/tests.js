@@ -1,4 +1,3 @@
-
 "use strict";
 
 function runAllTests() {
@@ -114,6 +113,7 @@ function runAllTests() {
   registerSnapshotEditTests(context);
   registerOcrTests(context);
   registerBulkOcrRenderTests(context);
+  registerContributionTests(context);
 
   return results;
 }
