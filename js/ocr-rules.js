@@ -17,6 +17,7 @@ const OCR_ACCOUNT_RULES = Object.freeze([
         date:{
           labels:[],
           patterns:["YYYY/M/D"],
+          source:"screen",
           required:true
         },
         identityStrict:true,
