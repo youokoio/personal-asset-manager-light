@@ -3,7 +3,87 @@
 function registerMigrationTests(context) {
   const {assert,runTest,makeAccount,makeSnapshot} = context;
 
-  runTest("v1からv3への移行と新項目追加",() => {
+  function makeValidStockTrackingData() {
+    const data = createInitialData();
+    const stockAccount = data.accounts.find(account =>
+      account.category === "stock"
+    );
+    const now = "2026-11-21T00:00:00.000Z";
+
+    data.contributionPlans.push({
+      id:"plan-test-1",
+      accountId:stockAccount.id,
+      productName:"テスト投信A",
+      wrapper:"NISAつみたて",
+      effectiveFrom:"2026-01",
+      status:"積立中",
+      plannedCash:10000,
+      plannedPoint:0,
+      memo:"架空データ",
+      createdAt:now,
+      updatedAt:now
+    });
+
+    data.contributions.push({
+      id:"contribution-test-1",
+      accountId:stockAccount.id,
+      productName:"テスト投信A",
+      wrapper:"NISAつみたて",
+      fromMonth:"2026-01",
+      toMonth:"2026-01",
+      status:"実行",
+      cashAmount:10000,
+      pointAmount:0,
+      memo:"架空データ",
+      recordedAt:now,
+      createdAt:now,
+      updatedAt:now
+    });
+
+    data.saleChecks.push({
+      id:"salecheck-test-1",
+      accountId:stockAccount.id,
+      level:"商品別",
+      productName:"テスト投信A",
+      wrapper:"NISAつみたて",
+      toDate:"2026-04-30",
+      fromDate:"2026-03-31",
+      status:"利確確認済み",
+      dismissReason:null,
+      saleDate:"2026-04-15",
+      realizedPnl:5000,
+      proceeds:105000,
+      source:"取引履歴",
+      manual:false,
+      memo:"架空データ",
+      createdAt:now,
+      updatedAt:now
+    });
+
+    return data;
+  }
+
+  function makeFakeStorage(raw,failMainWrite = false) {
+    const values = new Map([[STORAGE_KEY,raw]]);
+    return {
+      values,
+      getItem(key) {
+        return values.has(key) ? values.get(key) : null;
+      },
+      setItem(key,value) {
+        if (failMainWrite && key === STORAGE_KEY) {
+          throw new Error("架空の保存失敗");
+        }
+        values.set(key,String(value));
+      }
+    };
+  }
+
+  function cloneTestData(data) {
+    return JSON.parse(JSON.stringify(data));
+  }
+
+  runTest("v1からv4への連続移行と新項目追加",() => {
     const oldData = {
       schemaVersion:1,
       accounts:[
@@ -40,9 +120,10 @@ function registerMigrationTests(context) {
     };
 
     const migratedV2 = migrateDataV1ToV2(oldData);
-    const migrated = migrateDataV2ToV3(migratedV2);
+    const migratedV3 = migrateDataV2ToV3(migratedV2);
+    const migrated = migrateDataV3ToV4(migratedV3);
 
-    assert(migrated.schemaVersion === 3,"schemaVersionが3ではありません。");
+    assert(migrated.schemaVersion === 4,"schemaVersionが4ではありません。");
     assert(migrated.accounts[0].id === "account-fx","既存口座IDが変わっています。");
     assert(migrated.accounts[0].category === "fx","FX分類が正しくありません。");
     assert(migrated.accounts[0].lossCutRatio === 123,"既存のロスカット設定が上書きされています。");
@@ -68,6 +149,9 @@ function registerMigrationTests(context) {
     assert(Array.isArray(migrated.loans),"loansが追加されていません。");
     assert(Array.isArray(migrated.loanSnapshots),"loanSnapshotsが追加されていません。");
     assert(Array.isArray(migrated.fxSwapLedger),"fxSwapLedgerが追加されていません。");
+    assert(Array.isArray(migrated.contributionPlans),"contributionPlansが追加されていません。");
+    assert(Array.isArray(migrated.contributions),"contributionsが追加されていません。");
+    assert(Array.isArray(migrated.saleChecks),"saleChecksが追加されていません。");
     assert(migrated.accounts[0].fieldLabels.value === "純資産額",
       "FX口座のfieldLabels初期値が正しくありません。");
     assert(migrated.accounts[0].autoCalc === "swap",
@@ -77,10 +161,13 @@ function registerMigrationTests(context) {
     validateData(migrated);
   });
 
-  runTest("v2からv3への移行は追加のみで繰り返しても同じ",() => {
+  runTest("v2からv4への連続移行は追加のみで繰り返しても同じ",() => {
     const oldData = createInitialData();
     oldData.schemaVersion = 2;
     delete oldData.fxSwapLedger;
+    delete oldData.contributionPlans;
+    delete oldData.contributions;
+    delete oldData.saleChecks;
 
     for (const account of oldData.accounts) {
       delete account.fieldLabels;
@@ -95,12 +182,12 @@ function registerMigrationTests(context) {
     const stock = oldData.accounts.find(account => account.name === "楽天証券");
     const sourceJson = JSON.stringify(oldData);
 
-    const first = migrateDataV2ToV3(oldData);
-    const second = migrateDataV2ToV3(oldData);
+    const first = migrateDataV3ToV4(migrateDataV2ToV3(oldData));
+    const second = migrateDataV3ToV4(migrateDataV2ToV3(oldData));
 
     assert(JSON.stringify(first) === JSON.stringify(second),
       "同じv2データからの移行結果が一致しません。");
-    assert(first.schemaVersion === 3,"schemaVersionが3ではありません。");
+    assert(first.schemaVersion === 4,"schemaVersionが4ではありません。");
     assert(first.accounts.find(account => account.name === "LIGHT FX").lossCutRatio === 77,
       "既存のFX設定が上書きされています。");
     assert(first.accounts.find(account => account.name === "LIGHT FX").fieldLabels.value === "独自の総資産名",
@@ -259,4 +346,318 @@ function registerMigrationTests(context) {
       "同一対象日の重複が除外されていません。");
   });
 
+
+  runTest("S13a M1：v3からv4への移行と既存データ・バックアップ保持",() => {
+    const oldData = createInitialData();
+    oldData.schemaVersion = 3;
+    delete oldData.contributionPlans;
+    delete oldData.contributions;
+    delete oldData.saleChecks;
+
+    const stock = oldData.accounts.find(account =>
+      account.category === "stock"
+    );
+    oldData.snapshots.push(makeSnapshot(
+      "snapshot-m1",
+      stock.id,
+      "2026-10-31",
+      "2026-10-31T10:00:00.000Z",
+      123456,
+      {cumulativeInvested:765432,principal:654321}
+    ));
+
+    const originalRaw = JSON.stringify(oldData);
+    const storage = makeFakeStorage(originalRaw);
+    const migrated = loadData(storage);
+
+    assert(migrated.schemaVersion === 4,"v3データがv4になっていません。");
+    assert(Array.isArray(migrated.contributionPlans) &&
+      migrated.contributionPlans.length === 0,
+      "contributionPlans が空配列で追加されていません。");
+    assert(Array.isArray(migrated.contributions) &&
+      migrated.contributions.length === 0,
+      "contributions が空配列で追加されていません。");
+    assert(Array.isArray(migrated.saleChecks) &&
+      migrated.saleChecks.length === 0,
+      "saleChecks が空配列で追加されていません。");
+    assert(migrated.snapshots[0].cumulativeInvested === 765432,
+      "cumulativeInvested が保持されていません。");
+    assert(migrated.snapshots[0].principal === 654321,
+      "旧principal が保持されていません。");
+    assert(storage.getItem("pam2_pre_v4") === originalRaw,
+      "移行前データの pam2_pre_v4 バックアップがありません。");
+
+    const restored = cloneTestData(migrated);
+    restored.schemaVersion = 3;
+    delete restored.contributionPlans;
+    delete restored.contributions;
+    delete restored.saleChecks;
+    assert(JSON.stringify(restored) === originalRaw,
+      "新コレクション以外の既存データが変わっています。");
+  });
+
+  runTest("S13a：v2データはv3を経由してv4へ移行する",() => {
+    const oldData = createInitialData();
+    oldData.schemaVersion = 2;
+    delete oldData.fxSwapLedger;
+    delete oldData.contributionPlans;
+    delete oldData.contributions;
+    delete oldData.saleChecks;
+
+    for (const account of oldData.accounts) {
+      delete account.fieldLabels;
+      delete account.autoCalc;
+    }
+
+    const originalRaw = JSON.stringify(oldData);
+    const storage = makeFakeStorage(originalRaw);
+    const migrated = loadData(storage);
+    const beforeV4 = JSON.parse(storage.getItem("pam2_pre_v4"));
+
+    assert(migrated.schemaVersion === 4,"v2データがv4になっていません。");
+    assert(beforeV4.schemaVersion === 3,
+      "v2からv3を経由した移行前バックアップがありません。");
+    assert(Array.isArray(beforeV4.fxSwapLedger),
+      "v2からv3への移行が実行されていません。");
+    assert(storage.getItem("pam2_pre_v3") === originalRaw,
+      "v2移行前の pam2_pre_v3 が保持されていません。");
+  });
+
+  runTest("S13a M2：v4 JSON往復とv3 JSONの読み込み",() => {
+    const currentData = makeValidStockTrackingData();
+    const exported = JSON.stringify(currentData);
+    const imported = prepareImportedData(JSON.parse(exported));
+
+    assert(JSON.stringify(imported) === exported,
+      "v4 JSONの書き出し・読み込みで内容が変わっています。");
+
+    const oldV3 = cloneTestData(currentData);
+    oldV3.schemaVersion = 3;
+    delete oldV3.contributionPlans;
+    delete oldV3.contributions;
+    delete oldV3.saleChecks;
+
+    const restoredV3 = prepareImportedData(oldV3);
+    assert(restoredV3.schemaVersion === 4,
+      "v3 JSONがv4に移行されていません。");
+    assert(restoredV3.contributionPlans.length === 0 &&
+      restoredV3.contributions.length === 0 &&
+      restoredV3.saleChecks.length === 0,
+      "v3 JSONから新コレクションが空配列で追加されていません。");
+  });
+
+  runTest("S13a M3：積立・売却確認の検証エラー",() => {
+    const base = makeValidStockTrackingData();
+
+    function assertRejected(data,message) {
+      let rejected = false;
+      try {
+        validateData(data);
+      } catch (error) {
+        rejected = true;
+      }
+      assert(rejected,message);
+    }
+
+    validateData(base);
+
+    let invalid = cloneTestData(base);
+    invalid.contributions[0].cashAmount = -1;
+    assertRejected(invalid,"マイナスの積立金額が検出されません。");
+
+    invalid = cloneTestData(base);
+    invalid.contributions[0].fromMonth = "2026-13";
+    assertRejected(invalid,"不正な月が検出されません。");
+
+    invalid = cloneTestData(base);
+    invalid.contributions[0].fromMonth = "2026-03";
+    invalid.contributions[0].toMonth = "2026-02";
+    assertRejected(invalid,"終了月が開始月より前の記録が検出されません。");
+
+    invalid = cloneTestData(base);
+    invalid.contributions[0].accountId = invalid.accounts.find(account =>
+      account.category !== "stock"
+    ).id;
+    assertRejected(invalid,"株式以外の口座を指す記録が検出されません。");
+
+    invalid = cloneTestData(base);
+    invalid.saleChecks[0].realizedPnl = null;
+    assertRejected(invalid,"利確確認済みで確定損益がない記録が検出されません。");
+
+    invalid = cloneTestData(base);
+    invalid.contributions.push({
+      ...invalid.contributions[0],
+      id:"contribution-overlap",
+      fromMonth:"2025-12",
+      toMonth:"2026-02"
+    });
+    assertRejected(invalid,"月範囲が重なる記録が検出されません。");
+
+    invalid = cloneTestData(base);
+    invalid.contributions[0].productName = null;
+    invalid.contributions[0].wrapper = "特定";
+    assertRejected(invalid,"口座全体の wrapper 不整合が検出されません。");
+
+    invalid = cloneTestData(base);
+    invalid.contributions[0].wrapper = null;
+    assertRejected(invalid,"商品別記録の wrapper 欠落が検出されません。");
+
+    invalid = cloneTestData(base);
+    invalid.contributionPlans[0].productName = null;
+    invalid.contributionPlans[0].wrapper = "特定";
+    assertRejected(invalid,"積立予定の口座全体 wrapper 不整合が検出されません。");
+  });
+
+  runTest("S13a：月範囲の重なりは同一単位と口座全体・商品別で判定する",() => {
+    const records = [
+      {
+        id:"a",
+        accountId:"stock-1",
+        productName:"テスト投信A",
+        wrapper:"NISAつみたて",
+        fromMonth:"2026-01",
+        toMonth:"2026-03"
+      },
+      {
+        id:"b",
+        accountId:"stock-1",
+        productName:"テスト投信B",
+        wrapper:"NISAつみたて",
+        fromMonth:"2026-02",
+        toMonth:"2026-04"
+      },
+      {
+        id:"c",
+        accountId:"stock-1",
+        productName:"テスト投信A",
+        wrapper:"特定",
+        fromMonth:"2026-02",
+        toMonth:"2026-04"
+      },
+      {
+        id:"d",
+        accountId:"stock-1",
+        productName:null,
+        wrapper:null,
+        fromMonth:"2026-03",
+        toMonth:"2026-03"
+      }
+    ];
+
+    const overlaps = findContributionMonthOverlaps(records);
+    assert(overlaps.length === 3,
+      "口座全体と商品別の重なり、同一商品の同一wrapperの重なりを正しく判定していません。");
+    assert(overlaps.every(item => item.fromMonth === "2026-03" &&
+      item.toMonth === "2026-03"),
+      "重複している月の範囲が正しくありません。");
+  });
+
+  runTest("S13a M4：自己診断の項目9と注意表示",() => {
+    const data = makeValidStockTrackingData();
+    const diagnosis = runDataSelfDiagnosis(data,true);
+    const item = diagnosis.items.find(result =>
+      result.name === "積立・売却確認の整合"
+    );
+
+    assert(item && item.status === "ok",
+      "正常データで自己診断の項目9がOKになりません。");
+
+    const warningData = cloneTestData(data);
+    warningData.contributions.push({
+      ...warningData.contributions[0],
+      id:"contribution-unlisted-product",
+      productName:"保有・予定にない架空商品",
+      wrapper:"特定",
+      fromMonth:"2026-02",
+      toMonth:"2026-02"
+    });
+    const warningDiagnosis = runDataSelfDiagnosis(warningData,true);
+    const warningItem = warningDiagnosis.items.find(result =>
+      result.name === "積立・売却確認の整合"
+    );
+    assert(warningItem.status === "ok" &&
+      warningItem.detail.includes("保有・積立予定にありません"),
+      "商品名の注意表示がOK/NG判定と分けて表示されません。");
+
+    const invalidData = cloneTestData(data);
+    invalidData.contributions.push({
+      ...invalidData.contributions[0],
+      id:"contribution-overlap-diagnosis",
+      fromMonth:"2026-01",
+      toMonth:"2026-02"
+    });
+    const invalidDiagnosis = runDataSelfDiagnosis(invalidData,true);
+    const invalidItem = invalidDiagnosis.items.find(result =>
+      result.name === "積立・売却確認の整合"
+    );
+    assert(invalidItem.status === "ng" &&
+      invalidItem.detail.includes("月範囲が重複"),
+      "重複した月範囲が自己診断のNGとして表示されません。");
+  });
+
+  runTest("S13a：保存共通関数は一時複製後に検証し、失敗時は本体を保持する",() => {
+    const base = makeValidStockTrackingData();
+    const originalRaw = JSON.stringify(base);
+    const storage = makeFakeStorage(originalRaw);
+
+    const saved = saveStockTrackingData(
+      "contribution",
+      draft => {
+        draft.contributions.push({
+          ...draft.contributions[0],
+          id:"contribution-save-test",
+          fromMonth:"2026-02",
+          toMonth:"2026-02"
+        });
+      },
+      storage
+    );
+
+    assert(storage.getItem("pam2_pre_contrib") === originalRaw,
+      "積立の保存前バックアップが作られていません。");
+    assert(saved.contributions.length === 2,
+      "積立の変更内容が返されていません。");
+    assert(JSON.parse(storage.getItem(STORAGE_KEY)).contributions.length === 2,
+      "積立の変更内容が1回の保存で反映されていません。");
+
+    const failingStorage = makeFakeStorage(originalRaw,true);
+    let writeFailed = false;
+    try {
+      saveStockTrackingData(
+        "saleCheck",
+        draft => {
+          draft.saleChecks[0].memo = "変更後";
+        },
+        failingStorage
+      );
+    } catch (error) {
+      writeFailed = true;
+    }
+
+    assert(writeFailed,"偽の保存先の書き込み失敗が検出されません。");
+    assert(failingStorage.getItem(STORAGE_KEY) === originalRaw,
+      "保存失敗で本体データが変更されています。");
+    assert(failingStorage.getItem("pam2_pre_salecheck") === originalRaw,
+      "売却確認の保存前バックアップが作られていません。");
+
+    const invalidStorage = makeFakeStorage(originalRaw);
+    let validationFailed = false;
+    try {
+      saveStockTrackingData(
+        "contribution",
+        draft => {
+          draft.contributions[0].cashAmount = -1;
+        },
+        invalidStorage
+      );
+    } catch (error) {
+      validationFailed = true;
+    }
+
+    assert(validationFailed,"保存前の検証エラーが検出されません。");
+    assert(invalidStorage.getItem(STORAGE_KEY) === originalRaw,
+      "検証失敗で本体データが変更されています。");
+    assert(invalidStorage.getItem("pam2_pre_contrib") === originalRaw,
+      "検証失敗時の積立バックアップがありません。");
+  });
 }
