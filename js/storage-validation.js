@@ -78,7 +78,10 @@ function validateData(data) {
     "fxRates",
     "fxSwapLedger",
     "loans",
-    "loanSnapshots"
+    "loanSnapshots",
+    "contributionPlans",
+    "contributions",
+    "saleChecks"
   ];
 
   for (const name of collectionNames) {
@@ -482,4 +485,6 @@ function validateData(data) {
        Array.isArray(data.settings.chartPrefs))) {
     throw new Error("グラフ設定の形式が正しくありません。");
   }
+
+  validateStockTrackingData(data);
 }
