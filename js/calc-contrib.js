@@ -420,6 +420,9 @@ function calculateContributionSummary(data,currentMonth) {
 
   for (const unit of units) {
     const unitRecords = unit.records;
+    const unitPlans = plans.filter(plan =>
+      getContributionUnitKey(plan) === getContributionUnitKey(unit)
+    );
 
     for (const record of unitRecords) {
       if (record.fromMonth < record.toMonth) {
@@ -460,7 +463,7 @@ function calculateContributionSummary(data,currentMonth) {
       }
 
       const plan = getContributionPlanForMonth(
-        unit.plans,
+        unitPlans,
         unit.accountId,
         unit.productName,
         unit.wrapper,
