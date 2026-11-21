@@ -324,12 +324,9 @@ function registerContributionTests(context) {
       contributions:[...data.contributions,accountWide]
     };
 
-    const overlapResult = calculateContributionSummary(
+    assertThrows(() => calculateContributionSummary(
       overlapData,"2026-04"
-    );
-
-    assert(overlapResult.overlaps.length === 1,
-      "口座全体と商品別の重複が1件検出されていません。");
+    ),"口座全体と商品別の実績期間の重複がエラーになっていません。");
 
     const separateProducts = makeData();
 
