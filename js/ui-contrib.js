@@ -1,907 +1,949 @@
 "use strict";
 
-/* ---------- S13c 積立実績画面 ---------- */
+/* ---------- 積立実績画面 ---------- */
 
-function getContributionAccountTotalForUi(data,accountId) {
-  const result = calculateContributionSummary(
-    data,
-    localDateString().slice(0,7)
-  );
-  return result.accountTotals.find(item =>
-    item.accountId === accountId
-  ) || null;
-}
-
-function getContributionUnitLabel(productName,wrapper) {
-  if (productName === null) return "口座全体";
-  return productName + "（" + wrapper + "）";
-}
-
-function getContributionMonthLabel(month) {
-  return month ? month.replace("-","年") + "月" : "未入力";
-}
-
-function appendContributionMetric(container,label,value,subText = "") {
-  const row = el("div","account-metric-line");
-  row.appendChild(el("div","account-metric-label",label));
-  const valueBox = el("div","account-metric-value");
-  valueBox.appendChild(el("div","",value));
-  if (subText) {
-    valueBox.appendChild(el("div","account-metric-sub",subText));
-  }
-  row.appendChild(valueBox);
-  container.appendChild(row);
-}
-
-function getContributionProductsForAccount(data,accountId) {
-  const names = new Set();
-
-  for (const item of data.holdings || []) {
-    if (item.accountId === accountId && item.name) {
-      names.add(item.name);
-    }
-  }
-  for (const item of data.contributions || []) {
-    if (item.accountId === accountId && item.productName) {
-      names.add(item.productName);
-    }
-  }
-  for (const item of data.contributionPlans || []) {
-    if (item.accountId === accountId && item.productName) {
-      names.add(item.productName);
-    }
-  }
-
-  return Array.from(names).sort((a,b) => a.localeCompare(b,"ja"));
-}
-
-function appendContributionProductFields(
-  form,
-  accountId,
-  initialProductName,
-  initialWrapper,
-  prefix
-) {
-  const products = getContributionProductsForAccount(appData,accountId);
-  const productField = el("div","field");
-  productField.appendChild(el("label","", "商品"));
-  const productSelect = document.createElement("select");
-  productSelect.name = prefix + "Product";
-  const choices = [
-    {value:"__account__",label:"口座全体"},
-    ...products.map(name => ({value:name,label:name})),
-    {value:"__other__",label:"その他（入力）"}
-  ];
-
-  for (const choice of choices) {
-    const option = document.createElement("option");
-    option.value = choice.value;
-    option.textContent = choice.label;
-    productSelect.appendChild(option);
-  }
-
-  const selected = initialProductName === null
-    ? "__account__"
-    : products.includes(initialProductName)
-      ? initialProductName
-      : "__other__";
-  productSelect.value = selected;
-  productField.appendChild(productSelect);
-  form.appendChild(productField);
-
-  const otherField = makeField(
-    "商品名（その他）",
-    prefix + "OtherProduct",
-    selected === "__other__" ? initialProductName : "",
-    {type:"text"}
-  );
-  otherField.hidden = selected !== "__other__";
-  form.appendChild(otherField);
-
-  const wrapperField = makeSelectField(
-    "口座区分",
-    prefix + "Wrapper",
-    HOLDING_WRAPPERS.map(value => ({value,label:value})),
-    initialWrapper || HOLDING_WRAPPERS[0]
-  );
-  wrapperField.hidden = selected === "__account__";
-  form.appendChild(wrapperField);
-
-  productSelect.addEventListener("change",() => {
-    otherField.hidden = productSelect.value !== "__other__";
-    wrapperField.hidden = productSelect.value === "__account__";
-  });
-
-  return {
-    getUnit() {
-      if (productSelect.value === "__account__") {
-        return {productName:null,wrapper:null};
-      }
-      const productName = productSelect.value === "__other__"
-        ? otherField.querySelector("input").value.trim()
-        : productSelect.value;
-      if (!productName) {
-        throw new Error("商品名を入力してください。");
-      }
-      return {
-        productName,
-        wrapper:wrapperField.querySelector("select").value
-      };
-    }
-  };
-}
-
-function getContributionPreviousRecord(data,accountId,productName,wrapper,month) {
-  return (data.contributions || [])
-    .filter(item =>
-      item.accountId === accountId &&
-      item.productName === productName &&
-      item.wrapper === wrapper &&
-      item.toMonth < month
+function getContributionPreviousRecord(accountId,productName,wrapper,month) {
+  const records = appData.contributions
+    .filter(record =>
+      record.accountId === accountId &&
+      record.productName === productName &&
+      record.wrapper === wrapper &&
+      record.toMonth < month &&
+      record.status === "実行"
     )
-    .sort((a,b) =>
-      b.toMonth.localeCompare(a.toMonth) ||
-      String(b.recordedAt || "").localeCompare(String(a.recordedAt || ""))
-    )[0] || null;
+    .sort((a,b) => b.toMonth.localeCompare(a.toMonth));
+
+  return records[0] || null;
 }
 
-function appendContributionPreviousValue(
-  form,
-  input,
-  getPrevious,
-  label
-) {
-  const row = el("div","previous-value-row");
-  const hint = el("span","previous-value-text");
-  const apply = makeButton("反映","contribution-previous","secondary small");
-  const update = () => {
-    const previous = getPrevious();
-    if (!previous) {
-      hint.textContent = "前回値：なし";
-      apply.disabled = true;
-      return;
-    }
-    hint.textContent = label(previous);
-    apply.disabled = false;
-    apply.dataset.value = String(previous.value);
+function saveContributionFromUi(accountId,candidate,recordId = null,storage = localStorage) {
+  const now = new Date().toISOString();
+  const nextRecord = {
+    ...candidate,
+    id:recordId || createId(),
+    accountId,
+    recordedAt:recordId
+      ? appData.contributions.find(item => item.id === recordId)?.recordedAt || now
+      : now,
+    createdAt:recordId
+      ? appData.contributions.find(item => item.id === recordId)?.createdAt || now
+      : now,
+    updatedAt:recordId ? now : null
   };
-  apply.addEventListener("click",() => {
-    if (apply.disabled) return;
-    input.value = apply.dataset.value;
-    input.dispatchEvent(new Event("input",{bubbles:true}));
-  });
-  row.append(hint,apply);
-  form.appendChild(row);
-  update();
-  return update;
-}
 
-function appendContributionAmountField(
-  form,
-  label,
-  name,
-  value,
-  previousValue
-) {
-  const wrapper = makeNumericField(label,name,value,{});
-  form.appendChild(wrapper);
-  const input = wrapper.querySelector("input");
-  if (previousValue) {
-    appendContributionPreviousValue(
-      wrapper,
-      input,
-      previousValue.get,
-      previousValue.label
-    );
+  if (recordId &&
+      !appData.contributions.some(item => item.id === recordId)) {
+    throw new Error("訂正する積立実績が見つかりません。");
   }
-  return input;
-}
 
-function saveContributionFromUi(
-  accountId,
-  record,
-  editingId,
-  storage = localStorage
-) {
-  const now = new Date().toISOString();
-  const saved = saveStockTrackingData("contribution",data => {
-    const next = {
-      ...record,
-      id:editingId || createId(),
-      accountId,
-      recordedAt:editingId
-        ? data.contributions.find(item => item.id === editingId).recordedAt
-        : now,
-      createdAt:editingId
-        ? data.contributions.find(item => item.id === editingId).createdAt
-        : now,
-      updatedAt:editingId ? now : null
-    };
-    if (editingId) {
-      const index = data.contributions.findIndex(item =>
-        item.id === editingId
+  const nextRecords = appData.contributions.filter(item =>
+    item.id !== recordId
+  );
+  nextRecords.push(nextRecord);
+
+  const overlaps = findContributionMonthOverlaps(nextRecords);
+  if (overlaps.length) {
+    throw new Error("同じ積立単位の実績期間が重複しています。");
+  }
+
+  const nextData = saveStockTrackingData(
+    "contribution",
+    data => {
+      data.contributions = data.contributions.filter(item =>
+        item.id !== recordId
       );
-      if (index < 0) throw new Error("訂正する積立実績が見つかりません。");
-      data.contributions[index] = {
-        ...data.contributions[index],
-        ...next
-      };
-    } else {
-      data.contributions.push(next);
-    }
-  },storage);
-  return saved;
+      data.contributions.push(nextRecord);
+    },
+    storage
+  );
+
+  appData = nextData;
+  showMessage("積立実績を保存しました。");
+  render();
 }
 
-function saveContributionPlanFromUi(
-  accountId,
-  plan,
-  editingId,
-  storage = localStorage
-) {
-  const now = new Date().toISOString();
-  return saveStockTrackingData("contribution",data => {
-    const next = {
-      ...plan,
-      id:editingId || createId(),
-      accountId,
-      createdAt:editingId
-        ? data.contributionPlans.find(item => item.id === editingId).createdAt
-        : now,
-      updatedAt:editingId ? now : null
-    };
-    if (editingId) {
-      const index = data.contributionPlans.findIndex(item =>
-        item.id === editingId
+function deleteContributionFromUi(recordId,storage = localStorage) {
+  if (!window.confirm("この積立実績を削除しますか？")) return;
+
+  const nextData = saveStockTrackingData(
+    "contribution",
+    data => {
+      data.contributions = data.contributions.filter(item =>
+        item.id !== recordId
       );
-      if (index < 0) throw new Error("訂正する積立予定が見つかりません。");
-      data.contributionPlans[index] = {
-        ...data.contributionPlans[index],
-        ...next
-      };
-    } else {
-      data.contributionPlans.push(next);
-    }
-  },storage);
+    },
+    storage
+  );
+
+  appData = nextData;
+  showMessage("積立実績を削除しました。");
+  render();
 }
 
-function deleteContributionFromUi(id,storage = localStorage) {
-  return saveStockTrackingData("contribution",data => {
-    const index = data.contributions.findIndex(item => item.id === id);
-    if (index < 0) throw new Error("削除する積立実績が見つかりません。");
-    data.contributions.splice(index,1);
-  },storage);
+function saveContributionPlanFromUi(accountId,candidate,planId = null,storage = localStorage) {
+  const now = new Date().toISOString();
+  const nextPlan = {
+    ...candidate,
+    id:planId || createId(),
+    accountId,
+    createdAt:planId
+      ? appData.contributionPlans.find(item => item.id === planId)?.createdAt || now
+      : now,
+    updatedAt:planId ? now : null
+  };
+
+  if (planId &&
+      !appData.contributionPlans.some(item => item.id === planId)) {
+    throw new Error("訂正する積立予定が見つかりません。");
+  }
+
+  const nextData = saveStockTrackingData(
+    "contribution",
+    data => {
+      data.contributionPlans = data.contributionPlans.filter(item =>
+        item.id !== planId
+      );
+      data.contributionPlans.push(nextPlan);
+    },
+    storage
+  );
+
+  appData = nextData;
+  showMessage("積立予定を保存しました。");
+  render();
 }
 
-function deleteContributionPlanFromUi(id,storage = localStorage) {
-  return saveStockTrackingData("contribution",data => {
-    const index = data.contributionPlans.findIndex(item => item.id === id);
-    if (index < 0) throw new Error("削除する積立予定が見つかりません。");
-    data.contributionPlans.splice(index,1);
-  },storage);
+function deleteContributionPlanFromUi(planId,storage = localStorage) {
+  if (!window.confirm("この積立予定を削除しますか？")) return;
+
+  const nextData = saveStockTrackingData(
+    "contribution",
+    data => {
+      data.contributionPlans = data.contributionPlans.filter(item =>
+        item.id !== planId
+      );
+    },
+    storage
+  );
+
+  appData = nextData;
+  showMessage("積立予定を削除しました。");
+  render();
+}
+
+function getContributionFormValue(form,name) {
+  const input = form.querySelector(`[name="${name}"]`);
+  return input ? input.value.trim() : "";
+}
+
+function getContributionFormNumber(form,name) {
+  const value = getContributionFormValue(form,name);
+  if (value === "") return 0;
+
+  const number = toNumberOrNull(value);
+  if (number === null || number < 0) {
+    throw new Error("金額は0以上の数値で入力してください。");
+  }
+  return number;
+}
+
+function makeContributionInput(label,name,value,options = {}) {
+  const wrapper = makeField(label,name,value,{
+    type:options.type || "text",
+    required:Boolean(options.required),
+    placeholder:options.placeholder || ""
+  });
+
+  const input = wrapper.querySelector("input");
+  if (input && options.type === "month") {
+    input.type = "month";
+  }
+  return wrapper;
+}
+
+function appendContributionPreviousValue(form,record,field,labelText) {
+  if (!record) return;
+
+  const value = field === "cashAmount"
+    ? record.cashAmount
+    : record.pointAmount;
+
+  const button = makeButton(
+    "前回値を反映（" + labelText + "：" +
+      formatYen(value) + "／" + record.toMonth + "）",
+    "contribution-apply-previous",
+    "secondary small"
+  );
+
+  button.addEventListener("click",() => {
+    const input = form.querySelector(`[name="${field}"]`);
+    if (input) input.value = String(value);
+  });
+
+  form.appendChild(button);
+}
+
+function appendContributionPlanApply(form,plan) {
+  if (!plan || plan.status !== "積立中") return;
+
+  const amounts = getContributionPlanAmounts(plan);
+  const button = makeButton(
+    "積立予定額を反映",
+    "contribution-apply-plan",
+    "secondary small"
+  );
+
+  button.addEventListener("click",() => {
+    const cash = form.querySelector('[name="cashAmount"]');
+    const point = form.querySelector('[name="pointAmount"]');
+
+    if (cash) cash.value = String(amounts.cash);
+    if (point) point.value = String(amounts.point);
+  });
+
+  form.appendChild(button);
 }
 
 function renderContributionRecordForm(account,record = null,storage = localStorage) {
-  const form = document.createElement("form");
-  form.className = "contribution-form";
-  form.appendChild(el("h4","",record ? "積立実績の訂正" : "積立実績の入力"));
+  if (record && record.fromMonth < record.toMonth) {
+    return renderContributionPeriodForm(account,storage,record);
+  }
 
-  const monthField = makeField(
+  const section = el("section","card");
+  section.appendChild(el(
+    "h3",
+    "",
+    record ? "積立実績の訂正" : "月次実績の入力"
+  ));
+
+  const form = el("form","contribution-form");
+  const productName = record ? record.productName : "";
+  const wrapper = record ? record.wrapper : "NISAつみたて";
+  const month = record ? record.fromMonth : localDateString().slice(0,7);
+
+  const productField = makeField(
+    "商品名（口座全体の場合は空欄）",
+    "productName",
+    productName,
+    {type:"text"}
+  );
+  form.appendChild(productField);
+
+  const wrapperField = makeSelectField(
+    "保有区分",
+    "wrapper",
+    HOLDING_WRAPPERS.map(value => ({
+      value,
+      label:value
+    })),
+    wrapper || "NISAつみたて"
+  );
+  form.appendChild(wrapperField);
+
+  form.appendChild(makeContributionInput(
     "対象月",
-    "contributionMonth",
-    record ? record.fromMonth : localDateString().slice(0,7),
+    "fromMonth",
+    month,
     {type:"month",required:true}
-  );
-  form.appendChild(monthField);
+  ));
 
-  const product = appendContributionProductFields(
-    form,
-    account.id,
-    record ? record.productName : null,
-    record ? record.wrapper : null,
-    "contribution"
-  );
-
-  const statusField = makeSelectField(
-    "状態",
-    "contributionStatus",
+  form.appendChild(makeSelectField(
+    "実績状態",
+    "status",
     [
       {value:"実行",label:"実行"},
       {value:"未実行",label:"未実行"}
     ],
     record ? record.status : "実行"
-  );
-  form.appendChild(statusField);
+  ));
 
-  const cashInput = appendContributionAmountField(
-    form,
+  form.appendChild(makeNumericField(
     "現金分（円）",
-    "contributionCash",
-    record ? record.cashAmount : "",
-    record ? {
-      get:() => {
-        const unit = product.getUnit();
-        return getContributionPreviousRecord(
-          appData,account.id,unit.productName,unit.wrapper,
-          monthField.querySelector("input").value
-        ) ? {
-          value:getContributionPreviousRecord(
-            appData,account.id,unit.productName,unit.wrapper,
-            monthField.querySelector("input").value
-          ).cashAmount
-        } : null;
-      },
-      label:item => "前回（" + item.toMonth + "）： " +
-        formatInputNumber(item.cashAmount)
-    } : null
-  );
+    "cashAmount",
+    record ? record.cashAmount : ""
+  ));
 
-  const pointInput = appendContributionAmountField(
-    form,
+  form.appendChild(makeNumericField(
     "ポイント分（円）",
-    "contributionPoint",
-    record ? record.pointAmount : "0",
-    record ? {
-      get:() => {
-        const unit = product.getUnit();
-        const previous = getContributionPreviousRecord(
-          appData,account.id,unit.productName,unit.wrapper,
-          monthField.querySelector("input").value
-        );
-        return previous ? {value:previous.pointAmount} : null;
-      },
-      label:item => "前回（" + item.toMonth + "）： " +
-        formatInputNumber(item.pointAmount)
-    } : null
-  );
+    "pointAmount",
+    record ? record.pointAmount : "0"
+  ));
 
-  const memoField = makeField(
+  form.appendChild(makeField(
     "メモ",
-    "contributionMemo",
+    "memo",
     record ? record.memo : "",
     {type:"text"}
+  ));
+
+  const selectedProduct = productName || null;
+  const selectedWrapper = selectedProduct ? wrapper : null;
+  const previous = getContributionPreviousRecord(
+    account.id,
+    selectedProduct,
+    selectedWrapper,
+    month
   );
-  form.appendChild(memoField);
 
-  const planHint = el("div","previous-value-row");
-  const planText = el("span","previous-value-text");
-  const applyPlan = makeButton("予定額を反映","contribution-plan-apply","secondary small");
-  planHint.append(planText,applyPlan);
-  form.appendChild(planHint);
+  appendContributionPreviousValue(
+    form,
+    previous,
+    "cashAmount",
+    "現金"
+  );
+  appendContributionPreviousValue(
+    form,
+    previous,
+    "pointAmount",
+    "ポイント"
+  );
 
-  function updatePlanHint() {
-    try {
-      const unit = product.getUnit();
-      const month = monthField.querySelector("input").value;
-      const plan = getContributionPlanForMonth(
-        appData.contributionPlans,
-        account.id,
-        unit.productName,
-        unit.wrapper,
-        month
-      );
-      const amounts = getContributionPlanAmounts(plan);
-      if (!plan || plan.status !== "積立中") {
-        planText.textContent = "予定額：なし";
-        applyPlan.disabled = true;
-        return;
-      }
-      planText.textContent = "予定額：" +
-        formatYen(amounts.total);
-      applyPlan.disabled = false;
-      applyPlan.onclick = () => {
-        cashInput.value = String(amounts.cash);
-        pointInput.value = String(amounts.point);
-        cashInput.dispatchEvent(new Event("input",{bubbles:true}));
-        pointInput.dispatchEvent(new Event("input",{bubbles:true}));
-      };
-    } catch (error) {
-      planText.textContent = "予定額：確認できません";
-      applyPlan.disabled = true;
-    }
-  }
-  monthField.querySelector("input").addEventListener("change",updatePlanHint);
-  productFieldUpdateContribution(form,product,updatePlanHint);
-  updatePlanHint();
+  const currentPlan = getContributionPlanForMonth(
+    appData.contributionPlans,
+    account.id,
+    selectedProduct,
+    selectedWrapper,
+    month
+  );
+  appendContributionPlanApply(form,currentPlan);
 
-  statusField.querySelector("select").addEventListener("change",() => {
-    const notExecuted = statusField.querySelector("select").value === "未実行";
-    cashInput.disabled = notExecuted;
-    pointInput.disabled = notExecuted;
-    if (notExecuted) {
-      cashInput.value = "0";
-      pointInput.value = "0";
-    }
-  });
-
-  const buttons = el("div","contribution-form-actions");
-  const save = makeButton(record ? "訂正を保存" : "実績を保存","contribution-save","primary");
+  const actions = el("div","form-actions");
+  const save = makeButton(
+    record ? "訂正を保存" : "実績を保存",
+    "contribution-save",
+    "primary"
+  );
   save.type = "submit";
-  buttons.appendChild(save);
+  actions.appendChild(save);
+
+  const cancel = makeButton(
+    "キャンセル",
+    "contribution-cancel",
+    "secondary"
+  );
+  cancel.addEventListener("click",() => render());
+  actions.appendChild(cancel);
+
   if (record) {
-    const remove = makeButton("削除","contribution-delete","danger");
+    const remove = makeButton(
+      "この実績を削除",
+      "contribution-delete",
+      "danger"
+    );
     remove.addEventListener("click",() => {
-      if (!confirm("この積立実績を削除しますか？削除すると、その月は未入力に戻ります。")) return;
-      try {
-        appData = deleteContributionFromUi(record.id,storage);
-        showMessage("積立実績を削除しました。");
-        render();
-      } catch (error) {
-        showMessage(error.message || "削除できませんでした。",true);
-        render();
-      }
+      deleteContributionFromUi(record.id,storage);
     });
-    buttons.appendChild(remove);
+    actions.appendChild(remove);
   }
-  form.appendChild(buttons);
+
+  form.appendChild(actions);
 
   form.addEventListener("submit",event => {
     event.preventDefault();
+
     try {
-      const unit = product.getUnit();
-      const month = monthField.querySelector("input").value;
-      const status = statusField.querySelector("select").value;
-      const cashAmount = status === "未実行"
-        ? 0
-        : toNumberOrNull(cashInput.value);
-      const pointAmount = status === "未実行"
-        ? 0
-        : toNumberOrNull(pointInput.value);
-      if (!isValidContributionMonth(month)) {
+      const name = getContributionFormValue(form,"productName") || null;
+      const selected = getContributionFormValue(form,"wrapper");
+      const targetMonth = getContributionFormValue(form,"fromMonth");
+
+      if (!isValidContributionMonth(targetMonth)) {
         throw new Error("対象月を正しく入力してください。");
       }
-      if (cashAmount === null || pointAmount === null) {
-        throw new Error("現金分・ポイント分を数値で入力してください。");
-      }
+
       const candidate = {
-        accountId:account.id,
-        ...unit,
-        fromMonth:month,
-        toMonth:month,
-        status,
-        cashAmount,
-        pointAmount,
-        memo:memoField.querySelector("input").value
+        productName:name,
+        wrapper:name ? selected : null,
+        fromMonth:targetMonth,
+        toMonth:targetMonth,
+        status:getContributionFormValue(form,"status"),
+        cashAmount:getContributionFormNumber(form,"cashAmount"),
+        pointAmount:getContributionFormNumber(form,"pointAmount"),
+        memo:getContributionFormValue(form,"memo")
       };
-      const overlaps = findContributionMonthOverlaps([
-        ...appData.contributions.filter(item => item.id !== (record && record.id)),
-        {...candidate,id:record ? record.id : "__new__"}
-      ]);
-      if (overlaps.length) {
-        const overlap = overlaps[0];
-        throw new Error(
-          "同じ単位の積立実績が重複しています：" +
-          overlap.fromMonth + "〜" + overlap.toMonth
-        );
-      }
-      if (!confirm(record ? "積立実績を訂正しますか？" : "積立実績を保存しますか？")) return;
-      appData = saveContributionFromUi(
-        account.id,candidate,record ? record.id : null,storage
+
+      saveContributionFromUi(
+        account.id,
+        candidate,
+        record ? record.id : null,
+        storage
       );
-      showMessage("積立実績を保存しました。");
-      render();
     } catch (error) {
       showMessage(error.message || "積立実績を保存できませんでした。",true);
       render();
     }
   });
 
-  return form;
+  section.appendChild(form);
+  return section;
 }
 
-function productFieldUpdateContribution(form,product,callback) {
-  const select = form.querySelector('select[name="contributionProduct"]');
-  if (select) select.addEventListener("change",callback);
-}
+function renderContributionPeriodForm(account,storage = localStorage,record = null) {
+  const section = el("section","card");
+  section.appendChild(el(
+    "h3",
+    "",
+    record ? "期間まとめの訂正" : "期間まとめの入力"
+  ));
 
-function renderContributionPeriodForm(account,storage = localStorage) {
-  const form = document.createElement("form");
-  form.className = "contribution-form";
-  form.appendChild(el("h4","","期間まとめの入力"));
+  const form = el("form","contribution-form");
 
-  const product = appendContributionProductFields(
-    form,account.id,null,null,"period"
+  form.appendChild(makeField(
+    "商品名（口座全体の場合は空欄）",
+    "productName",
+    record ? record.productName : "",
+    {type:"text"}
+  ));
+
+  form.appendChild(makeSelectField(
+    "保有区分",
+    "wrapper",
+    HOLDING_WRAPPERS.map(value => ({
+      value,
+      label:value
+    })),
+    record ? record.wrapper : "NISAつみたて"
+  ));
+
+  form.appendChild(makeContributionInput(
+    "開始月",
+    "fromMonth",
+    record ? record.fromMonth : "",
+    {type:"month",required:true}
+  ));
+
+  form.appendChild(makeContributionInput(
+    "終了月",
+    "toMonth",
+    record ? record.toMonth : "",
+    {type:"month",required:true}
+  ));
+
+  form.appendChild(makeSelectField(
+    "実績状態",
+    "status",
+    [
+      {value:"実行",label:"実行"},
+      {value:"未実行",label:"未実行"}
+    ],
+    record ? record.status : "実行"
+  ));
+
+  form.appendChild(makeNumericField(
+    "期間の現金合計（円）",
+    "cashAmount",
+    record ? record.cashAmount : ""
+  ));
+
+  form.appendChild(makeNumericField(
+    "期間のポイント合計（円）",
+    "pointAmount",
+    record ? record.pointAmount : "0"
+  ));
+
+  form.appendChild(makeField(
+    "メモ",
+    "memo",
+    record ? record.memo : "",
+    {type:"text"}
+  ));
+
+  const actions = el("div","form-actions");
+  const save = makeButton(
+    record ? "訂正を保存" : "期間まとめを保存",
+    "contribution-period-save",
+    "primary"
   );
-  form.appendChild(makeField(
-    "開始月","periodFromMonth",localDateString().slice(0,7),
-    {type:"month",required:true}
-  ));
-  form.appendChild(makeField(
-    "終了月","periodToMonth",localDateString().slice(0,7),
-    {type:"month",required:true}
-  ));
-  const cash = makeNumericField("現金分（円）","periodCash","",{});
-  const point = makeNumericField("ポイント分（円）","periodPoint","0",{});
-  form.append(cash,point);
-  form.appendChild(makeField("メモ","periodMemo","",{type:"text"}));
-
-  const overlapText = el("div","error hidden");
-  form.appendChild(overlapText);
-
-  const save = makeButton("期間まとめを保存","period-save","primary");
   save.type = "submit";
-  form.appendChild(save);
+  actions.appendChild(save);
+
+  const cancel = makeButton(
+    "キャンセル",
+    "contribution-cancel",
+    "secondary"
+  );
+  cancel.addEventListener("click",() => render());
+  actions.appendChild(cancel);
+
+  if (record) {
+    const remove = makeButton(
+      "この実績を削除",
+      "contribution-period-delete",
+      "danger"
+    );
+    remove.addEventListener("click",() => {
+      deleteContributionFromUi(record.id,storage);
+    });
+    actions.appendChild(remove);
+  }
+
+  form.appendChild(actions);
 
   form.addEventListener("submit",event => {
     event.preventDefault();
+
     try {
-      const unit = product.getUnit();
-      const fromMonth = form.elements.namedItem("periodFromMonth").value;
-      const toMonth = form.elements.namedItem("periodToMonth").value;
-      const cashAmount = toNumberOrNull(cash.querySelector("input").value);
-      const pointAmount = toNumberOrNull(point.querySelector("input").value);
+      const name = getContributionFormValue(form,"productName") || null;
+      const selected = getContributionFormValue(form,"wrapper");
+      const fromMonth = getContributionFormValue(form,"fromMonth");
+      const toMonth = getContributionFormValue(form,"toMonth");
+
       if (!isValidContributionMonth(fromMonth) ||
           !isValidContributionMonth(toMonth) ||
           toMonth < fromMonth) {
-        throw new Error("開始月・終了月の範囲が正しくありません。");
+        throw new Error("開始月と終了月の範囲を正しく入力してください。");
       }
-      if (cashAmount === null || pointAmount === null) {
-        throw new Error("現金分・ポイント分を数値で入力してください。");
+
+      if (fromMonth === toMonth) {
+        throw new Error("期間まとめは2か月以上の範囲を指定してください。");
       }
+
       const candidate = {
-        id:"__new__",
-        accountId:account.id,
-        ...unit,
+        productName:name,
+        wrapper:name ? selected : null,
         fromMonth,
         toMonth,
-        status:"実行",
-        cashAmount,
-        pointAmount,
-        memo:form.elements.namedItem("periodMemo").value
+        status:getContributionFormValue(form,"status"),
+        cashAmount:getContributionFormNumber(form,"cashAmount"),
+        pointAmount:getContributionFormNumber(form,"pointAmount"),
+        memo:getContributionFormValue(form,"memo")
       };
-      const overlaps = findContributionMonthOverlaps([
-        ...appData.contributions,
-        candidate
-      ]);
-      if (overlaps.length) {
-        const labels = overlaps.map(item =>
-          item.fromMonth + "〜" + item.toMonth
-        ).join("、");
-        overlapText.textContent = "重複する月があります：" + labels;
-        overlapText.classList.remove("hidden");
-        return;
-      }
-      if (!confirm("期間まとめを保存しますか？")) return;
-      appData = saveContributionFromUi(
-        account.id,candidate,null,storage
+
+      saveContributionFromUi(
+        account.id,
+        candidate,
+        record ? record.id : null,
+        storage
       );
-      showMessage("期間まとめを保存しました。");
-      render();
     } catch (error) {
-      overlapText.textContent = error.message || "保存できませんでした。";
-      overlapText.classList.remove("hidden");
+      showMessage(error.message || "期間まとめを保存できませんでした。",true);
+      render();
     }
   });
-  return form;
+
+  section.appendChild(form);
+  return section;
 }
 
 function renderContributionPlanForm(account,plan = null,storage = localStorage) {
-  const form = document.createElement("form");
-  form.className = "contribution-form";
-  form.appendChild(el("h4","",plan ? "積立予定の訂正" : "積立予定の登録"));
+  const section = el("section","card");
+  section.appendChild(el(
+    "h3",
+    "",
+    plan ? "積立予定の訂正" : "積立予定の登録"
+  ));
 
-  const product = appendContributionProductFields(
-    form,
-    account.id,
-    plan ? plan.productName : null,
-    plan ? plan.wrapper : null,
-    "plan"
-  );
+  const form = el("form","contribution-form");
+
   form.appendChild(makeField(
-    "適用開始月","planEffectiveFrom",
+    "商品名（口座全体の場合は空欄）",
+    "productName",
+    plan ? plan.productName : "",
+    {type:"text"}
+  ));
+
+  form.appendChild(makeSelectField(
+    "保有区分",
+    "wrapper",
+    HOLDING_WRAPPERS.map(value => ({
+      value,
+      label:value
+    })),
+    plan ? plan.wrapper : "NISAつみたて"
+  ));
+
+  form.appendChild(makeContributionInput(
+    "適用開始月",
+    "effectiveFrom",
     plan ? plan.effectiveFrom : localDateString().slice(0,7),
     {type:"month",required:true}
   ));
-  const statusField = makeSelectField(
-    "状態","planStatus",
+
+  form.appendChild(makeSelectField(
+    "予定状態",
+    "status",
     [
       {value:"積立中",label:"積立中"},
       {value:"停止",label:"停止"}
     ],
     plan ? plan.status : "積立中"
-  );
-  form.appendChild(statusField);
-  const cash = makeNumericField(
-    "予定の現金分（円）","planCash",
-    plan && plan.plannedCash !== null ? plan.plannedCash : "",
-    {}
-  );
-  const point = makeNumericField(
-    "予定のポイント分（円）","planPoint",
-    plan && plan.plannedPoint !== null ? plan.plannedPoint : "0",
-    {}
-  );
-  form.append(cash,point);
-  form.appendChild(makeField(
-    "メモ","planMemo",plan ? plan.memo : "",{type:"text"}
   ));
 
-  statusField.querySelector("select").addEventListener("change",() => {
-    const stopped = statusField.querySelector("select").value === "停止";
-    cash.querySelector("input").disabled = stopped;
-    point.querySelector("input").disabled = stopped;
-    if (stopped) {
-      cash.querySelector("input").value = "";
-      point.querySelector("input").value = "0";
-    }
-  });
+  form.appendChild(makeNumericField(
+    "予定現金額（円）",
+    "plannedCash",
+    plan ? plan.plannedCash : ""
+  ));
 
-  const actions = el("div","contribution-form-actions");
-  const save = makeButton(plan ? "予定を訂正" : "予定を登録","plan-save","primary");
+  form.appendChild(makeNumericField(
+    "予定ポイント額（円）",
+    "plannedPoint",
+    plan ? plan.plannedPoint : "0"
+  ));
+
+  form.appendChild(makeField(
+    "メモ",
+    "memo",
+    plan ? plan.memo : "",
+    {type:"text"}
+  ));
+
+  const actions = el("div","form-actions");
+  const save = makeButton(
+    plan ? "予定を訂正" : "予定を登録",
+    "contribution-plan-save",
+    "primary"
+  );
   save.type = "submit";
   actions.appendChild(save);
+
+  const cancel = makeButton(
+    "キャンセル",
+    "contribution-cancel",
+    "secondary"
+  );
+  cancel.addEventListener("click",() => render());
+  actions.appendChild(cancel);
+
   if (plan) {
-    const remove = makeButton("予定を削除","plan-delete","danger");
+    const remove = makeButton(
+      "この予定を削除",
+      "contribution-plan-delete",
+      "danger"
+    );
     remove.addEventListener("click",() => {
-      if (!confirm("この積立予定を削除しますか？")) return;
-      try {
-        appData = deleteContributionPlanFromUi(plan.id,storage);
-        showMessage("積立予定を削除しました。");
-        render();
-      } catch (error) {
-        showMessage(error.message || "予定を削除できませんでした。",true);
-        render();
-      }
+      deleteContributionPlanFromUi(plan.id,storage);
     });
     actions.appendChild(remove);
   }
+
   form.appendChild(actions);
 
   form.addEventListener("submit",event => {
     event.preventDefault();
+
     try {
-      const unit = product.getUnit();
-      const status = statusField.querySelector("select").value;
-      const plannedCash = status === "停止"
-        ? null
-        : toNumberOrNull(cash.querySelector("input").value);
-      const plannedPoint = status === "停止"
-        ? 0
-        : toNumberOrNull(point.querySelector("input").value);
-      if (!isValidContributionMonth(
-        form.elements.namedItem("planEffectiveFrom").value
-      )) {
+      const name = getContributionFormValue(form,"productName") || null;
+      const selected = getContributionFormValue(form,"wrapper");
+      const effectiveFrom = getContributionFormValue(form,"effectiveFrom");
+      const status = getContributionFormValue(form,"status");
+
+      if (!isValidContributionMonth(effectiveFrom)) {
         throw new Error("適用開始月を正しく入力してください。");
       }
-      if (status === "積立中" &&
-          (plannedCash === null || plannedPoint === null)) {
-        throw new Error("予定の現金分・ポイント分を入力してください。");
-      }
+
       const candidate = {
-        accountId:account.id,
-        ...unit,
-        effectiveFrom:form.elements.namedItem("planEffectiveFrom").value,
+        productName:name,
+        wrapper:name ? selected : null,
+        effectiveFrom,
         status,
-        plannedCash,
-        plannedPoint,
-        memo:form.elements.namedItem("planMemo").value
+        plannedCash:status === "積立中"
+          ? getContributionFormNumber(form,"plannedCash")
+          : null,
+        plannedPoint:getContributionFormNumber(form,"plannedPoint"),
+        memo:getContributionFormValue(form,"memo")
       };
-      if (!confirm(plan ? "積立予定を訂正しますか？" : "積立予定を登録しますか？")) return;
+
       saveContributionPlanFromUi(
-        account.id,candidate,plan ? plan.id : null,storage
+        account.id,
+        candidate,
+        plan ? plan.id : null,
+        storage
       );
-      appData = JSON.parse(storage.getItem(STORAGE_KEY));
-      showMessage("積立予定を保存しました。");
-      render();
     } catch (error) {
       showMessage(error.message || "積立予定を保存できませんでした。",true);
       render();
     }
   });
-  return form;
+
+  section.appendChild(form);
+  return section;
 }
 
 function renderContributionSection(account,storage = localStorage) {
-  if (!account || account.category !== "stock") return null;
-
-  const section = el("section","card contribution-section");
+  const section = el("section","contribution-section");
   section.appendChild(el("h3","","積立実績"));
 
-  const result = calculateContributionSummary(
-    appData,
-    localDateString().slice(0,7)
-  );
-  const accountTotal = result.accountTotals.find(item =>
-    item.accountId === account.id
-  ) || null;
-  const units = result.units.filter(item =>
-    item.accountId === account.id
-  );
-  const latest = getLatestSnapshot(appData,account.id);
+  const currentMonth = localDateString().slice(0,7);
+  let summary;
 
-  appendContributionMetric(
-    section,
-    "累積積立額",
-    accountTotal && accountTotal.hasRecords
-      ? formatYen(accountTotal.cumulativeAmount)
-      : "未入力"
-  );
-  appendContributionMetric(
-    section,
-    "現金累計",
-    accountTotal && accountTotal.hasRecords
-      ? formatYen(accountTotal.cashTotal)
-      : "未入力"
-  );
-  appendContributionMetric(
-    section,
-    "ポイント累計",
-    accountTotal && accountTotal.hasRecords
-      ? formatYen(accountTotal.pointTotal)
-      : "未入力"
-  );
-  appendContributionMetric(
-    section,
-    "入力済み期間",
-    accountTotal && accountTotal.hasRecords
-      ? units.map(item => item.inputFromMonth + "〜" +
-          item.inputToMonth).join("、")
-      : "未入力"
-  );
-  appendContributionMetric(
-    section,
-    "未入力月",
-    units.length
-      ? units.map(item =>
-          getContributionUnitLabel(item.productName,item.wrapper) +
-          "：" + item.missingMonthCount + "か月"
-        ).join(" ／ ")
-      : "未入力"
-  );
-  appendContributionMetric(
-    section,
-    "今月の状態",
-    units.length
-      ? units.map(item =>
-          getContributionUnitLabel(item.productName,item.wrapper) +
-          "：" + item.currentMonthStatus
-        ).join(" ／ ")
-      : "未入力"
-  );
-  appendContributionMetric(
-    section,
-    "現在の積立予定",
-    units.map(item => {
-      const amounts = getContributionPlanAmounts(item.currentPlan);
-      return getContributionUnitLabel(item.productName,item.wrapper) +
-        "：" + (amounts.total === null ? "予定なし" : formatYen(amounts.total));
-    }).join(" ／ ") || "未登録"
-  );
-
-  section.appendChild(el(
-    "div","help",
-    "累積積立額は、売却しても減りません。"
-  ));
-
-  const currentCard = el("div","contribution-current-values");
-  currentCard.appendChild(el("h4","","現在の資産状況"));
-  const latestDate = latest
-    ? "対象日：" + formatDateWithWeekday(latest.asOfDate)
-    : "対象日：未入力";
-  appendContributionMetric(
-    currentCard,"有効元本",
-    latest && latest.effectivePrincipal !== null
-      ? formatYen(latest.effectivePrincipal) : "未入力",latestDate
-  );
-  appendContributionMetric(
-    currentCard,"評価額",
-    latest && latest.value !== null ? formatYen(latest.value) : "未入力",latestDate
-  );
-  appendContributionMetric(
-    currentCard,"評価損益",
-    latest && latest.pnl !== null ? formatSignedYen(latest.pnl) : "未入力",latestDate
-  );
-  appendContributionMetric(
-    currentCard,"累積確定損益",
-    latest && latest.realizedPnlTotal !== null
-      ? formatSignedYen(latest.realizedPnlTotal) : "未入力",latestDate
-  );
-  section.appendChild(currentCard);
-
-  section.appendChild(el("h4","","月別一覧"));
-  const rows = result.monthlyRows.filter(item =>
-    item.accountId === account.id
-  );
-  if (!rows.length) {
-    section.appendChild(el("div","empty","積立実績はまだありません。"));
-  } else {
-    const list = el("div","contribution-month-list");
-    for (const item of rows) {
-      const row = el("div","contribution-month-row");
-      const title = item.type === "period"
-        ? item.fromMonth + "〜" + item.toMonth + "（期間まとめ）"
-        : item.month;
-      row.appendChild(el("div","contribution-month-title",title));
-      row.appendChild(el(
-        "div","contribution-month-unit",
-        getContributionUnitLabel(item.productName,item.wrapper)
-      ));
-      if (item.type === "period") {
-        row.appendChild(el(
-          "div","contribution-month-amount",
-          "期間合計：" + formatYen(item.cashAmount) +
-          "（現金）／" + formatYen(item.pointAmount) + "（ポイント）"
-        ));
-        row.appendChild(el("span","contribution-period-badge","期間まとめ"));
-      } else {
-        row.appendChild(el(
-          "div","contribution-month-plan",
-          "予定：" + (item.plannedTotal === null
-            ? "なし"
-            : formatYen(item.plannedTotal))
-        ));
-        row.appendChild(el(
-          "div","contribution-month-amount",
-          "実績：" + (item.actualTotal === null
-            ? "未入力"
-            : formatYen(item.actualTotal)) +
-          "（現金 " + (item.actualCash === null
-            ? "未入力" : formatYen(item.actualCash)) +
-          " ／ ポイント " + (item.actualPoint === null
-            ? "未入力" : formatYen(item.actualPoint)) + "）"
-        ));
-      }
-      row.appendChild(el("span","contribution-status",item.status));
-      if (item.contributionId) {
-        const record = appData.contributions.find(entry =>
-          entry.id === item.contributionId
-        );
-        if (record) {
-          const edit = makeButton("訂正・削除","contribution-edit","secondary small");
-          edit.addEventListener("click",() => {
-            const editor = renderContributionRecordForm(account,record,storage);
-            row.after(editor);
-            edit.disabled = true;
-          });
-          row.appendChild(edit);
-        }
-      }
-      list.appendChild(row);
-    }
-    section.appendChild(list);
+  try {
+    summary = calculateContributionSummary(appData,currentMonth);
+  } catch (error) {
+    section.appendChild(el(
+      "div",
+      "error",
+      error.message || "積立実績を集計できませんでした。"
+    ));
+    return section;
   }
 
-  const inputDetails = document.createElement("details");
-  inputDetails.className = "contribution-details";
-  inputDetails.appendChild(el("summary","","積立実績を入力"));
-  const monthForm = renderContributionRecordForm(account,null,storage);
-  inputDetails.appendChild(monthForm);
-  inputDetails.appendChild(renderContributionPeriodForm(account,storage));
-  section.appendChild(inputDetails);
+  const accountTotal = summary.accountTotals.find(item =>
+    item.accountId === account.id
+  );
 
-  const planDetails = document.createElement("details");
-  planDetails.className = "contribution-details";
-  planDetails.appendChild(el("summary","","積立予定を登録・訂正・削除"));
-  planDetails.appendChild(renderContributionPlanForm(account,null,storage));
+  const totalsCard = el("div","card");
+  totalsCard.appendChild(el("h4","","累積積立額"));
+
+  if (!accountTotal || !accountTotal.hasRecords) {
+    totalsCard.appendChild(el("div","empty","積立実績はありません。"));
+  } else {
+    appendAccountMetric(
+      totalsCard,
+      "累積積立額",
+      formatYen(accountTotal.cumulativeAmount)
+    );
+    appendAccountMetric(
+      totalsCard,
+      "現金累計",
+      formatYen(accountTotal.cashTotal)
+    );
+    appendAccountMetric(
+      totalsCard,
+      "ポイント累計",
+      formatYen(accountTotal.pointTotal)
+    );
+  }
+
+  const latest = getLatestSnapshot(appData,account.id);
+  const financialCard = el("div","card");
+  financialCard.appendChild(el("h4","","現在の金融状況"));
+
+  appendAccountMetric(
+    financialCard,
+    "有効元本",
+    latest ? formatYen(latest.effectivePrincipal) : "未入力"
+  );
+  appendAccountMetric(
+    financialCard,
+    "評価額",
+    latest ? formatYen(latest.value) : "未入力"
+  );
+  appendAccountMetric(
+    financialCard,
+    "評価損益",
+    latest ? formatSignedYen(latest.pnl) : "未入力"
+  );
+  appendAccountMetric(
+    financialCard,
+    "累積確定損益",
+    latest ? formatSignedYen(latest.realizedPnlTotal) : "未入力"
+  );
+
+  section.append(totalsCard,financialCard);
+
+  const unitRows = summary.units.filter(item =>
+    item.accountId === account.id
+  );
+
+  const unitCard = el("div","card");
+  unitCard.appendChild(el("h4","","積立単位別の状況"));
+
+  if (!unitRows.length) {
+    unitCard.appendChild(el("div","empty","積立予定・実績はありません。"));
+  }
+
+  for (const unit of unitRows) {
+    const row = el("div","contribution-unit");
+    const titleText = unit.productName
+      ? unit.productName + "／" + unit.wrapper
+      : "口座全体";
+    row.appendChild(el("strong","",titleText));
+
+    appendAccountMetric(
+      row,
+      "入力期間",
+      unit.inputFromMonth
+        ? unit.inputFromMonth + " ～ " + unit.inputToMonth
+        : "実績なし"
+    );
+    appendAccountMetric(
+      row,
+      "未入力月数",
+      String(unit.missingMonthCount) + "か月"
+    );
+    appendAccountMetric(
+      row,
+      "今月の状態",
+      unit.currentMonthStatus
+    );
+
+    const plan = unit.currentPlan;
+    appendAccountMetric(
+      row,
+      "現在の積立予定",
+      !plan
+        ? "予定なし"
+        : plan.status === "停止"
+          ? "停止"
+          : formatYen(
+              getContributionPlanAmounts(plan).total
+            )
+    );
+
+    unitCard.appendChild(row);
+  }
+
+  section.appendChild(unitCard);
+
+  const monthlyCard = el("div","card");
+  monthlyCard.appendChild(el("h4","","月別実績・予定"));
+
+  const rows = summary.monthlyRows.filter(item =>
+    item.accountId === account.id
+  );
+
+  if (!rows.length) {
+    monthlyCard.appendChild(el("div","empty","月別データはありません。"));
+  }
+
+  for (const item of rows) {
+    const row = el("div","contribution-month-row");
+    const name = item.productName
+      ? item.productName + "／" + item.wrapper
+      : "口座全体";
+
+    const monthLabel = item.type === "period"
+      ? item.fromMonth + " ～ " + item.toMonth
+      : item.month;
+
+    row.appendChild(el("strong","",monthLabel + "　" + name));
+    row.appendChild(el("div","", "状態：" + item.status));
+
+    if (item.type === "period") {
+      row.appendChild(el(
+        "div",
+        "",
+        "実績合計：" + formatYen(item.totalAmount)
+      ));
+    } else {
+      row.appendChild(el(
+        "div",
+        "",
+        "予定：" + formatYen(item.plannedTotal)
+      ));
+      row.appendChild(el(
+        "div",
+        "",
+        "実績：" + formatYen(item.actualTotal)
+      ));
+    }
+
+    if (item.contributionId) {
+      const record = appData.contributions.find(recordItem =>
+        recordItem.id === item.contributionId
+      );
+
+      if (record) {
+        const edit = makeButton(
+          "訂正",
+          "contribution-edit",
+          "secondary small"
+        );
+        edit.addEventListener("click",() => {
+          app.replaceChildren();
+          app.appendChild(renderContributionRecordForm(
+            account,
+            record,
+            storage
+          ));
+        });
+        row.appendChild(edit);
+      }
+    }
+
+    monthlyCard.appendChild(row);
+  }
+
+  section.appendChild(monthlyCard);
+
+  const recordActions = el("div","form-actions");
+  const addMonth = makeButton(
+    "月次実績を入力",
+    "contribution-new-month",
+    "primary"
+  );
+  addMonth.addEventListener("click",() => {
+    app.replaceChildren();
+    app.appendChild(renderContributionRecordForm(account,null,storage));
+  });
+
+  const addPeriod = makeButton(
+    "期間まとめを入力",
+    "contribution-new-period",
+    "secondary"
+  );
+  addPeriod.addEventListener("click",() => {
+    app.replaceChildren();
+    app.appendChild(renderContributionPeriodForm(account,storage));
+  });
+
+  recordActions.append(addMonth,addPeriod);
+  section.appendChild(recordActions);
+
+  const planCard = el("div","card");
+  planCard.appendChild(el("h4","","積立予定の管理"));
+
   const plans = appData.contributionPlans.filter(item =>
     item.accountId === account.id
   ).sort((a,b) =>
     b.effectiveFrom.localeCompare(a.effectiveFrom)
   );
+
+  if (!plans.length) {
+    planCard.appendChild(el("div","empty","積立予定はありません。"));
+  }
+
   for (const plan of plans) {
     const row = el("div","contribution-plan-row");
     row.appendChild(el(
-      "div","contribution-month-title",
-      plan.effectiveFrom + "〜 " + plan.status
+      "strong",
+      "",
+      (plan.productName || "口座全体") +
+        "／" + (plan.wrapper || "区分なし")
     ));
     row.appendChild(el(
-      "div","contribution-month-unit",
-      getContributionUnitLabel(plan.productName,plan.wrapper)
+      "div",
+      "",
+      plan.effectiveFrom + " ～ " + plan.status
     ));
-    const amounts = getContributionPlanAmounts(plan);
-    row.appendChild(el(
-      "div","contribution-month-amount",
-      amounts.total === null ? "予定なし" : formatYen(amounts.total)
-    ));
-    const edit = makeButton("訂正・削除","plan-edit","secondary small");
+
+    if (plan.status === "積立中") {
+      const amounts = getContributionPlanAmounts(plan);
+      row.appendChild(el(
+        "div",
+        "",
+        "予定：" + formatYen(amounts.total)
+      ));
+    }
+
+    const edit = makeButton(
+      "訂正",
+      "contribution-plan-edit",
+      "secondary small"
+    );
     edit.addEventListener("click",() => {
-      row.after(renderContributionPlanForm(account,plan,storage));
-      edit.disabled = true;
+      app.replaceChildren();
+      app.appendChild(renderContributionPlanForm(
+        account,
+        plan,
+        storage
+      ));
     });
     row.appendChild(edit);
-    planDetails.appendChild(row);
+    planCard.appendChild(row);
   }
-  section.appendChild(planDetails);
 
+  const addPlan = makeButton(
+    "積立予定を登録",
+    "contribution-plan-new",
+    "secondary"
+  );
+  addPlan.addEventListener("click",() => {
+    app.replaceChildren();
+    app.appendChild(renderContributionPlanForm(account,null,storage));
+  });
+  planCard.appendChild(addPlan);
+
+  section.appendChild(planCard);
   return section;
 }
