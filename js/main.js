@@ -419,6 +419,7 @@ async function runTestsAndRender() {
     "./js/tests-ocr.js",
     "./js/tests-bulk-ocr.js",
     "./js/tests-contrib.js",
+    "./js/tests-contrib-render.js",
     "./js/tests.js"
   ];
 
