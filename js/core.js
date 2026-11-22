@@ -2,7 +2,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S13c-ui-input-v1";
+const APP_VERSION = "S13c-ui-input-v2";
 const SPEC_VERSION = "v1.21";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 4;
