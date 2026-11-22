@@ -49,28 +49,43 @@ function renderContributionSection(account,storage = localStorage) {
   }
 
   const latest = getLatestSnapshot(appData,account.id);
+  const displayYen = value =>
+    value === null || value === undefined
+      ? "未入力"
+      : formatYen(value);
+  const displaySignedYen = value =>
+    value === null || value === undefined
+      ? "未入力"
+      : formatSignedYen(value);
   const financialCard = el("div","card");
   financialCard.appendChild(el("h4","","現在の金融状況"));
 
   appendAccountMetric(
     financialCard,
+    "対象日",
+    latest && latest.asOfDate
+      ? formatDateWithWeekday(latest.asOfDate)
+      : "未入力"
+  );
+  appendAccountMetric(
+    financialCard,
     "有効元本",
-    latest ? formatYen(latest.effectivePrincipal) : "未入力"
+    latest ? displayYen(latest.effectivePrincipal) : "未入力"
   );
   appendAccountMetric(
     financialCard,
     "評価額",
-    latest ? formatYen(latest.value) : "未入力"
+    latest ? displayYen(latest.value) : "未入力"
   );
   appendAccountMetric(
     financialCard,
     "評価損益",
-    latest ? formatSignedYen(latest.pnl) : "未入力"
+    latest ? displaySignedYen(latest.pnl) : "未入力"
   );
   appendAccountMetric(
     financialCard,
     "累積確定損益",
-    latest ? formatSignedYen(latest.realizedPnlTotal) : "未入力"
+    latest ? displaySignedYen(latest.realizedPnlTotal) : "未入力"
   );
 
   section.append(totalsCard,financialCard);
@@ -107,11 +122,17 @@ function renderContributionSection(account,storage = localStorage) {
     );
     appendAccountMetric(
       row,
+      "停止中の月数",
+      String(unit.stoppedMonthCount) + "か月"
+    );
+    appendAccountMetric(
+      row,
       "今月の状態",
       unit.currentMonthStatus
     );
 
     const plan = unit.currentPlan;
+    const planAmounts = getContributionPlanAmounts(plan);
     appendAccountMetric(
       row,
       "現在の積立予定",
@@ -119,9 +140,8 @@ function renderContributionSection(account,storage = localStorage) {
         ? "予定なし"
         : plan.status === "停止"
           ? "停止"
-          : formatYen(
-              getContributionPlanAmounts(plan).total
-            )
+          : "現金 " + displayYen(planAmounts.cash) +
+            "／ポイント " + displayYen(planAmounts.point)
     );
 
     unitCard.appendChild(row);
@@ -146,29 +166,38 @@ function renderContributionSection(account,storage = localStorage) {
       ? item.productName + "／" + item.wrapper
       : "口座全体";
 
-    const monthLabel = item.type === "period"
-      ? item.fromMonth + " ～ " + item.toMonth
-      : item.month;
-
-    row.appendChild(el("strong","",monthLabel + "　" + name));
-    row.appendChild(el("div","", "状態：" + item.status));
-
     if (item.type === "period") {
+      const monthLabel = item.fromMonth + " ～ " + item.toMonth;
+      row.appendChild(el("strong","",monthLabel + "　" + name));
+      row.appendChild(el(
+        "span",
+        "contribution-period-badge",
+        "期間まとめ"
+      ));
       row.appendChild(el(
         "div",
-        "",
-        "実績合計：" + formatYen(item.totalAmount)
+        "contribution-month-detail",
+        "現金合計：" + displayYen(item.cashAmount) +
+          "／ポイント合計：" + displayYen(item.pointAmount)
       ));
     } else {
       row.appendChild(el(
-        "div",
+        "strong",
         "",
-        "予定：" + formatYen(item.plannedTotal)
+        item.month + "　" + name + "　［" + item.status + "］"
       ));
+
+      const actualText = item.status === "実行"
+        ? "現金 " + displayYen(item.actualCash) +
+          "／ポイント " + displayYen(item.actualPoint)
+        : item.status;
+
       row.appendChild(el(
         "div",
-        "",
-        "実績：" + formatYen(item.actualTotal)
+        "contribution-month-detail",
+        "予定：現金 " + displayYen(item.plannedCash) +
+          "／ポイント " + displayYen(item.plannedPoint) +
+          "　実績：" + actualText
       ));
     }
 
