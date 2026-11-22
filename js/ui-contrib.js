@@ -290,7 +290,7 @@ function renderContributionSection(account,storage = localStorage) {
     }
 
     const edit = makeButton(
-      "訂正",
+      "変更を登録（履歴を残す）",
       "contribution-plan-edit",
       "secondary small"
     );
