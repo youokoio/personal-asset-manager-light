@@ -452,7 +452,7 @@ function calculateContributionSummary(data,currentMonth) {
       getContributionMonthNumber(currentMonth);
 
     for (let number = firstNumber;
-         number <= currentNumber;
+         number < currentNumber;
          number += 1) {
       const month = formatContributionMonthNumber(number);
       const record =
