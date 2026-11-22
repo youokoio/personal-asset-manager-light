@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "pam2-s13c-ui-input-v1";
+const CACHE_NAME = "pam2-s13c-ui-input-v2";
 const APP_FILES = [
   "./index.html",
   "./style.css",
@@ -78,6 +78,7 @@ const APP_FILES = [
   "./js/tests-ocr.js",
   "./js/tests-bulk-ocr.js",
   "./js/tests-contrib.js",
+  "./js/tests-contrib-render.js",
   "./js/tests.js"
 ];
 
