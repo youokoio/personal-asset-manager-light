@@ -271,8 +271,9 @@ function renderContributionSection(account,storage = localStorage) {
     row.appendChild(el(
       "strong",
       "",
-      (plan.productName || "口座全体") +
-        "／" + (plan.wrapper || "区分なし")
+      plan.productName
+        ? plan.productName + "／" + plan.wrapper
+        : "口座全体"
     ));
     row.appendChild(el(
       "div",
@@ -290,7 +291,7 @@ function renderContributionSection(account,storage = localStorage) {
     }
 
     const edit = makeButton(
-      "変更を登録（履歴を残す）",
+      "訂正",
       "contribution-plan-edit",
       "secondary small"
     );
