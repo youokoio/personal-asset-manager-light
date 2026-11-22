@@ -48,6 +48,10 @@ function registerContributionRenderTests(context) {
       saveButton.textContent === "予定を登録",
       "新規登録ボタンの表示が正しくありません。"
     );
+    assert(
+      form.querySelector('[data-action="contribution-plan-delete"]') === null,
+      "新規登録フォームに削除操作が表示されています。"
+    );
   });
 
   runTest("S13c③：商品別予定のwrapper表示",() => {
@@ -123,7 +127,7 @@ function registerContributionRenderTests(context) {
     );
   });
 
-  runTest("S13c③：変更登録フォームの履歴保持表示",() => {
+  runTest("S13c③：積立予定の訂正フォームと削除操作",() => {
     const account = makeTestAccount();
     const plan = {
       id:"plan-render-edit",
@@ -143,16 +147,20 @@ function registerContributionRenderTests(context) {
     const form = formSection.querySelector("form");
 
     assert(
-      formSection.querySelector("h3").textContent.includes("履歴を残す"),
-      "変更フォームに履歴保持の説明がありません。"
+      formSection.querySelector("h3").textContent === "積立予定の訂正",
+      "訂正フォームの見出しが正しくありません。"
+    );
+    assert(
+      formSection.textContent.includes("誤登録の訂正用です。"),
+      "訂正フォームに用途の説明がありません。"
     );
 
     const saveButton = form.querySelector(
       'button[type="submit"]'
     );
     assert(
-      saveButton.textContent === "変更を登録（履歴を残す）",
-      "変更登録ボタンの表示が正しくありません。"
+      saveButton.textContent === "訂正を保存",
+      "訂正ボタンの表示が正しくありません。"
     );
 
     assert(
@@ -164,9 +172,16 @@ function registerContributionRenderTests(context) {
       "既存のメモがフォームに反映されていません。"
     );
 
+    const deleteButton = form.querySelector(
+      '[data-action="contribution-plan-delete"]'
+    );
     assert(
-      form.querySelector('[data-action="contribution-plan-delete"]') === null,
-      "予定を削除する操作が表示されています。"
+      deleteButton !== null,
+      "訂正フォームに削除操作がありません。"
+    );
+    assert(
+      deleteButton.textContent === "この予定を削除",
+      "削除ボタンの表示が正しくありません。"
     );
   });
 }
