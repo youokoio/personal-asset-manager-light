@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "pam2-s13c-ui-input-v2";
+const CACHE_NAME = "pam2-s13c-ui-input-v3";
 const APP_FILES = [
   "./index.html",
   "./style.css",
