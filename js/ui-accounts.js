@@ -16,6 +16,28 @@ function appendAccountMetric(container,label,value,subText = "") {
   container.appendChild(row);
 }
 
+function appendContributionAccountListMetric(container,account) {
+  try {
+    const summary = calculateContributionSummary(
+      appData,
+      localDateString().slice(0,7)
+    );
+    const accountTotal = summary.accountTotals.find(item =>
+      item.accountId === account.id
+    );
+
+    appendAccountMetric(
+      container,
+      "累積積立額",
+      accountTotal && accountTotal.hasRecords
+        ? formatYen(accountTotal.cumulativeAmount)
+        : "未入力"
+    );
+  } catch (error) {
+    appendAccountMetric(container,"累積積立額","算出不可");
+  }
+}
+
 function renderCategoryAccountList(category) {
   const label = CATEGORY_LABELS[category];
   app.appendChild(heading(label));
@@ -165,6 +187,10 @@ function renderCategoryAccountList(category) {
       }
     }
 
+    if (category === "stock") {
+      appendContributionAccountListMetric(card,account);
+    }
+
     card.addEventListener("click",event => {
       if (event.target.closest("button")) {
         selectedAccountId = account.id;
@@ -265,6 +291,10 @@ function renderAccountDetail() {
   if (isHoldingsAccount(account)) {
     app.appendChild(renderHoldingsSection(account));
     app.appendChild(renderHoldingsImportForm(account));
+  }
+
+  if (getCategory(account) === "stock") {
+    app.appendChild(renderContributionSection(account));
   }
 
   app.appendChild(renderAccountSettings(account));
