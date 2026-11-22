@@ -1112,3 +1112,45 @@ button.chart-legend-button.chart-legend-hidden {
   outline:2px solid var(--blue);
   outline-offset:-2px;
 }
+
+/* ---------- S13c 積立実績表示 ---------- */
+.contribution-unit {
+  padding:10px 0;
+  border-bottom:1px solid var(--border);
+}
+.contribution-unit:last-child {
+  border-bottom:0;
+}
+.contribution-month-row {
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:5px;
+  padding:11px 0;
+  border-bottom:1px solid var(--border);
+  font-size:13px;
+  line-height:1.5;
+}
+.contribution-month-row:last-child {
+  border-bottom:0;
+}
+.contribution-month-row strong {
+  overflow-wrap:anywhere;
+}
+.contribution-month-detail {
+  width:100%;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.6;
+  overflow-wrap:anywhere;
+  font-variant-numeric:tabular-nums;
+}
+.contribution-period-badge {
+  display:inline-block;
+  padding:3px 8px;
+  border-radius:6px;
+  background:#e9f0f5;
+  color:#31536d;
+  font-size:11px;
+  font-weight:650;
+}
