@@ -1,55 +1,74 @@
 "use strict";
 
-/* ---------- 積立予定の保存・削除 ---------- */
+/* ---------- 積立予定の追記保存 ---------- */
 
-function saveContributionPlanFromUi(accountId,candidate,planId = null,storage = localStorage) {
+function saveContributionPlanFromUi(
+  accountId,
+  candidate,
+  sourcePlanId = null,
+  storage = localStorage
+) {
   const now = new Date().toISOString();
-  const nextPlan = {
-    ...candidate,
-    id:planId || createId(),
-    accountId,
-    createdAt:planId
-      ? appData.contributionPlans.find(item => item.id === planId)?.createdAt || now
-      : now,
-    updatedAt:planId ? now : null
-  };
+  const sourcePlan = sourcePlanId
+    ? appData.contributionPlans.find(item => item.id === sourcePlanId)
+    : null;
 
-  if (planId &&
-      !appData.contributionPlans.some(item => item.id === planId)) {
-    throw new Error("訂正する積立予定が見つかりません。");
+  if (sourcePlanId &&
+      (!sourcePlan || sourcePlan.accountId !== accountId)) {
+    throw new Error("変更元の積立予定が見つかりません。");
   }
 
+  const productName = candidate.productName === null
+    ? null
+    : String(candidate.productName || "").trim() || null;
+  const wrapper = productName === null ? null : candidate.wrapper;
+
+  if (productName !== null &&
+      !HOLDING_WRAPPERS.includes(wrapper)) {
+    throw new Error("商品に対応する保有区分を選択してください。");
+  }
+
+  if (!isValidContributionMonth(candidate.effectiveFrom)) {
+    throw new Error("適用開始月を正しく入力してください。");
+  }
+
+  if (!["積立中","停止"].includes(candidate.status)) {
+    throw new Error("予定状態を正しく選択してください。");
+  }
+
+  const duplicate = appData.contributionPlans.some(item =>
+    item.accountId === accountId &&
+    item.productName === productName &&
+    item.wrapper === wrapper &&
+    item.effectiveFrom === candidate.effectiveFrom
+  );
+
+  if (duplicate) {
+    throw new Error(
+      "同じ積立単位・適用開始月の予定が既にあります。別の月を指定してください。"
+    );
+  }
+
+  const nextPlan = {
+    ...candidate,
+    productName,
+    wrapper,
+    id:createId(),
+    accountId,
+    createdAt:now,
+    updatedAt:now
+  };
+
   const nextData = saveStockTrackingData(
     "contribution",
     data => {
-      data.contributionPlans = data.contributionPlans.filter(item =>
-        item.id !== planId
-      );
-      data.contributionPlans.push(nextPlan);
+      data.contributionPlans.unshift(nextPlan);
     },
     storage
   );
 
   appData = nextData;
-  showMessage("積立予定を保存しました。");
-  render();
-}
-
-function deleteContributionPlanFromUi(planId,storage = localStorage) {
-  if (!window.confirm("この積立予定を削除しますか？")) return;
-
-  const nextData = saveStockTrackingData(
-    "contribution",
-    data => {
-      data.contributionPlans = data.contributionPlans.filter(item =>
-        item.id !== planId
-      );
-    },
-    storage
-  );
-
-  appData = nextData;
-  showMessage("積立予定を削除しました。");
+  showMessage("積立予定を追加しました。過去の予定は保持されています。");
   render();
 }
 
@@ -60,27 +79,52 @@ function renderContributionPlanForm(account,plan = null,storage = localStorage) 
   section.appendChild(el(
     "h3",
     "",
-    plan ? "積立予定の訂正" : "積立予定の登録"
+    plan
+      ? "積立予定の変更（履歴を残す）"
+      : "積立予定の登録"
   ));
 
   const form = el("form","contribution-form");
+  const errorBox = el("div","error hidden");
+  section.appendChild(errorBox);
 
-  form.appendChild(makeField(
+  const productField = makeField(
     "商品名（口座全体の場合は空欄）",
     "productName",
     plan ? plan.productName : "",
     {type:"text"}
-  ));
+  );
+  const productInput = productField.querySelector("input");
+  form.appendChild(productField);
 
-  form.appendChild(makeSelectField(
+  const wrapperField = makeSelectField(
     "保有区分",
     "wrapper",
-    HOLDING_WRAPPERS.map(value => ({
-      value,
-      label:value
-    })),
-    plan ? plan.wrapper : "NISAつみたて"
-  ));
+    [
+      {value:"",label:"選択してください"},
+      ...HOLDING_WRAPPERS.map(value => ({
+        value,
+        label:value
+      }))
+    ],
+    plan && plan.wrapper ? plan.wrapper : ""
+  );
+  const wrapperSelect = wrapperField.querySelector("select");
+  form.appendChild(wrapperField);
+
+  function updateWrapperVisibility() {
+    const hasProduct = productInput.value.trim() !== "";
+    wrapperField.classList.toggle("hidden",!hasProduct);
+
+    if (!hasProduct) {
+      wrapperSelect.value = "";
+    } else if (!wrapperSelect.value) {
+      wrapperSelect.value = "NISAつみたて";
+    }
+  }
+
+  productInput.addEventListener("input",updateWrapperVisibility);
+  updateWrapperVisibility();
 
   form.appendChild(makeContributionInput(
     "適用開始月",
@@ -120,7 +164,7 @@ function renderContributionPlanForm(account,plan = null,storage = localStorage) 
 
   const actions = el("div","form-actions");
   const save = makeButton(
-    plan ? "予定を訂正" : "予定を登録",
+    plan ? "変更を登録（履歴を残す）" : "予定を登録",
     "contribution-plan-save",
     "primary"
   );
@@ -135,36 +179,33 @@ function renderContributionPlanForm(account,plan = null,storage = localStorage) 
   cancel.addEventListener("click",() => render());
   actions.appendChild(cancel);
 
-  if (plan) {
-    const remove = makeButton(
-      "この予定を削除",
-      "contribution-plan-delete",
-      "danger"
-    );
-    remove.addEventListener("click",() => {
-      deleteContributionPlanFromUi(plan.id,storage);
-    });
-    actions.appendChild(remove);
-  }
-
   form.appendChild(actions);
 
   form.addEventListener("submit",event => {
     event.preventDefault();
+    errorBox.textContent = "";
+    errorBox.classList.add("hidden");
 
     try {
-      const name = getContributionFormValue(form,"productName") || null;
-      const selected = getContributionFormValue(form,"wrapper");
-      const effectiveFrom = getContributionFormValue(form,"effectiveFrom");
+      const name = productInput.value.trim() || null;
+      const selected = wrapperSelect.value;
+      const effectiveFrom = getContributionFormValue(
+        form,
+        "effectiveFrom"
+      );
       const status = getContributionFormValue(form,"status");
 
       if (!isValidContributionMonth(effectiveFrom)) {
         throw new Error("適用開始月を正しく入力してください。");
       }
 
+      if (name !== null && !HOLDING_WRAPPERS.includes(selected)) {
+        throw new Error("商品に対応する保有区分を選択してください。");
+      }
+
       const candidate = {
         productName:name,
-        wrapper:name ? selected : null,
+        wrapper:name === null ? null : selected,
         effectiveFrom,
         status,
         plannedCash:status === "積立中"
@@ -181,8 +222,9 @@ function renderContributionPlanForm(account,plan = null,storage = localStorage) 
         storage
       );
     } catch (error) {
-      showMessage(error.message || "積立予定を保存できませんでした。",true);
-      render();
+      errorBox.textContent =
+        error.message || "積立予定を保存できませんでした。";
+      errorBox.classList.remove("hidden");
     }
   });
 
