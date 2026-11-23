@@ -85,7 +85,7 @@ function validateSaleCheckConfirmation(data,candidate,input) {
   }
 
   if (target && target.level === "口座全体" &&
-      Array.isArray(data.saleChecks) &&
+      data && Array.isArray(data.saleChecks) &&
       isValidSaleCheckDate(
         manual ? values.saleDate : target.toDate
       )) {
