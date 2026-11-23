@@ -1154,3 +1154,183 @@ button.chart-legend-button.chart-legend-hidden {
   font-size:11px;
   font-weight:650;
 }
+
+
+/* ---------- S13e 売却・利確の確認 ---------- */
+.salecheck-section {
+  margin-top:13px;
+}
+
+.salecheck-explanation {
+  margin:8px 0 13px;
+  padding:11px;
+  border-radius:9px;
+  background:#edf3f7;
+  color:#42596b;
+  font-size:12px;
+  line-height:1.6;
+}
+
+.salecheck-subtitle {
+  margin:16px 0 8px;
+  font-size:14px;
+  font-weight:700;
+}
+
+.salecheck-item {
+  padding:12px 0;
+  border-bottom:1px solid var(--border);
+}
+
+.salecheck-item:last-child {
+  border-bottom:0;
+}
+
+.salecheck-item-title {
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:8px;
+  font-size:14px;
+  font-weight:700;
+  line-height:1.5;
+}
+
+.salecheck-period {
+  margin-top:5px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.5;
+}
+
+.salecheck-values {
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:8px;
+  margin-top:9px;
+}
+
+.salecheck-values > div {
+  min-width:0;
+  padding:8px;
+  border-radius:7px;
+  background:#f6f8fa;
+  font-size:12px;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+  font-variant-numeric:tabular-nums;
+}
+
+.salecheck-meta {
+  margin-top:8px;
+  color:var(--muted);
+  font-size:11px;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+}
+
+.salecheck-warning,
+.salecheck-hint {
+  margin-top:8px;
+  padding:9px;
+  border-radius:7px;
+  background:#fff4df;
+  color:#805514;
+  font-size:12px;
+  line-height:1.5;
+  overflow-wrap:anywhere;
+}
+
+.salecheck-status {
+  display:inline-block;
+  flex:0 0 auto;
+  padding:3px 7px;
+  border-radius:6px;
+  background:#e9f0f5;
+  color:#31536d;
+  font-size:10px;
+  font-weight:650;
+  white-space:nowrap;
+}
+
+.salecheck-form {
+  margin-top:10px;
+  padding:11px;
+  border-radius:8px;
+  background:#f6f8fa;
+}
+
+.salecheck-form .field:last-of-type {
+  margin-bottom:8px;
+}
+
+.salecheck-form-actions,
+.salecheck-section .form-actions {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-top:9px;
+}
+
+.salecheck-form-message {
+  margin-top:8px;
+  font-size:12px;
+  line-height:1.5;
+}
+
+.salecheck-manual-form {
+  margin-top:12px;
+  padding:12px;
+  border:1px solid var(--border);
+  border-radius:9px;
+  background:#fff;
+}
+
+.salecheck-details {
+  margin-top:12px;
+  padding-top:10px;
+  border-top:1px solid var(--border);
+}
+
+.salecheck-details > summary {
+  padding:7px 0;
+  color:var(--blue);
+  font-size:13px;
+  font-weight:650;
+  cursor:pointer;
+}
+
+.salecheck-details[open] > summary {
+  margin-bottom:5px;
+}
+
+.salecheck-warning-card {
+  background:#fffdf7;
+}
+
+.salecheck-reference {
+  margin-top:13px;
+  padding:12px;
+}
+
+.salecheck-reference h4 {
+  margin:0 0 8px;
+  font-size:14px;
+}
+
+.salecheck-badge {
+  display:inline-block;
+  margin-top:7px;
+  padding:3px 8px;
+  border-radius:12px;
+  background:#fff0f0;
+  color:#9e2828;
+  font-size:11px;
+  font-weight:700;
+}
+
+@media (max-width:370px) {
+  .salecheck-values {
+    grid-template-columns:1fr;
+  }
+}
