@@ -1,4 +1,3 @@
-
 "use strict";
 
 /* ---------- アプリ状態・起動 ---------- */
@@ -422,6 +421,7 @@ async function runTestsAndRender() {
     "./js/tests-contrib.js",
     "./js/tests-contrib-render.js",
     "./js/tests-salecheck.js",
+    "./js/tests-salecheck-render.js",
     "./js/tests.js"
   ];
 
