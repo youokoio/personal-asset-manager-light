@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "pam2-s13c-ui-input-v3";
+const CACHE_NAME = "pam2-s13d-salecheck-v1";
 const APP_FILES = [
   "./index.html",
   "./style.css",
@@ -30,6 +30,9 @@ const APP_FILES = [
   "./js/calc-ocr.js",
   "./js/calc-history-edit.js",
   "./js/calc-chart.js",
+  "./js/calc-salecheck.js",
+  "./js/calc-salecheck-hints.js",
+  "./js/calc-salecheck-confirm.js",
   "./js/ui-common.js",
   "./js/ui-home.js",
   "./js/ui-loan.js",
@@ -79,6 +82,7 @@ const APP_FILES = [
   "./js/tests-bulk-ocr.js",
   "./js/tests-contrib.js",
   "./js/tests-contrib-render.js",
+  "./js/tests-salecheck.js",
   "./js/tests.js"
 ];
 
