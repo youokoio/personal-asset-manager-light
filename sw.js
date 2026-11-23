@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "pam2-s13d-salecheck-v1";
+const CACHE_NAME = "pam2-s13e-v1";
 const APP_FILES = [
   "./index.html",
   "./style.css",
@@ -41,6 +41,7 @@ const APP_FILES = [
   "./js/ui-contrib-forms.js",
   "./js/ui-contrib-plans.js",
   "./js/ui-contrib.js",
+  "./js/ui-salecheck.js",
   "./js/ui-snapshot-form.js",
   "./js/ui-account-settings.js",
   "./js/ui-holdings.js",
@@ -83,6 +84,7 @@ const APP_FILES = [
   "./js/tests-contrib.js",
   "./js/tests-contrib-render.js",
   "./js/tests-salecheck.js",
+  "./js/tests-salecheck-render.js",
   "./js/tests.js"
 ];
 
