@@ -116,6 +116,7 @@ function runAllTests() {
   registerContributionTests(context);
   registerContributionRenderTests(context);
   registerSaleCheckTests(context);
+  registerSaleCheckRenderTests(context);
 
   return results;
 }
