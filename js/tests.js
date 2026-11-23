@@ -115,6 +115,7 @@ function runAllTests() {
   registerBulkOcrRenderTests(context);
   registerContributionTests(context);
   registerContributionRenderTests(context);
+  registerSaleCheckTests(context);
 
   return results;
 }
