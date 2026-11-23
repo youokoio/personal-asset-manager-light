@@ -189,6 +189,10 @@ function renderCategoryAccountList(category) {
 
     if (category === "stock") {
       appendContributionAccountListMetric(card,account);
+      const saleCheckBadge = renderSaleCheckBadge(account);
+      if (saleCheckBadge) {
+        card.appendChild(saleCheckBadge);
+      }
     }
 
     card.addEventListener("click",event => {
@@ -295,6 +299,7 @@ function renderAccountDetail() {
 
   if (getCategory(account) === "stock") {
     app.appendChild(renderContributionSection(account));
+    app.appendChild(renderSaleCheckSection(account));
   }
 
   app.appendChild(renderAccountSettings(account));
