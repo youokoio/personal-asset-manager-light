@@ -104,9 +104,9 @@ function registerSaleCheckRenderTests(context) {
         "未確認候補の件数が表示されていません。");
       assert(section.textContent.includes("テスト投信A"),
         "検出された商品別候補が表示されていません。");
-      assert(section.querySelector(".salecheck-confirm") !== null,
+      assert(section.querySelector('[data-action="salecheck-confirm"]') !== null,
         "利確確認操作が表示されていません。");
-      assert(section.querySelector(".salecheck-dismiss") !== null,
+      assert(section.querySelector('[data-action="salecheck-dismiss"]') !== null,
         "候補解除操作が表示されていません。");
     });
   });
@@ -119,7 +119,7 @@ function registerSaleCheckRenderTests(context) {
 
     withSaleCheckTestData(data,() => {
       const section = renderSaleCheckSection(account);
-      const manualButton = section.querySelector(".salecheck-manual");
+      const manualButton = section.querySelector('[data-action="salecheck-manual"]');
 
       assert(manualButton !== null,
         "候補なしの手動記録ボタンがありません。");
@@ -156,7 +156,7 @@ function registerSaleCheckRenderTests(context) {
 
     withSaleCheckTestData(data,() => {
       const section = renderSaleCheckSection(account);
-      section.querySelector(".salecheck-manual").click();
+      section.querySelector('[data-action="salecheck-manual"]').click();
 
       const form = section.querySelector(".salecheck-manual-form");
       const level = form.querySelector('[name="level"]');
@@ -199,7 +199,7 @@ function registerSaleCheckRenderTests(context) {
 
       assert(badge !== null,
         "未確認候補があるのにバッジが表示されていません。");
-      assert(badge.textContent.includes("売却・利確候補 1件"),
+      assert(badge.textContent.includes("売却・利確候補 2件"),
         "未確認候補の件数表示が正しくありません。");
     });
   });
