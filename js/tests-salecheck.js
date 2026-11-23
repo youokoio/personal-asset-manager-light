@@ -1,3 +1,4 @@
+
 "use strict";
 
 /* ---------- S13d 売却・利確候補テスト ---------- */
@@ -501,17 +502,8 @@ function registerSaleCheckTests(context) {
     const accountId = "stock-1";
 
     addSaleCheckHolding(
-      data,"one",accountId,"テスト投信G",
-      "特定","2026-03-31",100000,100000
-    );
-
-    addSaleCheckHolding(
       data,"g-0331",accountId,"テスト投信G",
       "特定","2026-03-31",100000,100000
-    );
-    addSaleCheckHolding(
-      data,"g-0430",accountId,"テスト投信G",
-      "特定","2026-04-30",null,90000
     );
 
     addSaleCheckHolding(
@@ -521,6 +513,15 @@ function registerSaleCheckTests(context) {
     addSaleCheckHolding(
       data,"h-0630",accountId,"テスト投信H",
       "特定","2026-06-30",150000,160000
+    );
+
+    addSaleCheckHolding(
+      data,"l-0331",accountId,"テスト投信L",
+      "特定","2026-03-31",100000,100000
+    );
+    addSaleCheckHolding(
+      data,"l-0430",accountId,"テスト投信L",
+      "特定","2026-04-30",null,90000
     );
 
     const result = calculateSaleCheckCandidates(
@@ -535,8 +536,8 @@ function registerSaleCheckTests(context) {
       "nullを含む比較不可の件数が1件ではありません。");
 
     assert(!findSaleCheckCandidate(
-      result,"商品別","テスト投信G"
-    ),"nullの取得額を0としてGが候補になっています。");
+      result,"商品別","テスト投信L"
+    ),"nullの取得額を0としてLが候補になっています。");
 
     const h = findSaleCheckCandidate(
       result,"商品別","テスト投信H"
@@ -598,7 +599,7 @@ function registerSaleCheckTests(context) {
     assert(candidate,
       "楽天証券の口座全体候補がありません。");
     assert(candidate.hints.includes("口座間の移動の可能性"),
-      "口座間の移動ヒントがありません。");
+      "口座間移動ヒントがありません。");
     assert(candidate.hints.includes(
       "積立があるため、実際の売却額は表示の減少より大きい可能性があります"
     ),"積立実行のヒントがありません。");
