@@ -1,3 +1,4 @@
+
 "use strict";
 
 /* ---------- アプリ状態・起動 ---------- */
@@ -420,6 +421,7 @@ async function runTestsAndRender() {
     "./js/tests-bulk-ocr.js",
     "./js/tests-contrib.js",
     "./js/tests-contrib-render.js",
+    "./js/tests-salecheck.js",
     "./js/tests.js"
   ];
 
