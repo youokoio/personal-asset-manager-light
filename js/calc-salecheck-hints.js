@@ -45,12 +45,15 @@ function getSaleCheckLatestHolding(data,accountId,name,wrapper,date) {
 function hasSaleCheckReplacementHint(data,candidate) {
   if (candidate.level !== "商品別" ||
       !isFiniteMetricValue(candidate.oldCostBasis) ||
-      !isFiniteMetricValue(candidate.newCostBasis)) {
+      (candidate.kind !== "disappearance" &&
+       !isFiniteMetricValue(candidate.newCostBasis))) {
     return false;
   }
 
-  const decrease = candidate.oldCostBasis -
-    candidate.newCostBasis;
+  const newCostBasis = candidate.kind === "disappearance"
+    ? 0
+    : candidate.newCostBasis;
+  const decrease = candidate.oldCostBasis - newCostBasis;
 
   if (decrease <= 0) return false;
 
