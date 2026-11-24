@@ -414,7 +414,7 @@ function registerStockOcrComparisonTests(context) {
 
       const saved = JSON.parse(values.get(STORAGE_KEY));
       const snapshot = saved.snapshots.find(item =>
-        item.id === "fictional-snapshot-l-1"
+        item.id === "fictional-snapshot-l-3"
       );
 
       assert(snapshot !== undefined,"snapshotが見つかりません。");
