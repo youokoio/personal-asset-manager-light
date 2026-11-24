@@ -1048,8 +1048,8 @@ button.chart-legend-button.chart-legend-hidden {
 .fx-history-table-wrap {
   width:100%;
   max-width:100%;
-  overflow-x:auto;
-  overflow-y:visible;
+  max-height:65vh;
+  overflow:auto;
   margin-top:10px;
   border:1px solid var(--border);
   border-radius:8px;
