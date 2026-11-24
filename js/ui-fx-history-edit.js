@@ -261,7 +261,7 @@ function renderFxHistoryEditableCellS11a(
 
     const input = document.createElement("input");
     input.type = "text";
-    input.inputMode = "decimal";
+    input.inputMode = "text";
     input.autocomplete = "off";
     input.className = "fx-history-cell-input";
     input.value = pendingValue === null ||
