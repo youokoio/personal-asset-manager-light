@@ -260,25 +260,67 @@ function stockOcrParseDcCardStock(card,format) {
     reasons.push("元本確保型の商品に評価損益が表示されています。内容を確認してください。");
   }
 
-  if (tokens.length === 3) {
-    value = stockOcrFieldStock(
-      tokens[0].value,tokens[0].status,tokens[0].original,"labels-before-values"
-    );
-    costBasis = stockOcrFieldStock(
-      tokens[1].value,tokens[1].status,tokens[1].original,"labels-before-values"
-    );
-    pnl = stockOcrFieldStock(
-      tokens[2].value,tokens[2].status,tokens[2].original,"labels-before-values"
-    );
+  const orderedAmountFields = (format.amountLabelOrder || [])
+    .map(fieldName => {
+      const field = format.fields && format.fields[fieldName];
+      const labels = field && Array.isArray(field.labels)
+        ? field.labels.map(stockOcrNormalizeTextStock)
+        : [];
+      const labelIndex = lines.findIndex(line =>
+        labels.includes(stockOcrNormalizeTextStock(line.text))
+      );
+      return {fieldName,labelIndex};
+    })
+    .filter(item => item.labelIndex >= 0)
+    .sort((a,b) => a.labelIndex - b.labelIndex);
+
+  if (tokens.length === 3 && orderedAmountFields.length === 3) {
+    const valuesByField = new Map();
+    for (let index = 0; index < orderedAmountFields.length; index += 1) {
+      valuesByField.set(
+        orderedAmountFields[index].fieldName,
+        tokens[index]
+      );
+    }
+
+    const valueToken = valuesByField.get("value");
+    const costBasisToken = valuesByField.get("costBasis");
+    const pnlToken = valuesByField.get("pnl");
+
+    if (valueToken && costBasisToken && pnlToken) {
+      value = stockOcrFieldStock(
+        valueToken.value,valueToken.status,valueToken.original,"labels-before-values"
+      );
+      costBasis = stockOcrFieldStock(
+        costBasisToken.value,costBasisToken.status,costBasisToken.original,"labels-before-values"
+      );
+      pnl = stockOcrFieldStock(
+        pnlToken.value,pnlToken.status,pnlToken.original,"labels-before-values"
+      );
+    } else {
+      reasons.push("評価額・取得価額・評価損益の対応を確定できません。");
+    }
   } else if (tokens.length === 2 && isPrincipalProtected &&
       format.principalProtectedTwoValuesEqualAllowed &&
+      orderedAmountFields.length === 2 &&
+      orderedAmountFields.some(item => item.fieldName === "value") &&
+      orderedAmountFields.some(item => item.fieldName === "costBasis") &&
       tokens[0].value !== null &&
       tokens[0].value === tokens[1].value) {
+    const valuesByField = new Map();
+    for (let index = 0; index < orderedAmountFields.length; index += 1) {
+      valuesByField.set(
+        orderedAmountFields[index].fieldName,
+        tokens[index]
+      );
+    }
+    const valueToken = valuesByField.get("value");
+    const costBasisToken = valuesByField.get("costBasis");
     value = stockOcrFieldStock(
-      tokens[0].value,"recognized",tokens[0].original,"labels-before-values"
+      valueToken.value,"recognized",valueToken.original,"labels-before-values"
     );
     costBasis = stockOcrFieldStock(
-      tokens[1].value,"recognized",tokens[1].original,"labels-before-values"
+      costBasisToken.value,"recognized",costBasisToken.original,"labels-before-values"
     );
     pnl = stockOcrFieldStock(null,"not-shown");
   } else {
