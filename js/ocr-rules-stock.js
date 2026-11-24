@@ -10,7 +10,7 @@ const STOCK_OCR_RULES = [
   {
     ruleId:"rakuten-securities",
     accountNames:["楽天証券"],
-    ruleVersion:"S11b-v3",
+    ruleVersion:"S11bA-v1",
     note:"楽天証券の保有商品詳細。商品区分の見出しごとに商品カードを切り出す。",
     formats:[
       {
@@ -98,7 +98,7 @@ const STOCK_OCR_RULES = [
         },
         kindByHeading:{
           "国内株式":"国内株",
-          "米国株式":"その他",
+          "米国株式":"米国株",
           "投資信託":"投信"
         },
         codePattern:"^([A-Za-z0-9.]+)$",
