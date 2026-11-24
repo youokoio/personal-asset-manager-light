@@ -1,0 +1,275 @@
+"use strict";
+
+/* ---------- S11b 株式OCR画面の描画テスト ---------- */
+
+function withStockOcrRenderStateTest(data,callback) {
+  const previousData = appData;
+  const previousState = {
+    accountId:stockOcrUpdateAccountId,
+    targetDate:stockOcrUpdateTargetDate,
+    pasteText:stockOcrUpdatePasteText,
+    cards:stockOcrUpdateCards,
+    comparison:stockOcrUpdateComparison,
+    snapshotEnabled:stockOcrUpdateSnapshotEnabled,
+    snapshotValue:stockOcrUpdateSnapshotValue,
+    message:stockOcrUpdateMessage,
+    error:stockOcrUpdateError
+  };
+  const previousChildren = Array.from(app.childNodes);
+
+  try {
+    appData = data;
+    stockOcrUpdateAccountId = "";
+    stockOcrUpdateTargetDate = "2026-11-30";
+    stockOcrUpdatePasteText = "";
+    stockOcrUpdateCards = [];
+    stockOcrUpdateComparison = null;
+    stockOcrUpdateSnapshotEnabled = false;
+    stockOcrUpdateSnapshotValue = "";
+    stockOcrUpdateMessage = "";
+    stockOcrUpdateError = "";
+    app.replaceChildren();
+
+    callback();
+  } finally {
+    appData = previousData;
+    stockOcrUpdateAccountId = previousState.accountId;
+    stockOcrUpdateTargetDate = previousState.targetDate;
+    stockOcrUpdatePasteText = previousState.pasteText;
+    stockOcrUpdateCards = previousState.cards;
+    stockOcrUpdateComparison = previousState.comparison;
+    stockOcrUpdateSnapshotEnabled = previousState.snapshotEnabled;
+    stockOcrUpdateSnapshotValue = previousState.snapshotValue;
+    stockOcrUpdateMessage = previousState.message;
+    stockOcrUpdateError = previousState.error;
+    app.replaceChildren(...previousChildren);
+  }
+}
+
+function makeStockOcrRenderCardTest(overrides = {}) {
+  return {
+    name:"架空テストファンド",
+    wrapper:"NISAつみたて",
+    kind:"投信",
+    value:60000,
+    pnl:-10000,
+    costBasis:70000,
+    costBasisSource:"value-minus-pnl",
+    quantity:null,
+    status:"recognized",
+    selected:true,
+    duplicate:false,
+    batchDuplicate:false,
+    manualConfirmed:true,
+    reasons:[],
+    comparison:"cost-decrease",
+    costDifference:-30000,
+    wrapperWarning:false,
+    similarNames:[],
+    quantityDifference:null,
+    safeLines:[],
+    ...overrides
+  };
+}
+
+function registerStockOcrRenderTests(context) {
+  const {assert,runTest} = context;
+
+  runTest("S11b描画①：月次更新画面の基本表示",() => {
+    const data = createInitialData();
+
+    withStockOcrRenderStateTest(data,() => {
+      renderStockOcrUpdate();
+
+      assert(app.textContent.includes("株式の月次更新"),
+        "画面の見出しがありません。");
+      assert(app.textContent.includes("解析・比較だけでは保存されません"),
+        "解析・比較時の説明がありません。");
+      assert(app.querySelector("#stock-ocr-account") !== null,
+        "口座選択欄がありません。");
+      assert(app.querySelector("#stock-ocr-target-date") !== null,
+        "対象日の入力欄がありません。");
+      assert(app.querySelector("#stock-ocr-paste") !== null,
+        "OCRテキスト欄がありません。");
+      assert(app.querySelector('[data-action="stock-ocr-parse"]') !== null,
+        "解析ボタンがありません。");
+      assert(app.querySelector('[data-action="stock-ocr-clear"]') !== null,
+        "消去ボタンがありません。");
+
+      const accountSelect = app.querySelector("#stock-ocr-account");
+      assert(
+        accountSelect.options.length === STOCK_OCR_RULES.length + 1,
+        "ルールのある口座だけが選択肢に表示されていません。"
+      );
+    });
+  });
+
+  runTest("S11b描画②：商品カードの項目と計算値表示",() => {
+    const card = makeStockOcrRenderCardTest();
+    const section = stockOcrUpdateRenderCard(card,0);
+
+    assert(section.textContent.includes(card.name),
+      "商品名が表示されていません。");
+    assert(section.textContent.includes("認識・確定済み"),
+      "認識済みの状態が表示されていません。");
+    assert(section.textContent.includes("取得額：計算値"),
+      "取得額の計算値表示がありません。");
+
+    for (const field of [
+      "name","value","pnl","costBasis","quantity"
+    ]) {
+      assert(section.querySelector(
+        '[name="' + field + '"]'
+      ) !== null,field + " の入力欄がありません。");
+    }
+
+    assert(section.querySelector('[name="wrapper"]') !== null,
+      "wrapperの選択欄がありません。");
+    assert(section.querySelector('[name="kind"]') !== null,
+      "種別の選択欄がありません。");
+
+    const valueInput = section.querySelector('[name="value"]');
+    assert(valueInput.inputMode === "decimal",
+      "評価額の入力欄が数字キーボード設定ではありません。");
+
+    const checkbox = section.querySelector(
+      'input[type="checkbox"]'
+    );
+    assert(checkbox.checked,
+      "保存対象の初期状態がオンではありません。");
+  });
+
+  runTest("S11b描画③：消失商品と合計差の警告",() => {
+    withStockOcrRenderStateTest(createInitialData(),() => {
+      stockOcrUpdateComparison = {
+        previousDate:"2026-10-31",
+        missingHoldings:[
+          {name:"架空の過去商品",wrapper:"特定"}
+        ],
+        holdingsTotal:950000,
+        accountValue:1000001,
+        difference:50001,
+        differenceWarning:true
+      };
+
+      stockOcrUpdateRenderComparison();
+
+      assert(app.textContent.includes("今回出ていません"),
+        "消失商品の見出しがありません。");
+      assert(app.textContent.includes("架空の過去商品"),
+        "消失商品の商品名がありません。");
+      assert(app.textContent.includes("削除・保存しません"),
+        "消失商品を削除・保存しない説明がありません。");
+      assert(app.textContent.includes("50,001"),
+        "商品別合計との差額が表示されていません。");
+      assert(app.textContent.includes("5%を超えています"),
+        "合計差の警告がありません。");
+    });
+  });
+
+  runTest("S11b描画④：口座全体履歴と保存件数",() => {
+    withStockOcrRenderStateTest(createInitialData(),() => {
+      stockOcrUpdateCards = [
+        makeStockOcrRenderCardTest()
+      ];
+
+      renderStockOcrUpdate();
+
+      const checkbox = app.querySelector(
+        "#stock-ocr-snapshot-enabled"
+      );
+      const valueInput = app.querySelector(
+        "#stock-ocr-snapshot-value"
+      );
+      const saveButton = app.querySelector(
+        '[data-action="stock-ocr-save"]'
+      );
+
+      assert(checkbox !== null,
+        "口座全体履歴のチェック欄がありません。");
+      assert(!checkbox.checked,
+        "口座全体履歴の初期状態がオフではありません。");
+      assert(valueInput !== null,
+        "口座全体の評価額入力欄がありません。");
+      assert(saveButton !== null,
+        "保存ボタンがありません。");
+      assert(saveButton.textContent === "保存（1件）",
+        "保存対象件数の表示が一致しません。");
+      assert(!saveButton.disabled,
+        "確定済みカードがあるのに保存ボタンが無効です。");
+    });
+  });
+
+  runTest("S11b描画⑤：株式以外の口座を選択肢に含めない",() => {
+    const data = createInitialData();
+    const stockAccount = data.accounts.find(account =>
+      account.category === "stock"
+    );
+
+    assert(stockAccount !== undefined,
+      "テスト用の株式口座がありません。");
+
+    data.accounts.push({
+      ...stockAccount,
+      id:"fictional-non-stock-account",
+      category:"bank",
+      type:"bank"
+    });
+
+    withStockOcrRenderStateTest(data,() => {
+      const accounts = stockOcrUpdateGetAccounts();
+
+      assert(!accounts.some(account =>
+        account.id === "fictional-non-stock-account"
+      ),"株式以外の口座が選択肢に含まれています。");
+    });
+  });
+
+  runTest("S11b描画⑥：入力文字列をHTMLとして解釈しない",() => {
+    const unsafeText = '<img src=x onerror="alert(1)">';
+
+    const section = stockOcrUpdateRenderCard(
+      makeStockOcrRenderCardTest({
+        name:unsafeText,
+        safeLines:[
+          {
+            lineNumber:1,
+            text:unsafeText
+          }
+        ]
+      }),
+      0
+    );
+
+    assert(section.querySelector("img") === null,
+      "商品名がHTML要素として生成されています。");
+    assert(section.textContent.includes(unsafeText),
+      "商品名が文字列として表示されていません。");
+    assert(section.querySelector("details") !== null,
+      "伏せ字処理済みOCR行の表示欄がありません。");
+  });
+
+  runTest("S11b描画⑦：8桁以上の連続数字を伏せ字にする",() => {
+    const masked = stockOcrMaskStock("12345678");
+
+    assert(masked === "●●●●●●●●",
+      "8桁の連続数字が伏せ字になっていません。");
+  });
+
+  runTest("S11b描画⑧：口座データが空でも画面を描画できる",() => {
+    const data = createInitialData();
+    data.accounts = [];
+
+    withStockOcrRenderStateTest(data,() => {
+      renderStockOcrUpdate();
+
+      const accountSelect = app.querySelector("#stock-ocr-account");
+      assert(accountSelect !== null,
+        "口座データが空のとき、口座選択欄がありません。");
+      assert(accountSelect.options.length === 1,
+        "口座データが空なのに選択肢があります。");
+      assert(app.textContent.includes("株式の月次更新"),
+        "口座データが空のとき、画面が描画されていません。");
+    });
+  });
+}
