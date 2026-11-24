@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE_NAME = "pam2-s11b-v1";
+const CACHE_NAME = "pam2-s11b-v2";
 const APP_FILES = [
   "./index.html",
   "./style.css",
@@ -32,6 +32,8 @@ const APP_FILES = [
   "./js/calc-ocr-stock-cards.js",
   "./js/calc-ocr-stock-parse.js",
   "./js/ocr-rules-stock.js",
+  "./js/calc-ocr-stock-compare.js",
+  "./js/calc-ocr-stock-save.js",
   "./js/calc-history-edit.js",
   "./js/calc-chart.js",
   "./js/calc-salecheck.js",
@@ -87,6 +89,7 @@ const APP_FILES = [
   "./js/tests-ocr.js",
   "./js/tests-bulk-ocr.js",
   "./js/tests-ocr-stock.js",
+  "./js/tests-ocr-stock-compare.js",
   "./js/tests-ocr-stock-data.js",
   "./js/tests-contrib.js",
   "./js/tests-contrib-render.js",
