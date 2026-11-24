@@ -72,11 +72,23 @@ function makeStockOcrRenderCardTest(overrides = {}) {
   };
 }
 
+function makeStockOcrRenderTestData(makeAccount) {
+  return {
+    accounts:[
+      makeAccount("stock-ocr-render-rakuten","楽天証券","securities","stock"),
+      makeAccount("stock-ocr-render-ideco","iDeCo","ideco","stock"),
+      makeAccount("stock-ocr-render-dc","企業型DC","dc","stock")
+    ],
+    snapshots:[],
+    holdings:[]
+  };
+}
+
 function registerStockOcrRenderTests(context) {
-  const {assert,runTest} = context;
+  const {assert,runTest,makeAccount} = context;
 
   runTest("S11b描画①：月次更新画面の基本表示",() => {
-    const data = createInitialData();
+    const data = makeStockOcrRenderTestData(makeAccount);
 
     withStockOcrRenderStateTest(data,() => {
       renderStockOcrUpdate();
@@ -140,7 +152,7 @@ function registerStockOcrRenderTests(context) {
   });
 
   runTest("S11b描画③：消失商品と合計差の警告",() => {
-    withStockOcrRenderStateTest(createInitialData(),() => {
+    withStockOcrRenderStateTest(makeStockOcrRenderTestData(makeAccount),() => {
       stockOcrUpdateComparison = {
         previousDate:"2026-10-31",
         missingHoldings:[
@@ -168,7 +180,7 @@ function registerStockOcrRenderTests(context) {
   });
 
   runTest("S11b描画④：口座全体履歴と保存件数",() => {
-    withStockOcrRenderStateTest(createInitialData(),() => {
+    withStockOcrRenderStateTest(makeStockOcrRenderTestData(makeAccount),() => {
       stockOcrUpdateCards = [
         makeStockOcrRenderCardTest()
       ];
@@ -201,7 +213,7 @@ function registerStockOcrRenderTests(context) {
   });
 
   runTest("S11b描画⑤：株式以外の口座を選択肢に含めない",() => {
-    const data = createInitialData();
+    const data = makeStockOcrRenderTestData(makeAccount);
     const stockAccount = data.accounts.find(account =>
       account.category === "stock"
     );
@@ -257,7 +269,7 @@ function registerStockOcrRenderTests(context) {
   });
 
   runTest("S11b描画⑧：口座データが空でも画面を描画できる",() => {
-    const data = createInitialData();
+    const data = makeStockOcrRenderTestData(makeAccount);
     data.accounts = [];
 
     withStockOcrRenderStateTest(data,() => {
