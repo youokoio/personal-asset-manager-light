@@ -3,62 +3,113 @@
 
 /*
  * 株式口座OCRルール
- * 口座ごとに別の定義を持ち、別名表・ラベルを共有しない。
+ * 口座ごとに独立したルールを定義する。
+ * 共通の別名表・口座別ラベルは作らない。
  */
 
 const STOCK_OCR_RULES = [
   {
     ruleId:"rakuten-securities",
     accountNames:["楽天証券"],
+    ruleVersion:"S11b-v2",
+    note:"楽天証券の保有商品詳細。商品区分の見出しごとに商品カードを切り出す。",
     formats:[
       {
         formatId:"rakuten-holdings-list",
         identify:{
-          all:["保有商品詳細","時価評価額"],
+          all:["保有商品詳細（すべて）","時価評価額","評価損益（円・率）"],
           none:["● 外国株式","取得価額累計"]
         },
+        currency:"JPY_ONLY",
         cardStyle:{
+          type:"repeated-category-header",
+          sectionStart:"保有商品詳細（すべて）",
           startLabels:["国内株式","米国株式","投資信託"],
-          endLabels:["国内株式","米国株式","投資信託"]
+          endLabels:["国内株式","米国株式","投資信託"],
+          nextCardStartsWithCategory:true,
+          requireProductName:true,
+          requireBoundary:true
         },
         wrapperAliases:{
           "NISA成長投資枠":"NISA成長",
           "NISA成長投資":"NISA成長",
+          "NISA成長":"NISA成長",
           "NISAつみたて投資枠":"NISAつみたて",
+          "NISAつみたて投資":"NISAつみたて",
+          "NISAつみたて":"NISAつみたて",
           "つみたてNISA":"旧つみたてNISA",
+          "旧つみたてNISA":"旧つみたてNISA",
           "特定":"特定"
         },
-        wrapperPattern:"^(?:NISA成長投資枠|NISA成長投資|NISAつみたて投資枠|つみたてNISA|特定)$",
+        wrapperPattern:"^(?:NISA成長投資枠|NISA成長投資|NISA成長|NISAつみたて投資枠|NISAつみたて投資|NISAつみたて|つみたてNISA|旧つみたてNISA|特定)$",
         wrapperFixed:null,
         fields:{
+          name:{
+            labels:[],
+            required:true,
+            source:"product-name-line"
+          },
+          kind:{
+            labels:["国内株式","米国株式","投資信託"],
+            required:true,
+            source:"category-heading"
+          },
+          wrapper:{
+            labels:[
+              "NISA成長投資枠",
+              "NISA成長投資",
+              "NISAつみたて投資枠",
+              "NISAつみたて投資",
+              "つみたてNISA",
+              "特定"
+            ],
+            required:true,
+            source:"exact-alias"
+          },
           value:{
             labels:["時価評価額"],
-            required:true
+            required:true,
+            source:"unsigned-yen-amount"
           },
           pnl:{
-            labels:["評価損益"],
-            required:false
-          },
-          quantity:{
-            labels:["保有数量"],
-            required:false
+            labels:["評価損益（円・率）"],
+            required:false,
+            source:"signed-or-zero-yen-amount"
           },
           costBasis:{
             labels:["取得額","取得金額"],
-            required:false
+            required:false,
+            source:"explicit-yen-amount"
+          },
+          quantity:{
+            labels:["保有数量"],
+            required:false,
+            source:"explicit-quantity-label"
+          },
+          rate:{
+            labels:["評価損益（円・率）"],
+            required:false,
+            source:"percent"
           }
+        },
+        amountFormats:{
+          value:"^[0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]+)?円$",
+          pnl:"^[+＋\\-−－]?[0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]+)?円$",
+          rate:"[+＋\\-−－]?[0-9]+(?:\\.[0-9]+)?\\s*[%％]"
         },
         kindByHeading:{
           "国内株式":"国内株",
           "米国株式":"その他",
           "投資信託":"投信"
         },
-        codePattern:"\\(([A-Za-z0-9.]+)\\)$",
+        codePattern:"^([A-Za-z0-9.]+)$",
         codeFormat:" (",
+        codeParentheses:"ascii",
         negativeMarks:["−","－","-"],
         nameStopLabels:[
           "時価評価額",
           "評価損益",
+          "評価損益（円・率）",
           "保有数量",
           "平均取得単価",
           "基準価額",
@@ -75,16 +126,23 @@ const STOCK_OCR_RULES = [
           "詳細",
           "グラフで見る",
           "現在の評価額合計",
-          "前日比"
+          "前日比",
+          "参考為替レート",
+          "楽天証券について",
+          "Rakuten Securities, Inc."
         ],
         nameLinePattern:"^[^0-9+−－-].+$",
-        fundNamePattern:"インデックス|ファンド|投信"
+        fundNamePattern:"インデックス|ファンド|投信",
+        ambiguousAmountHandling:"needs-confirmation",
+        requireValueAndPnlIndependently:true
       }
     ]
   },
   {
     ruleId:"ideco",
     accountNames:["iDeCo"],
+    ruleVersion:"S11b-v2",
+    note:"iDeCoの外国株式商品。商品見出しが1件でも、評価額等が欠けていれば要確認とする。",
     formats:[
       {
         formatId:"ideco-foreign-equity",
@@ -92,30 +150,65 @@ const STOCK_OCR_RULES = [
           all:["● 外国株式","時価評価額","評価損益"],
           none:["取得価額累計","元本確保型"]
         },
+        currency:"JPY_ONLY",
         cardStyle:{
+          type:"single-heading-card",
+          sectionStart:"● 外国株式",
           startLabels:["● 外国株式"],
-          endLabels:["● 外国株式"]
+          endLabels:["● 外国株式"],
+          requireProductName:true,
+          requireBoundary:true,
+          emptyValueCard:"needs-confirmation"
         },
         wrapperAliases:{},
         wrapperPattern:null,
         wrapperFixed:"iDeCo",
         fields:{
+          name:{
+            labels:[],
+            required:true,
+            source:"product-name-line"
+          },
+          kind:{
+            labels:["● 外国株式"],
+            required:true,
+            source:"category-heading"
+          },
+          wrapper:{
+            labels:[],
+            required:true,
+            source:"account-fixed"
+          },
           value:{
             labels:["時価評価額"],
-            required:true
+            required:true,
+            source:"labeled-yen-amount"
           },
           pnl:{
             labels:["評価損益"],
-            required:false
-          },
-          quantity:{
-            labels:["保有数量"],
-            required:false
+            required:false,
+            source:"labeled-yen-amount"
           },
           costBasis:{
             labels:["取得額","取得金額"],
-            required:false
+            required:false,
+            source:"explicit-yen-amount"
+          },
+          quantity:{
+            labels:["保有数量"],
+            required:false,
+            source:"explicit-quantity-label"
+          },
+          rate:{
+            labels:["評価損益"],
+            required:false,
+            source:"percent"
           }
+        },
+        amountFormats:{
+          value:"^[0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]+)?円$",
+          pnl:"^[+＋\\-−－]?[0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]+)?円$",
+          rate:"[+＋\\-−－]?[0-9]+(?:\\.[0-9]+)?\\s*[%％]"
         },
         kindByHeading:{
           "● 外国株式":"投信"
@@ -138,13 +231,21 @@ const STOCK_OCR_RULES = [
           "V"
         ],
         nameLinePattern:"^[^0-9+−－-].+$",
-        fundNamePattern:"ファンド|インデックス|投信"
+        fundNamePattern:"ファンド|インデックス|投信",
+        amountLayout:"labels-before-values",
+        amountLabelOrder:["value","pnl"],
+        allowMissingValue:false,
+        allowMissingPnl:false,
+        invalidQuantityUnits:["日"],
+        ambiguousAmountHandling:"needs-confirmation"
       }
     ]
   },
   {
     ruleId:"corporate-dc",
     accountNames:["企業型DC"],
+    ruleVersion:"S11b-v2",
+    note:"企業型DC。元本確保型と投資信託の区分見出しを使い、商品名・コード・項目ラベルでカードを分離する。",
     formats:[
       {
         formatId:"corporate-dc-holdings",
@@ -152,37 +253,76 @@ const STOCK_OCR_RULES = [
           all:["元本確保型","評価額","取得価額累計"],
           none:["● 外国株式"]
         },
+        currency:"JPY_ONLY",
         cardStyle:{
+          type:"category-and-product-boundary",
+          sectionStartLabels:["元本確保型","投資信託"],
           startLabels:["元本確保型","投資信託"],
-          endLabels:["元本確保型","投資信託"]
+          endLabels:["元本確保型","投資信託"],
+          productBoundaryByCode:true,
+          productBoundaryByRepeatedFieldLabels:true,
+          requireProductName:true,
+          requireBoundary:true,
+          ambiguousBoundary:"needs-confirmation"
         },
         wrapperAliases:{},
         wrapperPattern:null,
         wrapperFixed:"企業型DC",
         fields:{
+          name:{
+            labels:[],
+            required:true,
+            source:"product-name-and-code"
+          },
+          kind:{
+            labels:["元本確保型","投資信託"],
+            required:true,
+            source:"category-heading"
+          },
+          wrapper:{
+            labels:[],
+            required:true,
+            source:"account-fixed"
+          },
           value:{
             labels:["評価額"],
-            required:true
-          },
-          pnl:{
-            labels:["評価損益"],
-            required:false
-          },
-          quantity:{
-            labels:["保有数量"],
-            required:false
+            required:true,
+            source:"labels-before-values"
           },
           costBasis:{
             labels:["取得価額累計"],
-            required:false
+            required:false,
+            source:"labels-before-values"
+          },
+          pnl:{
+            labels:["評価損益"],
+            required:false,
+            source:"labels-before-values"
+          },
+          quantity:{
+            labels:["保有数量"],
+            required:false,
+            source:"explicit-quantity-label"
+          },
+          rate:{
+            labels:[],
+            required:false,
+            source:"percent"
           }
+        },
+        amountFormats:{
+          value:"^[0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]+)?円$",
+          costBasis:"^[0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]+)?円$",
+          pnl:"^[+＋\\-−－]?[0-9]{1,3}(?:,[0-9]{3})*(?:\\.[0-9]+)?円$",
+          rate:"[+＋\\-−－]?[0-9]+(?:\\.[0-9]+)?\\s*[%％]"
         },
         kindByHeading:{
           "元本確保型":"元本確保型",
           "投資信託":"投信"
         },
-        codePattern:"\\(([0-9]{5})\\)$",
+        codePattern:"^\\(([0-9]{5})\\)$",
         codeFormat:" (",
+        codeParentheses:"ascii",
         negativeMarks:["−","－","-"],
         nameStopLabels:[
           "評価額",
@@ -191,13 +331,22 @@ const STOCK_OCR_RULES = [
           "保有数量"
         ],
         principalProtectedLabel:"元本確保型",
+        principalProtectedTwoValuesEqualAllowed:true,
+        principalProtectedEqualityRule:{
+          valueEqualsCostBasis:true,
+          pnl:null
+        },
         ignoreLines:[
           "評価額",
           "取得価額累計",
           "評価損益"
         ],
         nameLinePattern:"^[^0-9+−－-].+$",
-        fundNamePattern:"ファンド|インデックス|投信"
+        fundNamePattern:"ファンド|インデックス|投信",
+        amountLayout:"labels-before-values",
+        amountLabelOrder:["value","costBasis","pnl"],
+        insufficientValues:"needs-confirmation",
+        ambiguousAmountHandling:"needs-confirmation"
       }
     ]
   }
