@@ -39,6 +39,14 @@ function stockOcrMakeCompareCardTest(
   };
 }
 
+function stockOcrMakeCompareDataTest(holdings,snapshots = []) {
+  return {
+    accounts:[{id:"account-a",category:"stock",name:"架空証券口座"}],
+    holdings,
+    snapshots
+  };
+}
+
 function stockOcrWithFakeStorageTest(initialRaw,callback) {
   const originalStorage = globalThis.localStorage;
   const values = new Map();
@@ -79,12 +87,12 @@ function registerStockOcrComparisonTests(context) {
     );
 
     const result = stockOcrCompareCardsStock(
-      [card],[previous],[],"account-a","2026-11-30"
+      stockOcrMakeCompareDataTest([previous]),"account-a",[card],"2026-11-30"
     );
 
-    assert(result.cards[0].costBasisChange === -30000,
+    assert(result.cards[0].costDifference === -30000,
       "取得額の差が-30,000円になっていません。");
-    assert(result.cards[0].changeType === "decrease",
+    assert(result.cards[0].comparison === "cost-decrease",
       "取得額の減少として判定されていません。");
   });
 
@@ -98,12 +106,12 @@ function registerStockOcrComparisonTests(context) {
     );
 
     const result = stockOcrCompareCardsStock(
-      [card],[previous],[],"account-a","2026-11-30"
+      stockOcrMakeCompareDataTest([previous]),"account-a",[card],"2026-11-30"
     );
 
-    assert(result.cards[0].changeType === "value-only",
+    assert(result.cards[0].comparison === "value-change",
       "取得額が同じ場合に評価額のみの変化になっていません。");
-    assert(result.cards[0].quantityChange === 2,
+    assert(result.cards[0].quantityDifference === 2,
       "数量差が+2になっていません。");
   });
 
@@ -117,14 +125,12 @@ function registerStockOcrComparisonTests(context) {
     );
 
     const result = stockOcrCompareCardsStock(
-      [card],[previous],[],"account-a","2026-11-30"
+      stockOcrMakeCompareDataTest([previous]),"account-a",[card],"2026-11-30"
     );
 
-    assert(result.cards[0].costBasisChange === 60000,
+    assert(result.cards[0].costDifference === 60000,
       "取得額の増加が60,000円になっていません。");
-    assert(result.cards[0].costBasisChangeRate === 60,
-      "取得額の増加率が60%になっていません。");
-    assert(result.cards[0].warnings.length > 0,
+    assert(result.cards[0].wrapperWarning === true,
       "取得額が50%を超えて増加した警告がありません。");
   });
 
@@ -138,12 +144,12 @@ function registerStockOcrComparisonTests(context) {
     );
 
     const result = stockOcrCompareCardsStock(
-      [card],[previous],[],"account-a","2026-11-30"
+      stockOcrMakeCompareDataTest([previous]),"account-a",[card],"2026-11-30"
     );
 
-    assert(result.cards[0].changeType === "unavailable",
+    assert(result.cards[0].comparison === "unavailable",
       "取得額が不明な場合に比較不能になっていません。");
-    assert(result.cards[0].costBasisChange === null,
+    assert(result.cards[0].costDifference === null,
       "取得額が不明なのに差額が計算されています。");
   });
 
@@ -158,21 +164,25 @@ function registerStockOcrComparisonTests(context) {
         "特定","2026-10-31",50000,50000,0
       )
     ];
-    const card = stockOcrMakeCompareCardTest(
-      "架空インデックスファンド改","特定",110000,100000,10000
+    const exactCard = stockOcrMakeCompareCardTest(
+      "架空インデックスファンド","特定",110000,100000,10000
+    );
+    const similarCard = stockOcrMakeCompareCardTest(
+      "架空バランスファンド改","特定",60000,60000,0
     );
 
     const result = stockOcrCompareCardsStock(
-      [card],previous,[],"account-a","2026-11-30"
+      stockOcrMakeCompareDataTest(previous),"account-a",
+      [exactCard,similarCard],"2026-11-30"
     );
 
-    assert(result.cards[0].isNew === true,
+    assert(result.cards[1].comparison === "new",
       "一致する商品がないカードが新商品として判定されていません。");
-    assert(result.cards[0].similarCandidates.length > 0,
+    assert(result.cards[1].similarNames.length > 0,
       "類似商品名の候補が表示されていません。");
-    assert(result.missingProducts.length === 1,
+    assert(result.missingHoldings.length === 1,
       "今回のカードにない過去商品が1件検出されていません。");
-    assert(result.missingProducts[0].name === "架空バランスファンド",
+    assert(result.missingHoldings[0].name === "架空バランスファンド",
       "消失候補の商品名が一致しません。");
   });
 
@@ -192,14 +202,15 @@ function registerStockOcrComparisonTests(context) {
     }];
 
     const result = stockOcrCompareCardsStock(
-      cards,[],snapshots,"account-a","2026-11-30"
+      stockOcrMakeCompareDataTest([],snapshots),"account-a",
+      cards,"2026-11-30"
     );
 
     assert(result.holdingsTotal === 950000,
       "商品別合計が950,000円になっていません。");
-    assert(result.accountDifference === 50000,
+    assert(result.difference === 50000,
       "口座全体との差額が50,000円になっていません。");
-    assert(result.accountDifferenceWarning === false,
+    assert(result.differenceWarning === false,
       "差額5%を超えていないのに警告されています。");
   });
 
@@ -219,12 +230,13 @@ function registerStockOcrComparisonTests(context) {
     }];
 
     const result = stockOcrCompareCardsStock(
-      cards,[],snapshots,"account-a","2026-11-30"
+      stockOcrMakeCompareDataTest([],snapshots),"account-a",
+      cards,"2026-11-30"
     );
 
-    assert(result.accountDifference === 50001,
+    assert(result.difference === 50001,
       "口座全体との差額が50,001円になっていません。");
-    assert(result.accountDifferenceWarning === true,
+    assert(result.differenceWarning === true,
       "差額5%超の警告がありません。");
   });
 
