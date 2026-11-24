@@ -199,6 +199,28 @@ function renderHoldingsImportPreview(preview,container) {
 
 function renderHoldingsImportForm(account) {
   const card = el("section","card");
+
+  const supportsStockOcr = Array.isArray(STOCK_OCR_RULES) &&
+    STOCK_OCR_RULES.some(rule =>
+      Array.isArray(rule.accountNames) &&
+      rule.accountNames.includes(account.name)
+    );
+
+  if (supportsStockOcr) {
+    const ocrButton = makeButton(
+      "株式の月次更新（OCR）",
+      "stock-ocr-open",
+      "secondary"
+    );
+    ocrButton.addEventListener("click",event => {
+      event.preventDefault();
+      openStockOcrUpdate(account.id);
+      render();
+      window.scrollTo(0,0);
+    });
+    card.appendChild(ocrButton);
+  }
+
   card.appendChild(el("h3","","商品別保有の一括取込"));
 
   card.appendChild(el(
