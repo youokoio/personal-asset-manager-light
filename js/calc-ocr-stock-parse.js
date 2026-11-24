@@ -1,3 +1,65 @@
+
+function stockOcrFindGroupedAmountsStock(lines,format,requiredCount) {
+  const order = Array.isArray(format.amountLabelOrder)
+    ? format.amountLabelOrder
+    : [];
+  if (order.length !== requiredCount) {
+    return {status:"invalid-rule",tokens:[]};
+  }
+
+  let lastLabelIndex = -1;
+  for (const fieldName of order) {
+    const field = format.fields && format.fields[fieldName];
+    const labels = field && Array.isArray(field.labels)
+      ? field.labels.map(stockOcrNormalizeTextStock)
+      : [];
+    const labelIndex = lines.findIndex(line =>
+      labels.includes(stockOcrNormalizeTextStock(line.text))
+    );
+    if (labelIndex < 0) {
+      return {status:"missing-label",tokens:[]};
+    }
+    lastLabelIndex = Math.max(lastLabelIndex,labelIndex);
+  }
+
+  const yenTokens = [];
+  for (let index = lastLabelIndex + 1; index < lines.length; index += 1) {
+    const text = stockOcrNormalizeTextStock(lines[index].text);
+    const match = text.match(
+      /^([+＋\-−－]?\s*(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?\s*円)/
+    );
+    if (!match) continue;
+
+    const parsed = normalizeOcrAmount(
+      match[1],format.negativeMarks || []
+    );
+    yenTokens.push({
+      value:parsed && !parsed.error ? parsed.value : null,
+      status:parsed && !parsed.error ? "recognized" : "unreadable",
+      original:stockOcrMaskStock(match[1]),
+      lineNumber:lines[index].lineNumber
+    });
+  }
+
+  if (yenTokens.length !== 4) {
+    return {
+      status:yenTokens.length < 4 ? "insufficient" : "ambiguous",
+      tokens:[]
+    };
+  }
+
+  const selected = yenTokens.slice(0,requiredCount);
+  if (selected.some(token =>
+    token.status !== "recognized" ||
+    typeof token.value !== "number" ||
+    !Number.isFinite(token.value)
+  )) {
+    return {status:"unreadable",tokens:selected};
+  }
+
+  return {status:"recognized",tokens:selected};
+}
+
 function stockOcrParseRakutenCardStock(card,format) {
   const lines = card.lines;
   const reasons = [];
@@ -112,21 +174,50 @@ function stockOcrParseIdecoCardStock(card,format) {
   let quantity = stockOcrFieldStock(null,"missing");
 
   if (quantityLabelIndex >= 0) {
-    const quantityLine = lines[quantityLabelIndex + 1];
-    const quantityText = quantityLine
-      ? stockOcrNormalizeTextStock(quantityLine.text)
-      : "";
-    if (/^\d+(?:,\d{3})*(?:\.\d+)?$/.test(quantityText)) {
-      quantity = stockOcrFieldStock(
-        Number(quantityText.replace(/,/g,"")),
-        "recognized",
-        stockOcrMaskStock(quantityText),
-        "label"
+    const stopLabels = (format.nameStopLabels || [])
+      .map(stockOcrNormalizeTextStock);
+    const lastValueLabelIndex = lines.reduce((last,line,index) =>
+      stopLabels.includes(stockOcrNormalizeTextStock(line.text))
+        ? Math.max(last,index)
+        : last,
+      quantityLabelIndex
+    );
+    const quantityLines = lines.slice(lastValueLabelIndex + 1);
+    const invalidUnits = format.invalidQuantityUnits || [];
+    const quantityCandidates = quantityLines
+      .map(line => ({
+        line,
+        text:stockOcrNormalizeTextStock(line.text)
+      }))
+      .filter(item =>
+        /^\d+(?:,\d{3})*(?:\.\d+)?(?:口)?$/.test(item.text) ||
+        invalidUnits.some(unit => item.text.endsWith(unit))
       );
-    } else {
+
+    if (quantityCandidates.length === 1) {
+      const candidate = quantityCandidates[0];
+      const quantityMatch = candidate.text.match(
+        /^(\d+(?:,\d{3})*(?:\.\d+)?)(?:口)?$/
+      );
+      if (quantityMatch) {
+        quantity = stockOcrFieldStock(
+          Number(quantityMatch[1].replace(/,/g,"")),
+          "recognized",
+          stockOcrMaskStock(candidate.text),
+          "label"
+        );
+      } else {
+        quantity = stockOcrFieldStock(
+          null,"unreadable",
+          stockOcrMaskStock(candidate.text),
+          "label"
+        );
+        reasons.push("保有数量の表示を確認してください。");
+      }
+    } else if (quantityCandidates.length > 1) {
       quantity = stockOcrFieldStock(
-        null,"unreadable",
-        stockOcrMaskStock(quantityText),
+        null,"multiple",
+        quantityCandidates.map(item => stockOcrMaskStock(item.text)).join(" / "),
         "label"
       );
       reasons.push("保有数量の表示を確認してください。");
