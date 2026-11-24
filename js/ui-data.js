@@ -227,6 +227,29 @@ function runDataSelfDiagnosis(data,serviceWorkerRegistered) {
     );
   }
 
+  try {
+    const stockOcr = runStockOcrSelfDiagnosis(data);
+    const detailParts = stockOcr.errors.length > 0
+      ? stockOcr.errors
+      : ["株式OCRルールの整合に問題はありません。"];
+
+    if (stockOcr.warnings && stockOcr.warnings.length > 0) {
+      detailParts.push("注意：" + stockOcr.warnings.join(" "));
+    }
+
+    add(
+      "株式OCRルールの整合",
+      stockOcr.errors.length === 0 ? "ok" : "ng",
+      detailParts.join(" ")
+    );
+  } catch (error) {
+    add(
+      "株式OCRルールの整合",
+      "ng",
+      error.message || "株式OCRルールの整合を確認できません。"
+    );
+  }
+
   const ngCount = items.filter(item => item.status === "ng").length;
   return {items,ngCount,allOk:ngCount === 0};
 }
