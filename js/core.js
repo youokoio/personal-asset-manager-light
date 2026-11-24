@@ -2,8 +2,8 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S11b-v6";
-const SPEC_VERSION = "v1.22";
+const APP_VERSION = "S11bA-v1";
+const SPEC_VERSION = "v1.23";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 4;
 
@@ -352,6 +352,7 @@ function findContributionMonthOverlaps(contributions) {
 const HOLDING_KINDS = [
   "投信",
   "国内株",
+  "米国株",
   "元本確保型",
   "暗号資産",
   "その他"
