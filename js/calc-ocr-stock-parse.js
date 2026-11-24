@@ -256,6 +256,10 @@ function stockOcrParseDcCardStock(card,format) {
   let costBasis = stockOcrFieldStock(null,"missing");
   let pnl = stockOcrFieldStock(null,"missing");
 
+  if (isPrincipalProtected && tokens.length === 3) {
+    reasons.push("元本確保型の商品に評価損益が表示されています。内容を確認してください。");
+  }
+
   if (tokens.length === 3) {
     value = stockOcrFieldStock(
       tokens[0].value,tokens[0].status,tokens[0].original,"labels-before-values"
