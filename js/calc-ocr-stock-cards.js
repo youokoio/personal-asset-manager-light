@@ -56,25 +56,40 @@ function stockOcrSplitIdecoCardsStock(lines,format) {
 
 function stockOcrSplitDcCardsStock(lines,format) {
   const headings = format.cardStyle.startLabels || [];
-  const codeIndexes = [];
+  const codeRecords = [];
 
   for (let index = 0; index < lines.length; index += 1) {
     const text = stockOcrNormalizeTextStock(lines[index].text);
     const ascii = text.replace(/[（）]/g,match =>
       match === "（" ? "(" : ")"
     );
+    const embeddedMatch = ascii.match(/^(.*?)\(([0-9]{5})\)$/);
+
+    if (embeddedMatch && embeddedMatch[1].trim()) {
+      codeRecords.push({
+        nameIndex:index,
+        embeddedName:embeddedMatch[1].trim(),
+        code:embeddedMatch[2]
+      });
+      continue;
+    }
+
     if (/^\([0-9]{5}\)$/.test(ascii)) {
-      codeIndexes.push(index);
+      codeRecords.push({
+        nameIndex:index - 1,
+        embeddedName:null,
+        code:ascii.slice(1,-1)
+      });
     }
   }
 
   const cards = [];
 
-  for (let index = 0; index < codeIndexes.length; index += 1) {
-    const codeIndex = codeIndexes[index];
-    const nameIndex = codeIndex - 1;
-    const nextNameIndex = index + 1 < codeIndexes.length
-      ? codeIndexes[index + 1] - 1
+  for (let index = 0; index < codeRecords.length; index += 1) {
+    const record = codeRecords[index];
+    const nameIndex = record.nameIndex;
+    const nextNameIndex = index + 1 < codeRecords.length
+      ? codeRecords[index + 1].nameIndex
       : lines.length;
 
     if (nameIndex < 0 || nextNameIndex <= nameIndex) continue;
@@ -86,6 +101,19 @@ function stockOcrSplitDcCardsStock(lines,format) {
     }
 
     const cardLines = lines.slice(nameIndex,nextNameIndex);
+
+    if (record.embeddedName) {
+      const sourceLine = cardLines[0];
+      cardLines[0] = {
+        lineNumber:sourceLine.lineNumber,
+        text:record.embeddedName
+      };
+      cardLines.splice(1,0,{
+        lineNumber:sourceLine.lineNumber,
+        text:"(" + record.code + ")"
+      });
+    }
+
     if (heading) {
       cardLines.unshift({
         lineNumber:lines[Math.max(0,nameIndex - 1)].lineNumber,
