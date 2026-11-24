@@ -1,8 +1,9 @@
+
 "use strict";
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S11b-v3";
+const APP_VERSION = "S11b-v4";
 const SPEC_VERSION = "v1.22";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 4;
