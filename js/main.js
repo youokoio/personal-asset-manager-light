@@ -34,7 +34,7 @@ function render() {
   if (currentTab === "home") {
     renderDashboard();
     renderChartEntryButton();
-  } else if (["fx","stock","crypto","bank"].includes(currentTab)) {
+  } else if ([ "fx","stock","crypto","bank" ].includes(currentTab)) {
     if (selectedAccountId) {
       renderAccountDetail();
       renderAccountChartEntryButton();
@@ -57,6 +57,8 @@ function render() {
     renderBulkInput();
   } else if (currentTab === "loan") {
     renderLoanScreen();
+  } else if (currentTab === "stock-update") {
+    renderStockOcrUpdate();
   }
 }
 
@@ -148,6 +150,12 @@ headerMenu.addEventListener("click",event => {
     closeHeaderMenu();
     render();
     window.scrollTo(0,0);
+  } else if (button.dataset.menuAction === "open-stock-update") {
+    closeHeaderMenu();
+    openStockOcrUpdate(null);
+    showMessage("");
+    render();
+    window.scrollTo(0,0);
   }
 });
 
@@ -182,6 +190,10 @@ app.addEventListener("click",event => {
   if (action === "open-account") {
     selectedAccountId = id;
     render();
+  } else if (action === "open-stock-update-account") {
+    openStockOcrUpdate(id);
+    render();
+    window.scrollTo(0,0);
   } else if (action === "edit-snapshot") {
     editSnapshot(id);
   } else if (action === "delete-snapshot") {
@@ -422,6 +434,10 @@ async function runTestsAndRender() {
     "./js/tests-contrib-render.js",
     "./js/tests-salecheck.js",
     "./js/tests-salecheck-render.js",
+    "./js/tests-ocr-stock-data.js",
+    "./js/tests-ocr-stock.js",
+    "./js/tests-ocr-stock-compare.js",
+    "./js/tests-ocr-stock-render.js",
     "./js/tests.js"
   ];
 
