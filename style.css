@@ -1334,3 +1334,8 @@ button.chart-legend-button.chart-legend-hidden {
     grid-template-columns:1fr;
   }
 }
+
+/* ---------- S11a FX履歴編集入力 ---------- */
+.fx-history-cell-input {
+  font-size:16px;
+}
