@@ -1,3 +1,4 @@
+
 "use strict";
 
 /* ---------- S11b 株式OCRの比較・保存テスト ---------- */
@@ -48,29 +49,43 @@ function stockOcrMakeCompareDataTest(holdings,snapshots = []) {
 }
 
 function stockOcrWithFakeStorageTest(initialRaw,callback) {
-  const originalStorage = globalThis.localStorage;
+  const originalDescriptor =
+    Object.getOwnPropertyDescriptor(globalThis,"localStorage");
   const values = new Map();
 
   if (initialRaw !== null) {
     values.set(STORAGE_KEY,initialRaw);
   }
 
-  globalThis.localStorage = {
-    getItem(key) {
-      return values.has(key) ? values.get(key) : null;
-    },
-    setItem(key,value) {
-      values.set(key,String(value));
-    },
-    removeItem(key) {
-      values.delete(key);
+  Object.defineProperty(globalThis,"localStorage",{
+    configurable:true,
+    enumerable:originalDescriptor
+      ? originalDescriptor.enumerable
+      : true,
+    writable:true,
+    value:{
+      getItem(key) {
+        return values.has(key) ? values.get(key) : null;
+      },
+      setItem(key,value) {
+        values.set(key,String(value));
+      },
+      removeItem(key) {
+        values.delete(key);
+      }
     }
-  };
+  });
 
   try {
     return callback(values);
   } finally {
-    globalThis.localStorage = originalStorage;
+    if (originalDescriptor) {
+      Object.defineProperty(
+        globalThis,"localStorage",originalDescriptor
+      );
+    } else {
+      delete globalThis.localStorage;
+    }
   }
 }
 
