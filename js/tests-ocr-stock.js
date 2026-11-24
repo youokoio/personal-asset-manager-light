@@ -88,7 +88,7 @@ function registerStockOcrTests(context) {
     const domestic = result.cards[0];
     const fund = result.cards[1];
 
-    assert(domestic.name === "架空テクノロジー",
+    assert(domestic.name === "架空テクノロジー (1234)",
       "国内株式の商品名が一致しません。");
     assert(domestic.wrapper === "NISA成長",
       "NISA成長投資枠が正規化されていません。");
