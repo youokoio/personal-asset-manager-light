@@ -1,4 +1,3 @@
-
 "use strict";
 
 /*
@@ -11,13 +10,13 @@ const STOCK_OCR_RULES = [
   {
     ruleId:"rakuten-securities",
     accountNames:["楽天証券"],
-    ruleVersion:"S11b-v2",
+    ruleVersion:"S11b-v3",
     note:"楽天証券の保有商品詳細。商品区分の見出しごとに商品カードを切り出す。",
     formats:[
       {
         formatId:"rakuten-holdings-list",
         identify:{
-          all:["保有商品詳細（すべて）","時価評価額","評価損益（円・率）"],
+          all:["保有商品詳細（すべて）","時価評価額"],
           none:["● 外国株式","取得価額累計"]
         },
         currency:"JPY_ONLY",
@@ -141,13 +140,13 @@ const STOCK_OCR_RULES = [
   {
     ruleId:"ideco",
     accountNames:["iDeCo"],
-    ruleVersion:"S11b-v2",
+    ruleVersion:"S11b-v3",
     note:"iDeCoの外国株式商品。商品見出しが1件でも、評価額等が欠けていれば要確認とする。",
     formats:[
       {
         formatId:"ideco-foreign-equity",
         identify:{
-          all:["● 外国株式","時価評価額","評価損益"],
+          all:["● 外国株式"],
           none:["取得価額累計","元本確保型"]
         },
         currency:"JPY_ONLY",
@@ -244,13 +243,13 @@ const STOCK_OCR_RULES = [
   {
     ruleId:"corporate-dc",
     accountNames:["企業型DC"],
-    ruleVersion:"S11b-v2",
+    ruleVersion:"S11b-v3",
     note:"企業型DC。元本確保型と投資信託の区分見出しを使い、商品名・コード・項目ラベルでカードを分離する。",
     formats:[
       {
         formatId:"corporate-dc-holdings",
         identify:{
-          all:["元本確保型","評価額","取得価額累計"],
+          all:[],
           none:["● 外国株式"]
         },
         currency:"JPY_ONLY",
