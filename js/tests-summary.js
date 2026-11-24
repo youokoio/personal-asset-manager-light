@@ -509,7 +509,7 @@ function registerSummaryTests(context) {
     });
 
     const report = runDataSelfDiagnosis(data,true);
-    assert(report.items.length === 7,"診断項目が7件ではありません。");
+    assert(report.items.length === 8,"診断項目が8件ではありません。");
     assert(report.items.find(item => item.name === "積立・売却確認の整合").status === "ok",
       "S13aの積立・売却確認の整合が正常判定になりません。");
     assert(report.ngCount === 0,"正常データで診断NGが発生しました。");
