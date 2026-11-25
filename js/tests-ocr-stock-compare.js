@@ -293,32 +293,52 @@ function registerStockOcrComparisonTests(context) {
   runTest("S11b前回比較④：同日の保有記録を前回に含めない",() => {
     const holdings = [
       stockOcrMakeCompareHoldingTest(
+        "oldest","account-a","架空商品","特定",
+        "2026-09-30",50000,45000,5000
+      ),
+      stockOcrMakeCompareHoldingTest(
         "older","account-a","架空商品","特定",
         "2026-10-31",100000,90000,10000
       ),
       stockOcrMakeCompareHoldingTest(
+        "latest-a","account-a","架空商品A","特定",
+        "2026-11-10",100000,90000,10000
+      ),
+      stockOcrMakeCompareHoldingTest(
+        "latest-b","account-a","架空商品B","特定",
+        "2026-11-10",25000,20000,5000
+      ),
+      stockOcrMakeCompareHoldingTest(
         "same-day","account-a","架空商品","特定",
         "2026-11-19",200000,180000,20000
+      ),
+      stockOcrMakeCompareHoldingTest(
+        "other-account","account-b","別口座商品","特定",
+        "2026-11-10",900000,800000,100000
       )
     ];
     const cards = [
       stockOcrMakeCompareCardTest(
-        "架空商品","特定",150000,140000,10000
+        "架空商品","特定",175000,165000,10000
       )
     ];
+    const data = stockOcrMakeCompareDataTest(holdings);
+    data.accounts.push({
+      id:"account-b",category:"stock",name:"別の架空口座"
+    });
     const result = stockOcrCalculateHoldingsTotalComparisonStock(
-      stockOcrMakeCompareDataTest(holdings),
+      data,
       "account-a",
       cards,
       "2026-11-19"
     );
 
-    assert(result.previousDate === "2026-10-31",
-      "対象日と同日の記録を前回として採用しています。");
-    assert(result.previousTotal === 100000,
-      "対象日より前の記録だけを合計していません。");
+    assert(result.previousDate === "2026-11-10",
+      "対象日より前の最新記録日を採用していません。");
+    assert(result.previousTotal === 125000,
+      "最新記録日の同一口座の保有だけを合計していません。");
     assert(result.change === 50000,
-      "同日記録を除外した増減が50,000円ではありません。");
+      "同日・別口座・古い記録を除外した増減が50,000円ではありません。");
   });
 
   runTest("S11b前回比較⑤：増減ゼロ",() => {
@@ -340,6 +360,31 @@ function registerStockOcrComparisonTests(context) {
 
     assert(result.change === 0,
       "増減ゼロが0として算出されていません。");
+  });
+
+  runTest("S11b前回比較追加①：入力データを変更しない",() => {
+    const data = stockOcrMakeCompareDataTest([
+      stockOcrMakeCompareHoldingTest(
+        "immutable-previous","account-a","架空商品","特定",
+        "2026-11-10",100000,90000,10000
+      )
+    ]);
+    const cards = [
+      stockOcrMakeCompareCardTest(
+        "架空商品","特定",120000,110000,10000
+      )
+    ];
+    const beforeData = JSON.stringify(data);
+    const beforeCards = JSON.stringify(cards);
+
+    stockOcrCalculateHoldingsTotalComparisonStock(
+      data,"account-a",cards,"2026-11-19"
+    );
+
+    assert(JSON.stringify(data) === beforeData,
+      "前回比較の計算で入力データが変更されています。");
+    assert(JSON.stringify(cards) === beforeCards,
+      "前回比較の計算でカードが変更されています。");
   });
 
   runTest("S11b前回比較⑥：旧合計突合の値を返さない",() => {
