@@ -9,6 +9,7 @@ let stockOcrUpdateTargetDate = "";
 let stockOcrUpdatePasteText = "";
 let stockOcrUpdateCards = [];
 let stockOcrUpdateComparison = null;
+let stockOcrUpdateScreenTotalValue = null;
 let stockOcrUpdateSnapshotEnabled = false;
 let stockOcrUpdateSnapshotValue = "";
 let stockOcrUpdateMessage = "";
@@ -24,6 +25,7 @@ function openStockOcrUpdate(accountId = null) {
   stockOcrUpdatePasteText = "";
   stockOcrUpdateCards = [];
   stockOcrUpdateComparison = null;
+  stockOcrUpdateScreenTotalValue = null;
   stockOcrUpdateSnapshotEnabled = false;
   stockOcrUpdateSnapshotValue = "";
   stockOcrUpdateMessage = "";
@@ -146,7 +148,8 @@ function stockOcrUpdateRefreshComparison() {
     appData,
     account.id,
     currentCards,
-    stockOcrUpdateTargetDate
+    stockOcrUpdateTargetDate,
+    stockOcrUpdateScreenTotalValue
   );
 
   stockOcrUpdateCards = result.cards.map((card,index) => {
@@ -198,12 +201,14 @@ function stockOcrUpdateParse() {
     if (!parsed.success) {
       stockOcrUpdateCards = [];
       stockOcrUpdateComparison = null;
+      stockOcrUpdateScreenTotalValue = null;
       stockOcrUpdateError = parsed.reasons.join(" ") ||
         "OCRテキストを解析できませんでした。";
       render();
       return;
     }
 
+    stockOcrUpdateScreenTotalValue = parsed.screenTotalValue || null;
     stockOcrUpdateCards = parsed.cards.map(card => ({
       ...card,
       selected:true,
@@ -220,6 +225,7 @@ function stockOcrUpdateParse() {
   } catch (error) {
     stockOcrUpdateCards = [];
     stockOcrUpdateComparison = null;
+    stockOcrUpdateScreenTotalValue = null;
     stockOcrUpdateError = error.message ||
       "OCRテキストを解析できませんでした。";
   }
@@ -284,6 +290,7 @@ function stockOcrUpdateClear() {
   stockOcrUpdatePasteText = "";
   stockOcrUpdateCards = [];
   stockOcrUpdateComparison = null;
+  stockOcrUpdateScreenTotalValue = null;
   stockOcrUpdateSnapshotEnabled = false;
   stockOcrUpdateSnapshotValue = "";
   stockOcrUpdateMessage = "";
@@ -376,6 +383,7 @@ function stockOcrUpdateSave() {
       stockOcrUpdatePasteText = "";
       stockOcrUpdateCards = [];
       stockOcrUpdateComparison = null;
+      stockOcrUpdateScreenTotalValue = null;
       stockOcrUpdateSnapshotEnabled = false;
       stockOcrUpdateSnapshotValue = "";
       stockOcrUpdateError = "";
@@ -459,7 +467,9 @@ function stockOcrUpdateRenderCard(card,index) {
   section.appendChild(el(
     "h3",
     "",
-    card.name || "商品カード " + (index + 1)
+    card.name && card.name.trim()
+      ? card.name
+      : "商品名未取得（要確認）"
   ));
 
   const statusLabel = card.duplicate
@@ -646,6 +656,39 @@ function stockOcrUpdateRenderComparison() {
       "error",
       "商品別合計と口座全体の差が5%を超えています。内容を確認してください。保存は可能です。"
     ));
+  }
+
+  if (result.screenTotal !== null &&
+      result.screenTotal !== undefined &&
+      result.holdingsTotal !== null) {
+    card.appendChild(el(
+      "h4",
+      "",
+      "OCR画面の評価額合計との比較"
+    ));
+    card.appendChild(el(
+      "div",
+      "metric-sub",
+      "画面に表示された評価額合計：" + formatYen(result.screenTotal)
+    ));
+    card.appendChild(el(
+      "div",
+      "metric-sub",
+      "解析した商品カード合計：" + formatYen(result.holdingsTotal)
+    ));
+    card.appendChild(el(
+      "div",
+      "metric-sub",
+      "差額（画面合計－商品カード合計）：" +
+        formatSignedYen(result.screenTotalDifference)
+    ));
+    if (result.screenTotalMismatch) {
+      card.appendChild(el(
+        "div",
+        "help",
+        "画面に出ていない商品、または読み落としの可能性があります。内容を確認してください。保存は可能です。"
+      ));
+    }
   }
 
   app.appendChild(card);
@@ -892,6 +935,7 @@ app.addEventListener("change",event => {
     stockOcrUpdateAccountId = target.value;
     stockOcrUpdateCards = [];
     stockOcrUpdateComparison = null;
+    stockOcrUpdateScreenTotalValue = null;
     stockOcrUpdateError = "";
     stockOcrUpdateMessage = "";
     render();
