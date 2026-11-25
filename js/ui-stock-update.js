@@ -611,12 +611,35 @@ function stockOcrUpdateRenderComparison() {
   card.appendChild(el("h3","","過去記録との比較"));
 
   card.appendChild(el(
-    "div",
-    "metric-sub",
-    result.previousDate
-      ? "比較対象日：" + formatDateWithWeekday(result.previousDate)
-      : "比較できる過去の記録はありません。"
+    "h4",
+    "",
+    "商品別評価額合計の前回比較"
   ));
+  if (result.previousDate) {
+    card.appendChild(el(
+      "div",
+      "metric-sub",
+      "前回（" + formatDateWithWeekday(result.previousDate) +
+        "）の商品別合計：" + formatYen(result.previousHoldingsTotal)
+    ));
+    card.appendChild(el(
+      "div",
+      "metric-sub",
+      "今回（" + formatDateWithWeekday(result.targetDate) +
+        "）の商品別合計：" + formatYen(result.holdingsTotal)
+    ));
+    card.appendChild(el(
+      "div",
+      "metric-sub",
+      "商品別合計の増減：" + formatSignedYen(result.holdingsTotalChange)
+    ));
+  } else {
+    card.appendChild(el(
+      "div",
+      "metric-sub",
+      "比較できる過去の商品別保有記録がありません。"
+    ));
+  }
 
   if (result.missingHoldings.length > 0) {
     card.appendChild(el("h4","","今回出ていません"));
@@ -635,26 +658,36 @@ function stockOcrUpdateRenderComparison() {
   }
 
   card.appendChild(el(
-    "div",
-    "metric-sub",
-    "商品別評価額合計：" + formatYen(result.holdingsTotal)
+    "h4",
+    "",
+    "保存済み口座全体履歴との比較"
   ));
   card.appendChild(el(
     "div",
     "metric-sub",
-    "口座全体の最新評価額：" + formatYen(result.accountValue)
+    "保存済み口座全体評価額" +
+      (result.accountSnapshotDate
+        ? "（対象日：" + formatDateWithWeekday(result.accountSnapshotDate) + "）"
+        : "") +
+      "：" + formatYen(result.accountValue)
   ));
   card.appendChild(el(
     "div",
     "metric-sub",
-    "差額：" + formatSignedYen(result.difference)
+    "今回の商品別評価額合計：" + formatYen(result.holdingsTotal)
+  ));
+  card.appendChild(el(
+    "div",
+    "metric-sub",
+    "差額（保存済み口座全体評価額－商品別合計）：" +
+      formatSignedYen(result.difference)
   ));
 
   if (result.differenceWarning) {
     card.appendChild(el(
       "div",
       "error",
-      "商品別合計と口座全体の差が5%を超えています。内容を確認してください。保存は可能です。"
+      "商品別合計と保存済み口座全体評価額の差が5%を超えています。内容を確認してください。保存は可能です。"
     ));
   }
 
@@ -664,22 +697,22 @@ function stockOcrUpdateRenderComparison() {
     card.appendChild(el(
       "h4",
       "",
-      "OCR画面の評価額合計との比較"
+      "OCR画面の口座全体評価額との比較"
     ));
     card.appendChild(el(
       "div",
       "metric-sub",
-      "画面に表示された評価額合計：" + formatYen(result.screenTotal)
+      "口座全体評価額（OCR画面）：" + formatYen(result.screenTotal)
     ));
     card.appendChild(el(
       "div",
       "metric-sub",
-      "解析した商品カード合計：" + formatYen(result.holdingsTotal)
+      "商品別評価額合計（OCRカード）：" + formatYen(result.holdingsTotal)
     ));
     card.appendChild(el(
       "div",
       "metric-sub",
-      "差額（画面合計－商品カード合計）：" +
+      "差額（口座全体評価額－商品別合計）：" +
         formatSignedYen(result.screenTotalDifference)
     ));
     if (result.screenTotalMismatch) {
