@@ -200,61 +200,7 @@ function registerStockOcrComparisonTests(context) {
       "消失候補の商品名が一致しません。");
   });
 
-  runTest("S11b比較⑥：口座全体の差額が5%以内",() => {
-    const cards = [
-      stockOcrMakeCompareCardTest(
-        "架空商品G1","特定",500000,500000,0
-      ),
-      stockOcrMakeCompareCardTest(
-        "架空商品G2","特定",450000,450000,0
-      )
-    ];
-    const snapshots = [{
-      accountId:"account-a",
-      asOfDate:"2026-11-30",
-      value:1000000
-    }];
-
-    const result = stockOcrCompareCardsStock(
-      stockOcrMakeCompareDataTest([],snapshots),"account-a",
-      cards,"2026-11-30"
-    );
-
-    assert(result.holdingsTotal === 950000,
-      "商品別合計が950,000円になっていません。");
-    assert(result.difference === 50000,
-      "口座全体との差額が50,000円になっていません。");
-    assert(result.differenceWarning === false,
-      "差額5%を超えていないのに警告されています。");
-  });
-
-  runTest("S11b比較⑦：口座全体の差額が5%超",() => {
-    const cards = [
-      stockOcrMakeCompareCardTest(
-        "架空商品H1","特定",500000,500000,0
-      ),
-      stockOcrMakeCompareCardTest(
-        "架空商品H2","特定",450000,450000,0
-      )
-    ];
-    const snapshots = [{
-      accountId:"account-a",
-      asOfDate:"2026-11-30",
-      value:1000001
-    }];
-
-    const result = stockOcrCompareCardsStock(
-      stockOcrMakeCompareDataTest([],snapshots),"account-a",
-      cards,"2026-11-30"
-    );
-
-    assert(result.difference === 50001,
-      "口座全体との差額が50,001円になっていません。");
-    assert(result.differenceWarning === true,
-      "差額5%超の警告がありません。");
-  });
-
-  runTest("S11b比較⑧：商品別合計の前回比較と口座全体評価額の分離",() => {
+  runTest("S11b前回比較①：前回・今回・増減の合計",() => {
     const previous = [
       stockOcrMakeCompareHoldingTest(
         "previous-total-a","account-a","架空商品A",
@@ -273,77 +219,240 @@ function registerStockOcrComparisonTests(context) {
         "架空商品B","特定",3403368,3200000,203368
       )
     ];
-    const snapshots = [{
-      accountId:"account-a",
-      asOfDate:"2026-11-11",
-      recordedAt:"2026-11-11T10:00:00.000Z",
-      value:5790451
-    }];
-    const screenTotal = {status:"recognized",value:6903369};
-
-    const result = stockOcrCompareCardsStock(
-      stockOcrMakeCompareDataTest(previous,snapshots),
+    const result = stockOcrCalculateHoldingsTotalComparisonStock(
+      stockOcrMakeCompareDataTest(previous),
       "account-a",
       cards,
-      "2026-11-19",
-      screenTotal
-    );
-
-    assert(result.previousDate === "2026-11-10",
-      "前回の商品別保有対象日が一致しません。");
-    assert(result.previousHoldingsTotal === 5746195,
-      "前回の商品別合計が5,746,195円になっていません。");
-    assert(result.holdingsTotal === 6403368,
-      "今回の商品別合計が6,403,368円になっていません。");
-    assert(result.holdingsTotalChange === 657173,
-      "商品別合計の増加額が657,173円になっていません。");
-    assert(result.accountSnapshotDate === "2026-11-11",
-      "保存済み口座全体評価額の日付が保持されていません。");
-    assert(result.difference === -612917,
-      "保存済み口座全体評価額との差額が従来どおり保持されていません。");
-    assert(result.screenTotalDifference === 500001,
-      "OCR画面の口座全体評価額との差額が500,001円になっていません。");
-  });
-
-  runTest("S11b比較⑨：前回商品別合計の算出不可",() => {
-    const unknownPrevious = stockOcrMakeCompareHoldingTest(
-      "previous-unknown","account-a","架空商品C",
-      "特定","2026-11-10",null,100000,null
-    );
-    const card = stockOcrMakeCompareCardTest(
-      "架空商品C","特定",120000,100000,20000
-    );
-
-    const result = stockOcrCompareCardsStock(
-      stockOcrMakeCompareDataTest([unknownPrevious]),
-      "account-a",
-      [card],
       "2026-11-19"
     );
 
-    assert(result.previousHoldingsTotal === null,
-      "前回に未入力値があるのに商品別合計が算出されています。");
-    assert(result.holdingsTotalChange === null,
-      "前回合計が不明なのに増減額が計算されています。");
+    assert(result.status === "calculated",
+      "確定済みカードの比較状態が算出になっていません。");
+    assert(result.previousDate === "2026-11-10",
+      "前回対象日が2026-11-10ではありません。");
+    assert(result.previousTotal === 5746195,
+      "前回合計が5,746,195円ではありません。");
+    assert(result.currentTotal === 6403368,
+      "今回合計が6,403,368円ではありません。");
+    assert(result.change === 657173,
+      "増減が+657,173円ではありません。");
   });
 
-  runTest("S11b比較⑩：前回商品別保有がない",() => {
-    const card = stockOcrMakeCompareCardTest(
-      "架空新商品D","特定",120000,100000,20000
-    );
-    const result = stockOcrCompareCardsStock(
+  runTest("S11b前回比較②：前回記録なし",() => {
+    const cards = [
+      stockOcrMakeCompareCardTest(
+        "架空新商品","特定",120000,100000,20000
+      )
+    ];
+    const result = stockOcrCalculateHoldingsTotalComparisonStock(
       stockOcrMakeCompareDataTest([]),
       "account-a",
-      [card],
+      cards,
       "2026-11-19"
     );
 
-    assert(result.previousDate === null,
-      "前回記録がないのに前回日付が設定されています。");
-    assert(result.previousHoldingsTotal === null,
-      "前回記録がないのに前回合計が設定されています。");
-    assert(result.holdingsTotalChange === null,
-      "前回記録がないのに増減額が計算されています。");
+    assert(result.status === "no-previous",
+      "前回記録がない状態になっていません。");
+    assert(result.previousDate === null && result.previousTotal === null,
+      "前回記録がないのに前回日付・合計があります。");
+    assert(result.currentTotal === 120000,
+      "前回なしでも確定済みの今回合計が算出されていません。");
+    assert(result.change === null,
+      "前回記録がないのに増減が算出されています。");
+  });
+
+  runTest("S11b前回比較③：要確認が残る間は確定待ち",() => {
+    const previous = stockOcrMakeCompareHoldingTest(
+      "previous-pending","account-a","架空商品","特定",
+      "2026-11-10",100000,90000,10000
+    );
+    const cards = [
+      stockOcrMakeCompareCardTest(
+        "架空商品","特定",110000,100000,10000
+      ),
+      {
+        ...stockOcrMakeCompareCardTest(
+          "架空別商品","特定",50000,50000,0
+        ),
+        status:"needs-confirmation"
+      }
+    ];
+    const result = stockOcrCalculateHoldingsTotalComparisonStock(
+      stockOcrMakeCompareDataTest([previous]),
+      "account-a",
+      cards,
+      "2026-11-19"
+    );
+
+    assert(result.status === "pending",
+      "要確認カードがあるのに確定待ちになっていません。");
+    assert(result.currentTotal === null && result.change === null,
+      "要確認カードがあるのに今回合計または増減が表示可能になっています。");
+  });
+
+  runTest("S11b前回比較④：同日の保有記録を前回に含めない",() => {
+    const holdings = [
+      stockOcrMakeCompareHoldingTest(
+        "older","account-a","架空商品","特定",
+        "2026-10-31",100000,90000,10000
+      ),
+      stockOcrMakeCompareHoldingTest(
+        "same-day","account-a","架空商品","特定",
+        "2026-11-19",200000,180000,20000
+      )
+    ];
+    const cards = [
+      stockOcrMakeCompareCardTest(
+        "架空商品","特定",150000,140000,10000
+      )
+    ];
+    const result = stockOcrCalculateHoldingsTotalComparisonStock(
+      stockOcrMakeCompareDataTest(holdings),
+      "account-a",
+      cards,
+      "2026-11-19"
+    );
+
+    assert(result.previousDate === "2026-10-31",
+      "対象日と同日の記録を前回として採用しています。");
+    assert(result.previousTotal === 100000,
+      "対象日より前の記録だけを合計していません。");
+    assert(result.change === 50000,
+      "同日記録を除外した増減が50,000円ではありません。");
+  });
+
+  runTest("S11b前回比較⑤：増減ゼロ",() => {
+    const previous = stockOcrMakeCompareHoldingTest(
+      "previous-zero","account-a","架空商品","特定",
+      "2026-11-10",100000,90000,10000
+    );
+    const cards = [
+      stockOcrMakeCompareCardTest(
+        "架空商品","特定",100000,90000,10000
+      )
+    ];
+    const result = stockOcrCalculateHoldingsTotalComparisonStock(
+      stockOcrMakeCompareDataTest([previous]),
+      "account-a",
+      cards,
+      "2026-11-19"
+    );
+
+    assert(result.change === 0,
+      "増減ゼロが0として算出されていません。");
+  });
+
+  runTest("S11b前回比較⑥：旧合計突合の値を返さない",() => {
+    const result = stockOcrCompareCardsStock(
+      stockOcrMakeCompareDataTest([],[{
+        accountId:"account-a",
+        asOfDate:"2026-11-18",
+        value:999999
+      }]),
+      "account-a",
+      [stockOcrMakeCompareCardTest(
+        "架空商品","特定",100000,90000,10000
+      )],
+      "2026-11-19"
+    );
+
+    for (const field of [
+      "accountValue","accountSnapshotDate","difference",
+      "differenceRate","differenceWarning","screenTotal",
+      "screenTotalDifference","screenTotalMismatch"
+    ]) {
+      assert(!Object.prototype.hasOwnProperty.call(result,field),
+        field + " が旧比較項目として残っています。");
+    }
+  });
+
+  runTest("S11b前回比較⑧：3口座それぞれで比較できる",() => {
+    const accounts = [
+      {id:"rakuten",name:"楽天証券",category:"stock"},
+      {id:"ideco",name:"iDeCo",category:"stock"},
+      {id:"dc",name:"企業型DC",category:"stock"}
+    ];
+
+    for (const account of accounts) {
+      const data = {
+        accounts,
+        holdings:[stockOcrMakeCompareHoldingTest(
+          "previous-" + account.id,
+          account.id,
+          "架空商品-" + account.id,
+          "特定",
+          "2026-11-10",
+          100000,
+          90000,
+          10000
+        )],
+        snapshots:[]
+      };
+      const card = stockOcrMakeCompareCardTest(
+        "架空商品-" + account.id,
+        "特定",
+        120000,
+        100000,
+        20000
+      );
+      const result = stockOcrCompareCardsStock(
+        data,account.id,[card],"2026-11-19"
+      );
+
+      assert(result.aggregateComparison.status === "calculated",
+        account.name + " の合計比較が算出されていません。");
+      assert(result.aggregateComparison.change === 20000,
+        account.name + " の増減が20,000円ではありません。");
+    }
+  });
+
+  runTest("S11b追補A⑨：楽天証券9カードの前回比較",() => {
+    const previousValues = [
+      1000000,500000,750000,1250000,600000,
+      400000,500000,400000,346195
+    ];
+    const currentValues = [
+      1100000,550000,800000,1350000,650000,
+      450000,550000,500000,453368
+    ];
+    const holdings = previousValues.map((value,index) =>
+      stockOcrMakeCompareHoldingTest(
+        "previous-rakuten-" + index,
+        "account-a",
+        "架空楽天商品" + index,
+        "特定",
+        "2026-11-10",
+        value,
+        value,
+        0
+      )
+    );
+    const cards = currentValues.map((value,index) =>
+      stockOcrMakeCompareCardTest(
+        "架空楽天商品" + index,
+        "特定",
+        value,
+        value,
+        0
+      )
+    );
+    const compareData = stockOcrMakeCompareDataTest(holdings);
+    compareData.accounts[0].name = "楽天証券";
+    const result = stockOcrCompareCardsStock(
+      compareData,
+      "account-a",
+      cards,
+      "2026-11-19"
+    );
+
+    assert(cards.length === 9,
+      "楽天証券のテストカードが9件ではありません。");
+    assert(result.aggregateComparison.previousTotal === 5746195,
+      "9カードの前回合計が5,746,195円ではありません。");
+    assert(result.aggregateComparison.currentTotal === 6403368,
+      "9カードの今回合計が6,403,368円ではありません。");
+    assert(result.aggregateComparison.change === 657173,
+      "9カードの増減が657,173円ではありません。");
   });
 
   runTest("S11b保存①：同じ対象日の重複を追加しない",() => {
@@ -468,7 +577,7 @@ function registerStockOcrComparisonTests(context) {
     }
   });
 
-  runTest("S11b保存④：口座全体snapshotの任意追加",() => {
+  runTest("S11b前回比較⑦：口座全体snapshotの任意追加",() => {
     const data = createInitialData();
     const account = data.accounts.find(item =>
       item.name === "楽天証券"
