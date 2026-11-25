@@ -284,4 +284,21 @@ function registerStockOcrRenderTests(context) {
         "口座データが空のとき、画面が描画されていません。");
     });
   });
+
+  runTest("S11b追補A：米国株の種別選択肢",() => {
+    const section = stockOcrUpdateRenderCard(
+      makeStockOcrRenderCardTest({kind:"米国株"}),
+      0
+    );
+    const kindSelect = section.querySelector('[name="kind"]');
+
+    assert(kindSelect !== null,
+      "種別の選択欄がありません。");
+    assert(Array.from(kindSelect.options).some(option =>
+      option.value === "米国株"
+    ),"種別の選択肢に米国株がありません。");
+    assert(kindSelect.value === "米国株",
+      "米国株を選択した状態で表示できていません。");
+  });
+
 }
