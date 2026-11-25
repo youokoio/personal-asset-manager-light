@@ -1,4 +1,3 @@
-
 "use strict";
 
 /* ---------- S11b 株式OCRテスト ---------- */
@@ -465,5 +464,372 @@ function registerStockOcrTests(context) {
       "評価額60000円・取得額70000円・評価損益-10000円が一致扱いになっていません。");
     assert(result.difference === 0,
       "整合検査の差が0円ではありません。");
+  });
+
+  runTest("S11b追補A①：評価損益率による3例の検算",() => {
+    const cases = [
+      ["rateValidationPositive",155122,22702,132420,17.14],
+      ["rateValidationNegative",60510,-11460,71970,-15.92],
+      ["rateValidationLargeLoss",34500,-84615,119115,-71.03]
+    ];
+
+    for (const [fixture,value,pnl,costBasis,rate] of cases) {
+      const result = stockOcrRunFixtureStock(
+        "rakuten-securities",fixture
+      );
+      stockOcrAssertCardCountStock(
+        assert,result,1,"検算テストのカードが1件ではありません。"
+      );
+      const card = result.cards[0];
+      assert(card.value === value,fixture + " の評価額が一致しません。");
+      assert(card.pnl === pnl,fixture + " の評価損益が一致しません。");
+      assert(card.costBasis === costBasis,fixture + " の取得額が一致しません。");
+      assert(card.rateCheck.status === "matched",
+        fixture + " が検算一致になっていません。");
+      assert(card.rateCheck.actualRate === rate,
+        fixture + " の評価損益率が一致しません。");
+      assert(card.status === "recognized",
+        fixture + " が認識済みになっていません。");
+      assert(Math.abs(card.rateCheck.difference) <= 0.05,
+        fixture + " の検算差が許容差を超えています。");
+    }
+  });
+
+  runTest("S11b追補A②：金額と率が連結された表示",() => {
+    const negative = stockOcrRunFixtureStock(
+      "rakuten-securities","joinedNegativeAmountRate"
+    );
+    const positive = stockOcrRunFixtureStock(
+      "rakuten-securities","joinedPositiveAmountRate"
+    );
+
+    assert(negative.cards[0].value === 25377,
+      "連結表示の評価額25377円が取得できていません。");
+    assert(negative.cards[0].pnl === -5364,
+      "連結表示の評価損益-5364円が取得できていません。");
+    assert(negative.cards[0].rateCheck.status === "matched",
+      "連結表示のマイナス率が検算一致になっていません。");
+
+    assert(positive.cards[0].value === 11177,
+      "連結表示の評価額11177円が取得できていません。");
+    assert(positive.cards[0].pnl === 1177,
+      "連結表示の評価損益1177円が取得できていません。");
+    assert(positive.cards[0].rateCheck.status === "matched",
+      "連結表示のプラス率が検算一致になっていません。");
+  });
+
+  runTest("S11b追補A③：円のない評価額",() => {
+    const text = [
+      "保有商品詳細（すべて）",
+      "時価評価額",
+      "投資信託",
+      "架空・円なし評価額テスト",
+      "特定",
+      "155,122",
+      "+22,702円",
+      "+17.14%"
+    ].join("\n");
+    const result = parseStockOcrText(
+      text,stockOcrGetTestRuleStock("rakuten-securities")
+    );
+
+    stockOcrAssertCardCountStock(
+      assert,result,1,"円なし評価額のカードが1件ではありません。"
+    );
+    assert(result.cards[0].value === 155122,
+      "円のない評価額155122が候補として認識されていません。");
+    assert(result.cards[0].pnl === 22702,
+      "円のない評価額と評価損益の組み合わせが確定していません。");
+  });
+
+  runTest("S11b追補A④：評価損益の位置が異なるカード",() => {
+    const text = [
+      "保有商品詳細（すべて）",
+      "時価評価額",
+      "投資信託",
+      "架空・順序変更テスト",
+      "+22,702円",
+      "特定",
+      "155,122円",
+      "+17.14%"
+    ].join("\n");
+    const result = parseStockOcrText(
+      text,stockOcrGetTestRuleStock("rakuten-securities")
+    );
+
+    stockOcrAssertCardCountStock(
+      assert,result,1,"順序変更カードが1件ではありません。"
+    );
+    assert(result.cards[0].value === 155122,
+      "順序変更後の評価額が一致しません。");
+    assert(result.cards[0].pnl === 22702,
+      "口座区分より前の評価損益が取得できていません。");
+    assert(result.cards[0].rateCheck.status === "matched",
+      "順序変更カードの検算が一致していません。");
+  });
+
+  runTest("S11b追補A⑤：検算不一致・複数候補・率なし",() => {
+    const rule = stockOcrGetTestRuleStock("rakuten-securities");
+    const wrongRateText = [
+      "保有商品詳細（すべて）",
+      "時価評価額",
+      "投資信託",
+      "架空・率誤読テスト",
+      "特定",
+      "155,122円",
+      "+22,702円",
+      "+10.00%"
+    ].join("\n");
+    const wrongRate = parseStockOcrText(wrongRateText,rule);
+    stockOcrAssertNeedsConfirmationStock(
+      assert,wrongRate.cards[0],"検算不一致が要確認になっていません。"
+    );
+    assert(wrongRate.cards[0].value === null &&
+      wrongRate.cards[0].pnl === null,
+      "検算不一致なのに金額が自動確定されています。");
+
+    const ambiguousText = [
+      "保有商品詳細（すべて）",
+      "時価評価額",
+      "投資信託",
+      "架空・複数候補テスト",
+      "特定",
+      "100,000円",
+      "90,000円",
+      "+10,000円",
+      "+9,000円",
+      "+11.11%"
+    ].join("\n");
+    const ambiguous = parseStockOcrText(ambiguousText,rule);
+    stockOcrAssertNeedsConfirmationStock(
+      assert,ambiguous.cards[0],"複数候補が要確認になっていません。"
+    );
+    assert(ambiguous.cards[0].value === null &&
+      ambiguous.cards[0].pnl === null,
+      "複数候補から金額が自動選択されています。");
+
+    const noRateText = [
+      "保有商品詳細（すべて）",
+      "時価評価額",
+      "投資信託",
+      "架空・率なしテスト",
+      "特定",
+      "25,377円",
+      "-5,364円"
+    ].join("\n");
+    const noRate = parseStockOcrText(noRateText,rule);
+    stockOcrAssertNeedsConfirmationStock(
+      assert,noRate.cards[0],"率がないカードが要確認になっていません。"
+    );
+    assert(noRate.cards[0].value === 25377,
+      "率なしカードの符号なし評価額が仮割り当てされていません。");
+    assert(noRate.cards[0].pnl === -5364,
+      "率なしカードの符号つき評価損益が仮割り当てされていません。");
+  });
+
+  runTest("S11b追補A⑥：商品名の折り返し・終端・空欄",() => {
+    const rule = stockOcrGetTestRuleStock("rakuten-securities");
+    const wrappedText = [
+      "保有商品詳細（すべて）",
+      "時価評価額",
+      "投資信託",
+      "架空・インデック",
+      "スファンド",
+      "特定",
+      "100,000円",
+      "+10,000円",
+      "+11.11%",
+      "Rakuten Securities",
+      "フッターの商品名",
+      "参考為替レート"
+    ].join("\n");
+    const wrapped = parseStockOcrText(wrappedText,rule);
+    stockOcrAssertCardCountStock(
+      assert,wrapped,1,"折り返し商品名のカードが1件ではありません。"
+    );
+    assert(wrapped.cards[0].name === "架空・インデックスファンド",
+      "隣接行の商品名が結合されていません。");
+    assert(!wrapped.cards[0].name.includes("Rakuten Securities"),
+      "フッターが商品名に混ざっています。");
+    assert(wrapped.safeUnrecognizedLines.some(line =>
+      line.text.includes("フッターの商品名")
+    ),"終端以降の行が未認識テキストに残っていません。");
+
+    const blankText = [
+      "保有商品詳細（すべて）",
+      "時価評価額",
+      "投資信託",
+      "特定",
+      "100,000円",
+      "+10,000円",
+      "+11.11%"
+    ].join("\n");
+    const blank = parseStockOcrText(blankText,rule);
+    stockOcrAssertCardCountStock(
+      assert,blank,1,"商品名空欄のカードが1件ではありません。"
+    );
+    stockOcrAssertNeedsConfirmationStock(
+      assert,blank.cards[0],"商品名空欄のカードが要確認になっていません。"
+    );
+    assert(!String(blank.cards[0].name || "").startsWith("商品カード"),
+      "商品名空欄が商品カード番号で補完されています。");
+  });
+
+  runTest("S11b追補A⑦：楽天証券wrapper別名",() => {
+    const rule = stockOcrGetTestRuleStock("rakuten-securities");
+    const cases = [
+      ["NISA成長投資枠","NISA成長"],
+      ["NISA成長投資","NISA成長"],
+      ["つみたてNISA","旧つみたてNISA"]
+    ];
+
+    for (const [source,expected] of cases) {
+      const text = [
+        "保有商品詳細（すべて）",
+        "時価評価額",
+        "投資信託",
+        "架空・wrapperテスト",
+        source,
+        "100,000円",
+        "+10,000円",
+        "+11.11%"
+      ].join("\n");
+      const result = parseStockOcrText(text,rule);
+      assert(result.cards[0].wrapper === expected,
+        source + " が " + expected + " に正規化されていません。");
+    }
+  });
+
+  runTest("S11b追補A⑧：米国株kind・validateData・既存その他の維持",() => {
+    const rule = stockOcrGetTestRuleStock("rakuten-securities");
+    const text = [
+      "保有商品詳細（すべて）",
+      "時価評価額",
+      "米国株式",
+      "ANT",
+      "架空ANT",
+      "特定",
+      "155,122円",
+      "+22,702円",
+      "+17.14%"
+    ].join("\n");
+    const result = parseStockOcrText(text,rule);
+
+    stockOcrAssertCardCountStock(
+      assert,result,1,"米国株カードが1件ではありません。"
+    );
+    assert(result.cards[0].kind === "米国株",
+      "米国株式がkind＝米国株になっていません。");
+
+    const data = createInitialData();
+    const account = data.accounts.find(item =>
+      item.category === "stock"
+    );
+    assert(account !== undefined,"テスト用の株式口座がありません。");
+    const timestamp = "2026-11-25T10:00:00.000Z";
+    data.holdings.push({
+      id:"fictional-us-stock",
+      accountId:account.id,
+      name:"架空ANT",
+      wrapper:"特定",
+      kind:"米国株",
+      asOfDate:"2026-11-25",
+      recordedAt:timestamp,
+      value:155122,
+      quantity:null,
+      costBasis:132420,
+      pnl:22702,
+      memo:"",
+      createdAt:timestamp,
+      updatedAt:timestamp
+    });
+    data.holdings.push({
+      id:"fictional-other-stock",
+      accountId:account.id,
+      name:"架空その他商品",
+      wrapper:"特定",
+      kind:"その他",
+      asOfDate:"2026-11-25",
+      recordedAt:timestamp,
+      value:1000,
+      quantity:null,
+      costBasis:1000,
+      pnl:0,
+      memo:"",
+      createdAt:timestamp,
+      updatedAt:timestamp
+    });
+    validateData(data);
+    assert(data.holdings.find(item =>
+      item.id === "fictional-us-stock"
+    ).kind === "米国株",
+      "validateData が米国株を受け付けていません。");
+    assert(data.holdings.find(item =>
+      item.id === "fictional-other-stock"
+    ).kind === "その他",
+      "既存のその他が検証後に変更されています。");
+  });
+
+  runTest("S11b追補A⑨：画面合計とカード合計の一致・不一致",() => {
+    const rule = stockOcrGetTestRuleStock("rakuten-securities");
+    const equalText = [
+      "現在の評価額合計",
+      "100,000円",
+      "保有商品詳細（すべて）",
+      "時価評価額",
+      "投資信託",
+      "架空・合計一致テスト",
+      "特定",
+      "100,000円",
+      "+10,000円",
+      "+11.11%"
+    ].join("\n");
+    const equal = parseStockOcrText(equalText,rule);
+    assert(equal.screenTotalValue.value === 100000,
+      "画面合計100000円が取得できていません。");
+    const equalComparison = stockOcrCompareCardsStock(
+      stockOcrMakeCompareDataTest([]),
+      "account-a",
+      equal.cards.map(card => ({
+        ...card,selected:true
+      })),
+      "2026-11-30",
+      equal.screenTotalValue
+    );
+    assert(equalComparison.screenTotalDifference === 0,
+      "画面合計とカード合計が一致していません。");
+
+    const differentText = equalText.replace(
+      "100,000円\n保有商品詳細",
+      "120,000円\n保有商品詳細"
+    );
+    const different = parseStockOcrText(differentText,rule);
+    const differentComparison = stockOcrCompareCardsStock(
+      stockOcrMakeCompareDataTest([]),
+      "account-a",
+      different.cards.map(card => ({
+        ...card,selected:true
+      })),
+      "2026-11-30",
+      different.screenTotalValue
+    );
+    assert(differentComparison.screenTotalDifference === 20000,
+      "画面合計との差額20000円が取得できていません。");
+  });
+
+  runTest("S11b追補A⑩：楽天証券ルール変更のiDeCo・DC非波及",() => {
+    const originalIdeco = stockOcrRunFixtureStock("ideco","normal");
+    const originalDc = stockOcrRunFixtureStock("corporate-dc","normal");
+    const rakuten = stockOcrGetTestRuleStock("rakuten-securities");
+    const copiedRakuten = JSON.parse(JSON.stringify(rakuten));
+    copiedRakuten.formats[0].kindByHeading["米国株式"] = "変更テスト";
+
+    const idecoAfter = stockOcrRunFixtureStock("ideco","normal");
+    const dcAfter = stockOcrRunFixtureStock("corporate-dc","normal");
+
+    assert(idecoAfter.cards[0].kind === originalIdeco.cards[0].kind,
+      "楽天証券ルールの複製変更がiDeCoへ波及しています。");
+    assert(dcAfter.cards[0].kind === originalDc.cards[0].kind,
+      "楽天証券ルールの複製変更が企業型DCへ波及しています。");
   });
 }
