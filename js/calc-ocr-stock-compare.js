@@ -117,11 +117,60 @@ function stockOcrGetLatestPriorHoldingsCompareStock(
   };
 }
 
-function stockOcrCompareCardsStock(
-  data,accountId,cards,targetDate,screenTotalValue = null
+function stockOcrCalculateHoldingsTotalComparisonStock(
+  data,accountId,cards,targetDate
 ) {
   if (!data || !Array.isArray(data.holdings) ||
-      !Array.isArray(data.snapshots) || !Array.isArray(cards)) {
+      !Array.isArray(cards)) {
+    throw new Error("株式OCRの合計比較データが正しくありません。");
+  }
+
+  const prior = stockOcrGetLatestPriorHoldingsCompareStock(
+    data,accountId,targetDate
+  );
+  const previousValuesKnown = prior.holdings.length > 0 &&
+    prior.holdings.every(item =>
+      typeof item.value === "number" && Number.isFinite(item.value)
+    );
+  const previousTotal = previousValuesKnown
+    ? prior.holdings.reduce((total,item) => total + item.value,0)
+    : null;
+
+  const confirmationPending = cards.some(card =>
+    !card ||
+    card.status !== "recognized" ||
+    typeof card.value !== "number" ||
+    !Number.isFinite(card.value)
+  );
+  const currentTotal = confirmationPending
+    ? null
+    : cards.reduce((total,card) => total + card.value,0);
+
+  let status = "calculated";
+  if (confirmationPending) {
+    status = "pending";
+  } else if (prior.holdings.length === 0) {
+    status = "no-previous";
+  }
+
+  const change = status === "calculated" && previousTotal !== null
+    ? currentTotal - previousTotal
+    : null;
+
+  return {
+    status,
+    previousDate:prior.asOfDate,
+    previousTotal,
+    currentTotal,
+    change
+  };
+}
+
+function stockOcrCompareCardsStock(
+  data,accountId,cards,targetDate
+) {
+  if (!data || !Array.isArray(data.holdings) ||
+      !Array.isArray(cards)) {
     throw new Error("株式OCRの比較データが正しくありません。");
   }
 
@@ -214,55 +263,10 @@ function stockOcrCompareCardsStock(
       stockOcrNormalizeCompareNameStock(item.name),item.wrapper
     ]))
   );
-
-  const allValuesKnown = comparedCards.every(card =>
-    typeof card.value === "number" && Number.isFinite(card.value)
-  );
-  const holdingsTotal = allValuesKnown
-    ? comparedCards.reduce((total,card) => total + card.value,0)
-    : null;
-
-  const previousValuesKnown = prior.holdings.length > 0 &&
-    prior.holdings.every(item =>
-      typeof item.value === "number" && Number.isFinite(item.value)
+  const aggregateComparison =
+    stockOcrCalculateHoldingsTotalComparisonStock(
+      data,accountId,cards,targetDate
     );
-  const previousHoldingsTotal = previousValuesKnown
-    ? prior.holdings.reduce((total,item) => total + item.value,0)
-    : null;
-  const holdingsTotalChange =
-    previousHoldingsTotal !== null && holdingsTotal !== null
-      ? holdingsTotal - previousHoldingsTotal
-      : null;
-
-  const latestSnapshot = typeof getLatestSnapshot === "function"
-    ? getLatestSnapshot(data,accountId)
-    : data.snapshots
-        .filter(item => item.accountId === accountId)
-        .sort((a,b) =>
-          b.asOfDate.localeCompare(a.asOfDate) ||
-          String(b.recordedAt || "").localeCompare(String(a.recordedAt || ""))
-        )[0] || null;
-  const accountValue = latestSnapshot &&
-    typeof latestSnapshot.value === "number"
-      ? latestSnapshot.value
-      : null;
-  const difference = holdingsTotal !== null && accountValue !== null
-    ? accountValue - holdingsTotal
-    : null;
-  const differenceRate = difference !== null && accountValue !== 0
-    ? Math.abs(difference) / Math.abs(accountValue)
-    : difference === 0 ? 0 : null;
-
-  const screenTotal = screenTotalValue &&
-    screenTotalValue.status === "recognized" &&
-    typeof screenTotalValue.value === "number" &&
-    Number.isFinite(screenTotalValue.value)
-      ? screenTotalValue.value
-      : null;
-  const screenTotalDifference =
-    screenTotal !== null && holdingsTotal !== null
-      ? screenTotal - holdingsTotal
-      : null;
 
   return {
     accountId,
@@ -271,17 +275,6 @@ function stockOcrCompareCardsStock(
     cards:comparedCards,
     previousDate:prior.asOfDate,
     missingHoldings,
-    holdingsTotal,
-    accountValue,
-    accountSnapshotDate:latestSnapshot ? latestSnapshot.asOfDate : null,
-    difference,
-    differenceRate,
-    previousHoldingsTotal,
-    holdingsTotalChange,
-    differenceWarning:differenceRate !== null && differenceRate > 0.05,
-    screenTotal,
-    screenTotalDifference,
-    screenTotalMismatch:
-      screenTotalDifference !== null && screenTotalDifference !== 0
+    aggregateComparison
   };
 }
