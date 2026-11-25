@@ -117,7 +117,9 @@ function stockOcrGetLatestPriorHoldingsCompareStock(
   };
 }
 
-function stockOcrCompareCardsStock(data,accountId,cards,targetDate) {
+function stockOcrCompareCardsStock(
+  data,accountId,cards,targetDate,screenTotalValue = null
+) {
   if (!data || !Array.isArray(data.holdings) ||
       !Array.isArray(data.snapshots) || !Array.isArray(cards)) {
     throw new Error("株式OCRの比較データが正しくありません。");
@@ -219,6 +221,7 @@ function stockOcrCompareCardsStock(data,accountId,cards,targetDate) {
   const holdingsTotal = allValuesKnown
     ? comparedCards.reduce((total,card) => total + card.value,0)
     : null;
+
   const latestSnapshot = typeof getLatestSnapshot === "function"
     ? getLatestSnapshot(data,accountId)
     : data.snapshots
@@ -238,6 +241,17 @@ function stockOcrCompareCardsStock(data,accountId,cards,targetDate) {
     ? Math.abs(difference) / Math.abs(accountValue)
     : difference === 0 ? 0 : null;
 
+  const screenTotal = screenTotalValue &&
+    screenTotalValue.status === "recognized" &&
+    typeof screenTotalValue.value === "number" &&
+    Number.isFinite(screenTotalValue.value)
+      ? screenTotalValue.value
+      : null;
+  const screenTotalDifference =
+    screenTotal !== null && holdingsTotal !== null
+      ? screenTotal - holdingsTotal
+      : null;
+
   return {
     accountId,
     accountName:account.name,
@@ -249,6 +263,10 @@ function stockOcrCompareCardsStock(data,accountId,cards,targetDate) {
     accountValue,
     difference,
     differenceRate,
-    differenceWarning:differenceRate !== null && differenceRate > 0.05
+    differenceWarning:differenceRate !== null && differenceRate > 0.05,
+    screenTotal,
+    screenTotalDifference,
+    screenTotalMismatch:
+      screenTotalDifference !== null && screenTotalDifference !== 0
   };
 }
