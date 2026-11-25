@@ -345,6 +345,27 @@ function registerHoldingsTests(context) {
     assert(kindRejected,
       "定義されていないkindが拒否されていません。");
 
+    const validUsStock = {
+      ...validHolding,
+      id:"holding-validation-us-stock",
+      name:"架空ANT",
+      kind:"米国株"
+    };
+    validateHolding(validUsStock);
+
+    const validOther = {
+      ...validHolding,
+      id:"holding-validation-other",
+      name:"架空その他商品",
+      kind:"その他"
+    };
+    const otherData = JSON.parse(JSON.stringify(data));
+    otherData.holdings.push(validOther);
+    validateData(otherData);
+    assert(otherData.holdings.some(holding =>
+      holding.id === validOther.id && holding.kind === "その他"
+    ),"既存のkind「その他」が検証後も維持されていません。");
+
     const cryptoAccount = data.accounts.find(item =>
       item.name === "GMOコイン"
     );
