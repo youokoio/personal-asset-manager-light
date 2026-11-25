@@ -222,6 +222,18 @@ function stockOcrCompareCardsStock(
     ? comparedCards.reduce((total,card) => total + card.value,0)
     : null;
 
+  const previousValuesKnown = prior.holdings.length > 0 &&
+    prior.holdings.every(item =>
+      typeof item.value === "number" && Number.isFinite(item.value)
+    );
+  const previousHoldingsTotal = previousValuesKnown
+    ? prior.holdings.reduce((total,item) => total + item.value,0)
+    : null;
+  const holdingsTotalChange =
+    previousHoldingsTotal !== null && holdingsTotal !== null
+      ? holdingsTotal - previousHoldingsTotal
+      : null;
+
   const latestSnapshot = typeof getLatestSnapshot === "function"
     ? getLatestSnapshot(data,accountId)
     : data.snapshots
@@ -261,8 +273,11 @@ function stockOcrCompareCardsStock(
     missingHoldings,
     holdingsTotal,
     accountValue,
+    accountSnapshotDate:latestSnapshot ? latestSnapshot.asOfDate : null,
     difference,
     differenceRate,
+    previousHoldingsTotal,
+    holdingsTotalChange,
     differenceWarning:differenceRate !== null && differenceRate > 0.05,
     screenTotal,
     screenTotalDifference,
