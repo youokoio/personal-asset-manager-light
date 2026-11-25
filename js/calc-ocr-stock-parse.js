@@ -561,28 +561,6 @@ function stockOcrFindRakutenWrapperStock(lines,format) {
   return stockOcrFindWrapperStock(lines,format);
 }
 
-function stockOcrFindRakutenScreenTotalStock(lines,format) {
-  const totalIndex = lines.findIndex(line =>
-    stockOcrNormalizeTextStock(line.text) === "現在の評価額合計"
-  );
-  if (totalIndex < 0) return stockOcrFieldStock(null,"missing");
-  const sectionIndex = lines.findIndex((line,index) =>
-    index > totalIndex &&
-    ["保有商品詳細（すべて）","保有商品詳細(すべて)"].includes(
-      stockOcrNormalizeTextStock(line.text)
-    )
-  );
-  const endIndex = sectionIndex >= 0 ? sectionIndex : Math.min(lines.length,totalIndex + 8);
-  const candidates = stockOcrExtractRakutenAmountTokensStock(
-    lines.slice(totalIndex + 1,endIndex),format
-  ).filter(token => !token.signed && token.status === "recognized");
-  if (candidates.length === 1) {
-    return stockOcrFieldStock(candidates[0].value,"recognized",candidates[0].original,"screen-total");
-  }
-  return stockOcrFieldStock(null,candidates.length > 1 ? "multiple" : "missing");
-}
-
-
 function parseStockOcrText(text,rule) {
   const format = stockOcrGetFormatStock(rule);
   if (!format) {
@@ -602,9 +580,7 @@ function parseStockOcrText(text,rule) {
   }
   let parseLines = lines;
   let safeUnrecognizedLines = [];
-  let screenTotalValue = stockOcrFieldStock(null,"missing");
   if (rule.ruleId === "rakuten-securities") {
-    screenTotalValue = stockOcrFindRakutenScreenTotalStock(lines,format);
     const endIndex = lines.findIndex(line => stockOcrIsRakutenEndMarkerStock(line.text));
     if (endIndex >= 0) {
       parseLines = lines.slice(0,endIndex);
@@ -615,7 +591,7 @@ function parseStockOcrText(text,rule) {
   }
   const cards = stockOcrSplitCardsStock(parseLines,rule,format);
   if (cards.length === 0) {
-    return {success:false,status:"no-cards",cards:[],reasons:["商品カードを切り出せませんでした。"],safeUnrecognizedLines,screenTotalValue};
+    return {success:false,status:"no-cards",cards:[],reasons:["商品カードを切り出せませんでした。"],safeUnrecognizedLines};
   }
   let parsedCards;
   if (rule.ruleId === "rakuten-securities") parsedCards = cards.map(card => stockOcrParseRakutenCardStock(card,format));
@@ -627,6 +603,6 @@ function parseStockOcrText(text,rule) {
     success:true,
     status:parsedCards.some(card => card.status !== "recognized") ? "needs-confirmation" : "recognized",
     ruleId:rule.ruleId,ruleVersion:rule.ruleVersion || null,cards:parsedCards,reasons:[],
-    safeUnrecognizedLines,screenTotalValue
+    safeUnrecognizedLines
   };
 }
