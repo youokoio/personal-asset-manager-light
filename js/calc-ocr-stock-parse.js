@@ -1,4 +1,3 @@
-
 function stockOcrFindGroupedAmountsStock(lines,format,requiredCount) {
   const order = Array.isArray(format.amountLabelOrder)
     ? format.amountLabelOrder
@@ -94,12 +93,18 @@ function stockOcrParseRakutenCardStock(card,format) {
     } else {
       const unsigned = tokens.filter(token => !token.signed);
       const signed = tokens.filter(token => token.signed);
-      if (unsigned.length === 1) value = stockOcrFieldStock(unsigned[0].value,"recognized",unsigned[0].original,"sign-heuristic");
-      else if (unsigned.length > 1) value = stockOcrFieldStock(null,"multiple");
-      if (signed.length === 1) pnl = stockOcrFieldStock(signed[0].value,"recognized",signed[0].original,"sign-heuristic");
-      else if (signed.length > 1) pnl = stockOcrFieldStock(null,"multiple");
-      if (typeof value.value === "number" && typeof pnl.value === "number") {
-        costBasis = stockOcrFieldStock(value.value - pnl.value,"calculated",null,"value-minus-pnl");
+      if (tokens.some(token => token.signAmbiguous === true)) {
+        value = stockOcrFieldStock(null,"multiple");
+        pnl = stockOcrFieldStock(null,"multiple");
+        reasons.push("金額の符号を判別できないため、評価額と評価損益を確認してください。");
+      } else {
+        if (unsigned.length === 1) value = stockOcrFieldStock(unsigned[0].value,"recognized",unsigned[0].original,"sign-heuristic");
+        else if (unsigned.length > 1) value = stockOcrFieldStock(null,"multiple");
+        if (signed.length === 1) pnl = stockOcrFieldStock(signed[0].value,"recognized",signed[0].original,"sign-heuristic");
+        else if (signed.length > 1) pnl = stockOcrFieldStock(null,"multiple");
+        if (typeof value.value === "number" && typeof pnl.value === "number") {
+          costBasis = stockOcrFieldStock(value.value - pnl.value,"calculated",null,"value-minus-pnl");
+        }
       }
     }
     reasons.push("評価損益率がないため、検算できません。金額を確認してください。");
@@ -124,8 +129,10 @@ function stockOcrParseRakutenCardStock(card,format) {
   result.fields.rate = rate;
   result.rateCheck = rateCheck;
   result.amountCandidates = tokens.map(token => ({
-    value:token.value,signed:token.signed,hasYen:token.hasYen,
-    original:token.original,lineNumber:token.lineNumber
+    value:token.value,signed:token.signed,
+    signAmbiguous:token.signAmbiguous === true,
+    hasYen:token.hasYen,original:token.original,
+    lineNumber:token.lineNumber
   }));
   result.candidatePairs = pairResult.pairs.map(pair => ({
     valueOriginal:pair.valueToken.original,pnlOriginal:pair.pnlToken.original,
@@ -483,11 +490,15 @@ function stockOcrExtractRakutenAmountTokensStock(lines,format) {
       const after = withoutRates[match.index + match[0].length] || "";
       if (/[A-Za-z0-9]/.test(before) || /[A-Za-z0-9]/.test(after)) continue;
       const parsed = normalizeOcrAmount(source,negativeMarks);
+      const signPrefix = withoutRates.slice(0,match.index);
+      const preceding = signPrefix.trimEnd().slice(-1);
+      const signAmbiguous = /[?？±△▲▽▼]/.test(preceding);
       tokens.push({
         value:parsed && !parsed.error ? parsed.value : null,
         status:parsed && !parsed.error ? "recognized" : "unreadable",
         hasYen:/円/.test(text),
         signed:/^[+＋\-−－]/.test(source),
+        signAmbiguous,
         lineNumber:line.lineNumber,
         original:stockOcrMaskStock(source)
       });
@@ -530,7 +541,10 @@ function stockOcrFindRakutenAmountPairsStock(tokens,rate,tolerance) {
     }
   };
   findPairs(signed.map(token => ({token,pnl:token.value,signInferred:false})));
-  if (pairs.length === 0 && unsigned.length > 1) {
+  const hasAmbiguousSign = tokens.some(token =>
+    token.signAmbiguous === true
+  );
+  if (pairs.length === 0 && hasAmbiguousSign && unsigned.length > 1) {
     findPairs(unsigned.map(token => ({
       token,
       pnl:rate.value < 0 ? -Math.abs(token.value) : Math.abs(token.value),
