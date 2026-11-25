@@ -60,74 +60,78 @@ function stockOcrFindGroupedAmountsStock(lines,format,requiredCount) {
   return {status:"recognized",tokens:selected};
 }
 
+
 function stockOcrParseRakutenCardStock(card,format) {
   const lines = card.lines;
   const reasons = [];
-  const name = stockOcrExtractNameStock(lines,format,card.heading);
-  const wrapper = stockOcrFindWrapperStock(lines,format);
-  const kindValue = format.kindByHeading &&
-    format.kindByHeading[card.heading];
-  const kind = stockOcrFieldStock(
-    kindValue || null,
-    kindValue ? "recognized" : "unreadable",
-    card.heading,
-    "heading"
-  );
-
-  const tokens = stockOcrExtractAmountTokensStock(lines,format);
-  const signed = tokens.filter(token => token.signed);
-  const unsigned = tokens.filter(token => !token.signed);
-
+  const name = stockOcrExtractRakutenNameStock(lines,format,card.heading);
+  const wrapper = stockOcrFindRakutenWrapperStock(lines,format);
+  const kindValue = format.kindByHeading && format.kindByHeading[card.heading];
+  const kind = stockOcrFieldStock(kindValue || null,
+    kindValue ? "recognized" : "unreadable",card.heading,"heading");
+  const tokens = stockOcrExtractRakutenAmountTokensStock(lines,format);
+  const rate = stockOcrExtractRateStock(lines);
+  const tolerance = 0.05;
+  const pairResult = stockOcrFindRakutenAmountPairsStock(tokens,rate,tolerance);
   let value = stockOcrFieldStock(null,"missing");
   let pnl = stockOcrFieldStock(null,"missing");
+  let costBasis = stockOcrFieldStock(null,"missing");
+  let rateCheck = {status:pairResult.status,tolerance,expectedRate:null,actualRate:rate.value,difference:null};
 
-  if (unsigned.length === 1) {
-    value = stockOcrFieldStock(
-      unsigned[0].value,
-      unsigned[0].status,
-      unsigned[0].original,
-      "amount-format"
-    );
-  } else if (unsigned.length > 1) {
+  if (pairResult.status === "unique") {
+    const pair = pairResult.pairs[0];
+    value = stockOcrFieldStock(pair.valueToken.value,"recognized",pair.valueToken.original,"rate-validation");
+    pnl = stockOcrFieldStock(pair.pnlValue,"recognized",pair.pnlToken.original,
+      pair.signInferred ? "rate-sign-inference" : "rate-validation");
+    costBasis = stockOcrFieldStock(pair.costBasis,"calculated",null,"value-minus-pnl");
+    rateCheck = {status:pair.signInferred ? "matched-sign-inferred" : "matched",
+      tolerance,expectedRate:pair.expectedRate,actualRate:pair.actualRate,difference:pair.difference};
+  } else if (pairResult.status === "rate-unavailable") {
+    if (tokens.some(token => token.status !== "recognized")) {
+      value = stockOcrFieldStock(null,"unreadable");
+      pnl = stockOcrFieldStock(null,"unreadable");
+      reasons.push("金額候補を読み取れないため、確認してください。");
+    } else {
+      const unsigned = tokens.filter(token => !token.signed);
+      const signed = tokens.filter(token => token.signed);
+      if (unsigned.length === 1) value = stockOcrFieldStock(unsigned[0].value,"recognized",unsigned[0].original,"sign-heuristic");
+      else if (unsigned.length > 1) value = stockOcrFieldStock(null,"multiple");
+      if (signed.length === 1) pnl = stockOcrFieldStock(signed[0].value,"recognized",signed[0].original,"sign-heuristic");
+      else if (signed.length > 1) pnl = stockOcrFieldStock(null,"multiple");
+      if (typeof value.value === "number" && typeof pnl.value === "number") {
+        costBasis = stockOcrFieldStock(value.value - pnl.value,"calculated",null,"value-minus-pnl");
+      }
+    }
+    reasons.push("評価損益率がないため、検算できません。金額を確認してください。");
+  } else {
     value = stockOcrFieldStock(null,"multiple");
-  }
-
-  if (signed.length === 1) {
-    pnl = stockOcrFieldStock(
-      signed[0].value,
-      signed[0].status,
-      signed[0].original,
-      "amount-format"
-    );
-  } else if (signed.length > 1) {
     pnl = stockOcrFieldStock(null,"multiple");
+    reasons.push(pairResult.status === "ambiguous"
+      ? "評価額と評価損益の組み合わせが複数あります。候補を確認してください。"
+      : pairResult.status === "multiple-rates"
+        ? "評価損益率が複数あります。確認してください。"
+        : pairResult.status === "unreadable-candidate"
+          ? "金額候補を読み取れないため、自動で割り当てません。確認してください。"
+          : "評価額と評価損益の組み合わせを検算で確定できません。候補を確認してください。");
   }
 
-  if (value.status !== "recognized") {
-    reasons.push("評価額を円表記で確定できません。");
-  }
-  if (pnl.status === "unreadable" || pnl.status === "multiple") {
-    reasons.push("評価損益を確定できません。");
-  }
-
-  const costBasisValue =
-    typeof value.value === "number" &&
-    typeof pnl.value === "number"
-      ? value.value - pnl.value
-      : null;
-  const costBasis = stockOcrFieldStock(
-    costBasisValue,
-    costBasisValue === null ? "missing" : "calculated",
-    null,
-    costBasisValue === null ? null : "value-minus-pnl"
-  );
-
-  const rate = stockOcrExtractRateStock(lines);
   const quantity = stockOcrFieldStock(null,"missing");
-
-  return stockOcrBuildCardResultStock(
-    card,format,name,wrapper,kind,value,pnl,costBasis,quantity,rate,reasons
+  const emptyRate = stockOcrFieldStock(null,"missing");
+  const result = stockOcrBuildCardResultStock(
+    card,format,name,wrapper,kind,value,pnl,costBasis,quantity,emptyRate,reasons
   );
+  result.rate = rate.value;
+  result.fields.rate = rate;
+  result.rateCheck = rateCheck;
+  result.amountCandidates = tokens.map(token => ({
+    value:token.value,signed:token.signed,hasYen:token.hasYen,
+    original:token.original,lineNumber:token.lineNumber
+  }));
+  result.candidatePairs = pairResult.pairs.map(pair => ({
+    valueOriginal:pair.valueToken.original,pnlOriginal:pair.pnlToken.original,
+    expectedRate:pair.expectedRate,difference:pair.difference,signInferred:pair.signInferred
+  }));
+  return result;
 }
 
 function stockOcrParseIdecoCardStock(card,format) {
@@ -157,8 +161,7 @@ function stockOcrParseIdecoCardStock(card,format) {
     reasons.push("時価評価額と評価損益の対応を確定できません。");
   }
 
-  const kindValue = format.kindByHeading &&
-    format.kindByHeading[card.heading];
+  const kindValue = format.kindByHeading && format.kindByHeading[card.heading];
   const kind = stockOcrFieldStock(
     kindValue || null,
     kindValue ? "recognized" : "unreadable",
@@ -327,8 +330,7 @@ function stockOcrParseDcCardStock(card,format) {
     reasons.push("評価額・取得価額・評価損益の対応を確定できません。");
   }
 
-  const kindValue = format.kindByHeading &&
-    format.kindByHeading[card.heading];
+  const kindValue = format.kindByHeading && format.kindByHeading[card.heading];
   const kind = stockOcrFieldStock(
     kindValue || null,
     kindValue ? "recognized" : "unreadable",
@@ -449,21 +451,131 @@ function stockOcrMarkDuplicateCardsStock(cards) {
   return cards;
 }
 
+
+function stockOcrIsRakutenEndMarkerStock(value) {
+  const text = stockOcrNormalizeTextStock(value).replace(/^•\s*/,"");
+  return ["参考為替レート","留意事項","楽天証券について"].includes(text) ||
+    /^Rakuten Securities(?:,|$)/.test(text);
+}
+
+function stockOcrExtractRakutenAmountTokensStock(lines,format) {
+  const tokens = [];
+  const negativeMarks = format.negativeMarks || [];
+  const amountPattern = /[+＋\-−－]?\s*(?:(?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.\d+)?/g;
+  const ratePattern = /[+＋\-−－]?\s*\d+(?:\.\d+)?\s*[%％]/g;
+  for (const line of lines) {
+    const text = stockOcrNormalizeTextStock(line.text);
+    if (!text || stockOcrIsHeadingStock(text,format) ||
+        stockOcrIsRakutenEndMarkerStock(text) ||
+        /現在の評価額合計/.test(text) ||
+        /(?:USD|EUR|GBP|AUD|CAD|CHF|CNY|HKD|SGD|ドル|\$|€|£)/i.test(text) ||
+        /(?:^|[^\d])\d{4}[./-]\d{1,2}[./-]\d{1,2}(?:$|[^\d])/.test(text) ||
+        /(?:^|[^\d])\d{1,2}[./-]\d{1,2}[./-]\d{4}(?:$|[^\d])/.test(text) ||
+        /\d{4}年\d{1,2}月\d{1,2}日/.test(text)) continue;
+    if (stockOcrIsCodeLineStock(text,format) &&
+        !/^[+＋\-−－]?\s*(?:(?:\d{1,3}(?:,\d{3})+)|\d+)(?:\.\d+)?(?:円)?$/.test(text)) continue;
+    const withoutRates = text.replace(ratePattern," ");
+    amountPattern.lastIndex = 0;
+    let match;
+    while ((match = amountPattern.exec(withoutRates)) !== null) {
+      const source = match[0].trim();
+      const before = withoutRates[match.index - 1] || "";
+      const after = withoutRates[match.index + match[0].length] || "";
+      if (/[A-Za-z0-9]/.test(before) || /[A-Za-z0-9]/.test(after)) continue;
+      const parsed = normalizeOcrAmount(source,negativeMarks);
+      tokens.push({
+        value:parsed && !parsed.error ? parsed.value : null,
+        status:parsed && !parsed.error ? "recognized" : "unreadable",
+        hasYen:/円/.test(text),
+        signed:/^[+＋\-−－]/.test(source),
+        lineNumber:line.lineNumber,
+        original:stockOcrMaskStock(source)
+      });
+    }
+  }
+  return tokens;
+}
+
+function stockOcrFindRakutenAmountPairsStock(tokens,rate,tolerance) {
+  if (tokens.some(token => token.status !== "recognized")) {
+    return {status:"unreadable-candidate",pairs:[]};
+  }
+  const unsigned = tokens.filter(token => !token.signed);
+  const signed = tokens.filter(token => token.signed);
+  const pairs = [];
+  if (!rate || rate.status !== "recognized" || typeof rate.value !== "number") {
+    return {status:rate && rate.status === "multiple" ? "multiple-rates" : "rate-unavailable",pairs:[]};
+  }
+  const findPairs = candidates => {
+    for (const valueToken of unsigned) {
+      for (const candidate of candidates) {
+        if (candidate.token === valueToken) continue;
+        const costBasis = valueToken.value - candidate.pnl;
+        if (!Number.isFinite(costBasis) || costBasis === 0) continue;
+        const expectedRate = 100 * candidate.pnl / costBasis;
+        const difference = Math.abs(rate.value - expectedRate);
+        if (difference <= tolerance) {
+          pairs.push({
+            valueToken,
+            pnlToken:candidate.token,
+            pnlValue:candidate.pnl,
+            costBasis,
+            expectedRate,
+            actualRate:rate.value,
+            difference,
+            signInferred:candidate.signInferred
+          });
+        }
+      }
+    }
+  };
+  findPairs(signed.map(token => ({token,pnl:token.value,signInferred:false})));
+  if (pairs.length === 0 && unsigned.length > 1) {
+    findPairs(unsigned.map(token => ({
+      token,
+      pnl:rate.value < 0 ? -Math.abs(token.value) : Math.abs(token.value),
+      signInferred:true
+    })));
+  }
+  return {
+    status:pairs.length === 1 ? "unique" : pairs.length === 0 ? "no-match" : "ambiguous",
+    pairs
+  };
+}
+
+function stockOcrFindRakutenWrapperStock(lines,format) {
+  return stockOcrFindWrapperStock(lines,format);
+}
+
+function stockOcrFindRakutenScreenTotalStock(lines,format) {
+  const totalIndex = lines.findIndex(line =>
+    stockOcrNormalizeTextStock(line.text) === "現在の評価額合計"
+  );
+  if (totalIndex < 0) return stockOcrFieldStock(null,"missing");
+  const sectionIndex = lines.findIndex((line,index) =>
+    index > totalIndex &&
+    ["保有商品詳細（すべて）","保有商品詳細(すべて)"].includes(
+      stockOcrNormalizeTextStock(line.text)
+    )
+  );
+  const endIndex = sectionIndex >= 0 ? sectionIndex : Math.min(lines.length,totalIndex + 8);
+  const candidates = stockOcrExtractRakutenAmountTokensStock(
+    lines.slice(totalIndex + 1,endIndex),format
+  ).filter(token => !token.signed && token.status === "recognized");
+  if (candidates.length === 1) {
+    return stockOcrFieldStock(candidates[0].value,"recognized",candidates[0].original,"screen-total");
+  }
+  return stockOcrFieldStock(null,candidates.length > 1 ? "multiple" : "missing");
+}
+
+
 function parseStockOcrText(text,rule) {
   const format = stockOcrGetFormatStock(rule);
   if (!format) {
-    return {
-      success:false,
-      status:"no-rules",
-      cards:[],
-      reasons:["株式OCRの解析ルールがありません。"]
-    };
+    return {success:false,status:"no-rules",cards:[],reasons:["株式OCRの解析ルールがありません。"]};
   }
-
   const lines = stockOcrNormalizeLinesStock(text);
-  const normalized = lines.map(line =>
-    stockOcrNormalizeTextStock(line.text)
-  );
+  const normalized = lines.map(line => stockOcrNormalizeTextStock(line.text));
   const identify = format.identify || {};
   const allMatched = (identify.all || []).every(label =>
     normalized.includes(stockOcrNormalizeTextStock(label))
@@ -471,59 +583,36 @@ function parseStockOcrText(text,rule) {
   const noneMatched = (identify.none || []).some(label =>
     normalized.includes(stockOcrNormalizeTextStock(label))
   );
-
   if (!allMatched || noneMatched) {
-    return {
-      success:false,
-      status:"format-mismatch",
-      cards:[],
-      reasons:["選択した口座のOCR形式と一致しません。"]
-    };
+    return {success:false,status:"format-mismatch",cards:[],reasons:["選択した口座のOCR形式と一致しません。"]};
   }
-
-  const cards = stockOcrSplitCardsStock(lines,rule,format);
-  if (cards.length === 0) {
-    return {
-      success:false,
-      status:"no-cards",
-      cards:[],
-      reasons:["商品カードを切り出せませんでした。"]
-    };
-  }
-
-  let parsedCards;
+  let parseLines = lines;
+  let safeUnrecognizedLines = [];
+  let screenTotalValue = stockOcrFieldStock(null,"missing");
   if (rule.ruleId === "rakuten-securities") {
-    parsedCards = cards.map(card =>
-      stockOcrParseRakutenCardStock(card,format)
-    );
-  } else if (rule.ruleId === "ideco") {
-    parsedCards = cards.map(card =>
-      stockOcrParseIdecoCardStock(card,format)
-    );
-  } else if (rule.ruleId === "corporate-dc") {
-    parsedCards = cards.map(card =>
-      stockOcrParseDcCardStock(card,format)
-    );
-  } else {
-    return {
-      success:false,
-      status:"unsupported-rule",
-      cards:[],
-      reasons:["未対応の口座ルールです。"]
-    };
+    screenTotalValue = stockOcrFindRakutenScreenTotalStock(lines,format);
+    const endIndex = lines.findIndex(line => stockOcrIsRakutenEndMarkerStock(line.text));
+    if (endIndex >= 0) {
+      parseLines = lines.slice(0,endIndex);
+      safeUnrecognizedLines = lines.slice(endIndex).map(line => ({
+        lineNumber:line.lineNumber,text:stockOcrMaskStock(line.text)
+      }));
+    }
   }
-
+  const cards = stockOcrSplitCardsStock(parseLines,rule,format);
+  if (cards.length === 0) {
+    return {success:false,status:"no-cards",cards:[],reasons:["商品カードを切り出せませんでした。"],safeUnrecognizedLines,screenTotalValue};
+  }
+  let parsedCards;
+  if (rule.ruleId === "rakuten-securities") parsedCards = cards.map(card => stockOcrParseRakutenCardStock(card,format));
+  else if (rule.ruleId === "ideco") parsedCards = cards.map(card => stockOcrParseIdecoCardStock(card,format));
+  else if (rule.ruleId === "corporate-dc") parsedCards = cards.map(card => stockOcrParseDcCardStock(card,format));
+  else return {success:false,status:"unsupported-rule",cards:[],reasons:["未対応の口座ルールです。"],safeUnrecognizedLines};
   stockOcrMarkDuplicateCardsStock(parsedCards);
-
   return {
     success:true,
-    status:parsedCards.some(card =>
-      card.status !== "recognized"
-    ) ? "needs-confirmation" : "recognized",
-    ruleId:rule.ruleId,
-    ruleVersion:rule.ruleVersion || null,
-    cards:parsedCards,
-    reasons:[],
-    safeUnrecognizedLines:[]
+    status:parsedCards.some(card => card.status !== "recognized") ? "needs-confirmation" : "recognized",
+    ruleId:rule.ruleId,ruleVersion:rule.ruleVersion || null,cards:parsedCards,reasons:[],
+    safeUnrecognizedLines,screenTotalValue
   };
 }
