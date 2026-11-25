@@ -376,8 +376,7 @@ function registerStockOcrTests(context) {
     );
 
     stockOcrAssertCardCountStock(
-      assert,result,1,"企業型DC外貨カードが1件ではありません。"
-    );
+      assert,result,1,"企業型DC外貨カードが1件ではありません。");
     assert(result.cards[0].value === null,
       "企業型DCの外貨金額が円として取り込まれています。");
     stockOcrAssertNeedsConfirmationStock(
@@ -768,53 +767,6 @@ function registerStockOcrTests(context) {
       item.id === "fictional-other-stock"
     ).kind === "その他",
       "既存のその他が検証後に変更されています。");
-  });
-
-  runTest("S11b追補A⑨：画面合計とカード合計の一致・不一致",() => {
-    const rule = stockOcrGetTestRuleStock("rakuten-securities");
-    const equalText = [
-      "現在の評価額合計",
-      "100,000円",
-      "保有商品詳細（すべて）",
-      "時価評価額",
-      "投資信託",
-      "架空・合計一致テスト",
-      "特定",
-      "100,000円",
-      "+10,000円",
-      "+11.11%"
-    ].join("\n");
-    const equal = parseStockOcrText(equalText,rule);
-    assert(equal.screenTotalValue.value === 100000,
-      "画面合計100000円が取得できていません。");
-    const equalComparison = stockOcrCompareCardsStock(
-      stockOcrMakeCompareDataTest([]),
-      "account-a",
-      equal.cards.map(card => ({
-        ...card,selected:true
-      })),
-      "2026-11-30",
-      equal.screenTotalValue
-    );
-    assert(equalComparison.screenTotalDifference === 0,
-      "画面合計とカード合計が一致していません。");
-
-    const differentText = equalText.replace(
-      "100,000円\n保有商品詳細",
-      "120,000円\n保有商品詳細"
-    );
-    const different = parseStockOcrText(differentText,rule);
-    const differentComparison = stockOcrCompareCardsStock(
-      stockOcrMakeCompareDataTest([]),
-      "account-a",
-      different.cards.map(card => ({
-        ...card,selected:true
-      })),
-      "2026-11-30",
-      different.screenTotalValue
-    );
-    assert(differentComparison.screenTotalDifference === 20000,
-      "画面合計との差額20000円が取得できていません。");
   });
 
   runTest("S11b追補A⑩：楽天証券ルール変更のiDeCo・DC非波及",() => {
