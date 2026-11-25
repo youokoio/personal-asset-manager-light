@@ -155,6 +155,58 @@ function stockOcrSplitCardsStock(lines,rule,format) {
   return [];
 }
 
+function stockOcrExtractRakutenNameStock(lines,format,heading) {
+  const stopLabels = new Set((format.nameStopLabels || []).map(stockOcrNormalizeTextStock));
+  const ignore = new Set((format.ignoreLines || []).map(stockOcrNormalizeTextStock));
+  const segments = [];
+  let current = [], code = null, codeAmbiguous = false;
+  const finishSegment = () => {
+    if (current.length > 0) segments.push(current);
+    current = [];
+  };
+  for (const line of lines) {
+    const text = stockOcrNormalizeTextStock(line.text);
+    if (!text) {
+      finishSegment();
+      continue;
+    }
+    const ascii = text.replace(/[（）]/g,match => match === "（" ? "(" : ")");
+    const numericCode = /^\(?[0-9]{4,5}\)?$/.test(ascii);
+    const tickerCode = /^[A-Z][A-Z0-9.]{0,7}$/.test(ascii);
+    if (numericCode || tickerCode) {
+      finishSegment();
+      if (code !== null) codeAmbiguous = true;
+      else code = ascii.replace(/^\(|\)$/g,"");
+      continue;
+    }
+    if (text === heading || stopLabels.has(text) || ignore.has(text) ||
+        stockOcrIsHeadingStock(text,format) ||
+        stockOcrIsWrapperCandidateStock(text,format) ||
+        stockOcrIsRakutenEndMarkerStock(text) ||
+        stockOcrIsPercentLineStock(text) ||
+        stockOcrIsYenLineStock(text) ||
+        stockOcrIsPlainAmountLineStock(text) ||
+        /円|％|%/.test(text) || /^\d/.test(text)) {
+      finishSegment();
+      continue;
+    }
+    if (format.nameLinePattern &&
+        !new RegExp(format.nameLinePattern).test(text) &&
+        !(text.length === 1 && current.length > 0)) {
+      finishSegment();
+      continue;
+    }
+    current.push(text);
+  }
+  finishSegment();
+  if (codeAmbiguous || segments.length > 1) return stockOcrFieldStock(null,"multiple");
+  if (segments.length === 0) return stockOcrFieldStock(null,"missing");
+  const productName = segments[0].join("").trim();
+  if (!productName) return stockOcrFieldStock(null,"missing");
+  const finalName = code ? productName + " (" + code + ")" : productName;
+  return stockOcrFieldStock(finalName,"recognized",stockOcrMaskStock(finalName),"screen");
+}
+
 function stockOcrExtractNameStock(lines,format,heading) {
   const stopLabels = new Set(
     (format.nameStopLabels || []).map(stockOcrNormalizeTextStock)
