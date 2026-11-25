@@ -151,31 +151,44 @@ function registerStockOcrRenderTests(context) {
       "保存対象の初期状態がオンではありません。");
   });
 
-  runTest("S11b描画③：消失商品と合計差の警告",() => {
+  runTest("S11b描画③：前回・今回・増減の3行表示",() => {
     withStockOcrRenderStateTest(makeStockOcrRenderTestData(makeAccount),() => {
       stockOcrUpdateComparison = {
-        previousDate:"2026-10-31",
+        targetDate:"2026-11-30",
+        aggregateComparison:{
+          status:"calculated",
+          previousDate:"2026-10-31",
+          previousTotal:100000,
+          currentTotal:125000,
+          change:25000
+        },
         missingHoldings:[
           {name:"架空の過去商品",wrapper:"特定"}
-        ],
-        holdingsTotal:950000,
-        accountValue:1000001,
-        difference:50001,
-        differenceWarning:true
+        ]
       };
 
       stockOcrUpdateRenderComparison();
 
+      assert(app.textContent.includes("前回（2026-10-31"),
+        "前回の日付が表示されていません。");
+      assert(app.textContent.includes("¥100,000"),
+        "前回の合計額が表示されていません。");
+      assert(app.textContent.includes("今回（2026-11-30"),
+        "今回の日付が表示されていません。");
+      assert(app.textContent.includes("¥125,000"),
+        "今回の合計額が表示されていません。");
+      assert(app.textContent.includes("増減：+¥25,000"),
+        "増減額が表示されていません。");
       assert(app.textContent.includes("今回出ていません"),
         "消失商品の見出しがありません。");
       assert(app.textContent.includes("架空の過去商品"),
         "消失商品の商品名がありません。");
       assert(app.textContent.includes("削除・保存しません"),
         "消失商品を削除・保存しない説明がありません。");
-      assert(app.textContent.includes("50,001"),
-        "商品別合計との差額が表示されていません。");
-      assert(app.textContent.includes("5%を超えています"),
-        "合計差の警告がありません。");
+      assert(!app.textContent.includes("5%を超えています"),
+        "削除対象の5%警告が残っています。");
+      assert(!app.textContent.includes("50,001"),
+        "削除対象の口座全体との差額が残っています。");
     });
   });
 
