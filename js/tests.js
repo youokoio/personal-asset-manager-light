@@ -115,6 +115,7 @@ function runAllTests() {
   registerStockOcrTests(context);
   registerStockOcrComparisonTests(context);
   registerStockOcrRenderTests(context);
+  registerStockOcrStateTests(context);
   registerBulkOcrRenderTests(context);
   registerContributionTests(context);
   registerContributionRenderTests(context);
