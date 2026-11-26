@@ -111,7 +111,13 @@ function stockOcrFindWrapperStock(lines,format) {
   }
 
   if (found.length > 1) {
-    return stockOcrFieldStock(null,"multiple");
+    const candidates = Array.from(new Set(
+      found.map(item => item.value)
+    ));
+    return {
+      ...stockOcrFieldStock(null,"multiple"),
+      candidates
+    };
   }
   if (unknown.length > 0) {
     return stockOcrFieldStock(
