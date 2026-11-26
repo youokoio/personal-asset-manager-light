@@ -1,38 +1,21 @@
 "use strict";
 
-/* ---------- S11b追補C：株式OCRの画面状態・口座snapshot ---------- */
+/* ---------- S11b追補C：株式OCRの状態遷移 ---------- */
 
-function stockOcrGetCandidateOptionsStock(card,field,rule = null) {
+function stockOcrGetCandidateOptionsStateStock(card,field,rule = null) {
   if (!card || card.duplicate || card.batchDuplicate) return [];
 
   if (field === "name") {
-    const names = Array.isArray(card.similarNames)
-      ? card.similarNames
-      : [];
-    return Array.from(new Set(names.filter(name =>
-      typeof name === "string" && name.trim()
-    ))).map(name => ({
-      value:name,
-      label:name
-    }));
+    return Array.from(new Set(
+      (Array.isArray(card.similarNames) ? card.similarNames : [])
+        .filter(value =>
+          typeof value === "string" && value.trim()
+        )
+    )).map(value => ({value,label:value}));
   }
 
   if (field === "wrapper") {
     const wrapperField = card.fields && card.fields.wrapper;
-    const selections = card.candidateSelections || {};
-    const hasSelection = Object.prototype.hasOwnProperty.call(
-      selections,"wrapper"
-    );
-
-    if (hasSelection &&
-        wrapperField &&
-        Array.isArray(wrapperField.candidates)) {
-      return Array.from(new Set(wrapperField.candidates)).map(value => ({
-        value,
-        label:value
-      }));
-    }
-
     const format = rule && Array.isArray(rule.formats)
       ? rule.formats[0]
       : null;
@@ -65,35 +48,34 @@ function stockOcrGetCandidateOptionsStock(card,field,rule = null) {
     const options = [];
 
     for (const pair of card.candidatePairs) {
-      const valueIndex = card.amountCandidates.findIndex(token =>
+      const valueTokens = card.amountCandidates.filter(token =>
         token.original === pair.valueOriginal &&
-        token.signed === false
+        token.signed === false &&
+        typeof token.value === "number" &&
+        Number.isFinite(token.value)
       );
-      if (valueIndex < 0) continue;
-
-      const pnlIndex = card.amountCandidates.findIndex((token,index) =>
-        index !== valueIndex &&
+      const pnlTokens = card.amountCandidates.filter(token =>
         token.original === pair.pnlOriginal &&
-        (pair.signInferred
-          ? token.signed === false
-          : token.signed === true)
+        token.signed === (pair.signInferred !== true) &&
+        typeof token.value === "number" &&
+        Number.isFinite(token.value)
       );
-      if (pnlIndex < 0) continue;
 
-      const value = card.amountCandidates[valueIndex].value;
-      const pnlToken = card.amountCandidates[pnlIndex];
+      if (valueTokens.length !== 1 || pnlTokens.length !== 1 ||
+          valueTokens[0] === pnlTokens[0]) continue;
+
+      const value = valueTokens[0].value;
       const pnl = pair.signInferred
         ? pair.expectedRate < 0
-          ? -Math.abs(pnlToken.value)
-          : Math.abs(pnlToken.value)
-        : pnlToken.value;
+          ? -Math.abs(pnlTokens[0].value)
+          : Math.abs(pnlTokens[0].value)
+        : pnlTokens[0].value;
       const costBasis = value - pnl;
 
       if (![value,pnl,costBasis].every(Number.isFinite)) continue;
 
-      const candidate = {value,pnl,costBasis};
       options.push({
-        value:candidate,
+        value:{value,pnl,costBasis},
         label:"評価額 " + formatYen(value) +
           " ／ 評価損益 " + formatSignedYen(pnl) +
           " ／ 取得額 " + formatYen(costBasis)
@@ -106,7 +88,7 @@ function stockOcrGetCandidateOptionsStock(card,field,rule = null) {
   return [];
 }
 
-function stockOcrCaptureCandidateOriginalsStock(card) {
+function stockOcrCaptureCandidateOriginalsStateStock(card) {
   const fields = {};
   for (const [key,value] of Object.entries(card.fields || {})) {
     fields[key] = value && typeof value === "object"
@@ -121,65 +103,83 @@ function stockOcrCaptureCandidateOriginalsStock(card) {
     pnl:card.pnl,
     costBasis:card.costBasis,
     costBasisSource:card.costBasisSource,
-    fields
+    fields,
+    reasons:Array.isArray(card.reasons)
+      ? card.reasons.slice()
+      : []
   };
 }
 
-function stockOcrGetCandidateSelectionIssuesStock(card) {
-  const issues = [];
+function stockOcrGetCandidateIssuesStateStock(card,field) {
+  const resolvedReasons = {
+    name:["商品名を確定できません。"],
+    wrapper:["wrapperを確定できません。"],
+    amountPair:[
+      "評価額と評価損益の組み合わせが複数あります。候補を確認してください。",
+      "評価額と評価損益の組み合わせを検算で確定できません。候補を確認してください。",
+      "評価額・取得額・評価損益・率の整合が取れません。",
+      "評価額・取得額・評価損益・率の整合が取れません。内容を確認してください。",
+      "評価損益を確認してください。",
+      "取得額を算出できません。"
+    ]
+  };
 
-  if (card.batchDuplicate) {
-    issues.push("同じ商品名・wrapperのカードが複数あります。");
-  }
-  if (typeof card.name !== "string" || !card.name.trim()) {
-    issues.push("商品名を確定してください。");
-  }
-  if (!HOLDING_WRAPPERS.includes(card.wrapper)) {
-    issues.push("wrapperを確定してください。");
-  }
-  if (!HOLDING_KINDS.includes(card.kind)) {
-    issues.push("商品種別を確定してください。");
-  }
-  if (typeof card.value !== "number" ||
-      !Number.isFinite(card.value)) {
-    issues.push("評価額を数値で確定してください。");
-  }
+  const issues = (card.reasons || []).filter(reason =>
+    !(resolvedReasons[field] || []).includes(reason)
+  );
 
-  if (typeof card.value === "number" &&
-      typeof card.costBasis === "number" &&
-      typeof card.pnl === "number") {
-    const integrity = stockOcrCheckIntegrityStock(
-      card.value,
-      card.pnl,
-      card.costBasis,
-      card.rate === null || card.rate === undefined
-        ? null
-        : {value:card.rate}
-    );
-
-    if (integrity.status === "mismatch" ||
-        integrity.status === "rate-mismatch") {
-      issues.push("評価額・取得額・評価損益・率の整合を確認してください。");
+  for (const [label,key] of [
+    ["商品名","name"],
+    ["wrapper","wrapper"],
+    ["種別","kind"],
+    ["評価額","value"]
+  ]) {
+    const item = card.fields && card.fields[key];
+    if (!item || item.status !== "recognized") {
+      issues.push(label + "を確定できません。");
     }
   }
 
-  return issues;
-}
+  const pnlField = card.fields && card.fields.pnl;
+  const costBasisField = card.fields && card.fields.costBasis;
 
-function stockOcrApplyCandidateStatusStock(card) {
-  const issues = stockOcrGetCandidateSelectionIssuesStock(card);
+  if (pnlField &&
+      ["unreadable","multiple"].includes(pnlField.status)) {
+    issues.push("評価損益を確認してください。");
+  }
+  if (costBasisField &&
+      costBasisField.status === "missing" &&
+      pnlField && pnlField.status === "recognized") {
+    issues.push("取得額を算出できません。");
+  }
+
+  const integrity = stockOcrCheckIntegrityStock(
+    card.value,
+    card.pnl,
+    card.costBasis,
+    card.rate === null || card.rate === undefined
+      ? null
+      : {value:card.rate}
+  );
+
+  if (integrity.status === "mismatch" ||
+      integrity.status === "rate-mismatch") {
+    issues.push("評価額・取得額・評価損益・率の整合が取れません。");
+  }
+
   return {
-    ...card,
-    status:issues.length === 0 ? "recognized" : "needs-confirmation",
-    manualConfirmed:issues.length === 0,
-    reasons:issues
+    issues:Array.from(new Set(issues)),
+    integrity
   };
 }
 
 function stockOcrSelectCandidateStateStock(
   card,field,candidateIndex,rule = null
 ) {
-  const options = stockOcrGetCandidateOptionsStock(card,field,rule);
+  const options = stockOcrGetCandidateOptionsStateStock(
+    card,field,rule
+  );
+
   if (!Number.isInteger(candidateIndex) ||
       candidateIndex < 0 ||
       candidateIndex >= options.length) return null;
@@ -190,7 +190,7 @@ function stockOcrSelectCandidateStateStock(
     fields:{...(card.fields || {})},
     candidateSelections:{...(card.candidateSelections || {})},
     candidateOriginals:card.candidateOriginals ||
-      stockOcrCaptureCandidateOriginalsStock(card)
+      stockOcrCaptureCandidateOriginalsStateStock(card)
   };
 
   if (field === "amountPair") {
@@ -199,18 +199,24 @@ function stockOcrSelectCandidateStateStock(
     next.costBasis = option.value.costBasis;
     next.costBasisSource = "value-minus-pnl";
 
-    for (const amountField of ["value","pnl","costBasis"]) {
-      next.fields[amountField] = {
-        ...(next.fields[amountField] || {}),
-        value:next[amountField],
-        status:amountField === "costBasis"
-          ? "calculated"
-          : "recognized",
-        source:amountField === "costBasis"
-          ? "value-minus-pnl"
-          : "candidate"
-      };
-    }
+    next.fields.value = {
+      ...(next.fields.value || {}),
+      value:next.value,
+      status:"recognized",
+      source:"candidate"
+    };
+    next.fields.pnl = {
+      ...(next.fields.pnl || {}),
+      value:next.pnl,
+      status:"recognized",
+      source:"candidate"
+    };
+    next.fields.costBasis = {
+      ...(next.fields.costBasis || {}),
+      value:next.costBasis,
+      status:"calculated",
+      source:"value-minus-pnl"
+    };
   } else {
     next[field] = option.value;
     next.fields[field] = {
@@ -219,11 +225,6 @@ function stockOcrSelectCandidateStateStock(
       status:"recognized",
       source:"candidate"
     };
-    if (field === "wrapper") {
-      next.fields.wrapper.candidates = options.map(item =>
-        item.value
-      );
-    }
   }
 
   next.candidateSelections[field] = {
@@ -231,7 +232,15 @@ function stockOcrSelectCandidateStateStock(
     label:option.label
   };
 
-  return stockOcrApplyCandidateStatusStock(next);
+  const result = stockOcrGetCandidateIssuesStateStock(next,field);
+  next.integrity = result.integrity;
+  next.reasons = result.issues;
+  next.status = result.issues.length === 0
+    ? "recognized"
+    : "needs-confirmation";
+  next.manualConfirmed = next.status === "recognized";
+
+  return next;
 }
 
 function stockOcrClearCandidateStateStock(card,field) {
@@ -240,45 +249,30 @@ function stockOcrClearCandidateStateStock(card,field) {
         card.candidateSelections,field
       )) return null;
 
-  const originals = card.candidateOriginals ||
-    stockOcrCaptureCandidateOriginalsStock(card);
+  const original = card.candidateOriginals ||
+    stockOcrCaptureCandidateOriginalsStateStock(card);
   const next = {
     ...card,
-    fields:{...(card.fields || {})},
-    candidateSelections:{...card.candidateSelections}
+    name:original.name,
+    wrapper:original.wrapper,
+    value:original.value,
+    pnl:original.pnl,
+    costBasis:original.costBasis,
+    costBasisSource:original.costBasisSource,
+    fields:{...original.fields},
+    candidateSelections:{...card.candidateSelections},
+    reasons:original.reasons.slice()
   };
-
-  if (field === "amountPair") {
-    for (const amountField of ["value","pnl","costBasis"]) {
-      next[amountField] = originals[amountField];
-      next.fields[amountField] = originals.fields[amountField]
-        ? {...originals.fields[amountField]}
-        : undefined;
-      if (!next.fields[amountField]) {
-        delete next.fields[amountField];
-      }
-    }
-    next.costBasisSource = originals.costBasisSource;
-  } else {
-    next[field] = originals[field];
-    next.fields[field] = originals.fields[field]
-      ? {...originals.fields[field]}
-      : undefined;
-    if (!next.fields[field]) delete next.fields[field];
-  }
 
   delete next.candidateSelections[field];
+  next.status = "needs-confirmation";
+  next.manualConfirmed = false;
+  next.reasons.push("候補選択を解除しました。内容を確認してください。");
 
-  const issues = stockOcrGetCandidateSelectionIssuesStock(next);
-  issues.push("候補選択を解除しました。内容を確認してください。");
-
-  return {
-    ...next,
-    status:"needs-confirmation",
-    manualConfirmed:false,
-    reasons:issues
-  };
+  return next;
 }
+
+/* ---------- 口座全体snapshot ---------- */
 
 function stockOcrBuildAccountSnapshotStateStock(
   data,accountId,targetDate,cards
@@ -290,35 +284,27 @@ function stockOcrBuildAccountSnapshotStateStock(
     : null;
   const validDate = isValidFxDateForStorage(targetDate);
   const cardList = Array.isArray(cards) ? cards : [];
-  const unresolvedCount = cardList.filter(card =>
-    !card ||
-    card.status !== "recognized" ||
-    card.batchDuplicate === true
-  ).length;
-  const uncheckedCount = cardList.filter(card =>
-    card && card.selected === false && card.duplicate !== true
-  ).length;
 
-  let reason = "";
-  if (!account) {
-    reason = "対象の株式口座を確認してください。";
-  } else if (!validDate) {
-    reason = "対象日を入力してください。";
-  } else if (cardList.length === 0) {
-    reason = "商品カードがありません。";
-  } else if (unresolvedCount > 0) {
-    reason = "未確定の商品カードがあります。";
-  } else if (uncheckedCount > 0) {
-    reason = "保存対象から外した商品カードがあります。";
-  }
+  const allConfirmed = cardList.length > 0 &&
+    cardList.every(card =>
+      card &&
+      card.status === "recognized" &&
+      card.batchDuplicate !== true
+    );
+  const allSelected = cardList.length > 0 &&
+    cardList.every(card =>
+      card &&
+      card.selected !== false &&
+      card.duplicate !== true
+    );
 
-  const canSaveManual = reason === "";
-  const autoValue = canSaveManual
+  const canAutoFill = Boolean(
+    account && validDate && allConfirmed && allSelected
+  );
+
+  const autoValue = canAutoFill
     ? stockOcrSumFieldStock(cardList,"value")
     : null;
-  const canAutoFill = canSaveManual &&
-    typeof autoValue === "number" &&
-    Number.isFinite(autoValue);
 
   const existingSnapshot = account && validDate
     ? getAccountSnapshots(data,accountId).find(snapshot =>
@@ -326,20 +312,26 @@ function stockOcrBuildAccountSnapshotStateStock(
       ) || null
     : null;
 
-  if (canSaveManual && !canAutoFill) {
+  let reason = "";
+  if (!account) {
+    reason = "対象の株式口座を確認してください。";
+  } else if (!validDate) {
+    reason = "対象日を入力してください。";
+  } else if (!allConfirmed) {
+    reason = "未確定の商品カードがあります。確定後に反映します。";
+  } else if (!allSelected) {
+    reason = "保存対象から外した商品カードがあります。";
+  } else if (autoValue === null) {
     reason = "商品別評価額の合計を計算できません。";
   }
 
   return {
     account,
     validDate,
-    cardCount:cardList.length,
-    unresolvedCount,
-    uncheckedCount,
-    canAutoFill,
-    canSaveManual,
-    canSaveSnapshot:canSaveManual,
-    autoValue:canAutoFill ? autoValue : null,
+    allConfirmed,
+    allSelected,
+    canAutoFill:canAutoFill && autoValue !== null,
+    autoValue,
     existingSnapshot,
     reason
   };
@@ -352,7 +344,7 @@ function stockOcrBuildAccountSnapshotStock(
     data,accountId,targetDate,cards
   );
 
-  if (!state.canSaveSnapshot) {
+  if (!state.account || !state.validDate) {
     return {
       eligible:false,
       snapshot:null,
@@ -360,12 +352,18 @@ function stockOcrBuildAccountSnapshotStock(
     };
   }
 
-  const value = options.value;
+  const value = options.value === undefined ||
+    options.value === null
+      ? state.canAutoFill
+        ? state.autoValue
+        : null
+      : options.value;
+
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return {
       eligible:false,
       snapshot:null,
-      reason:"口座全体の評価額を確認してください。"
+      reason:"口座全体の評価額を入力してください。"
     };
   }
 
@@ -379,28 +377,12 @@ function stockOcrBuildAccountSnapshotStock(
     };
   }
 
-  const effectivePrincipal = options.effectivePrincipal !== undefined
-    ? options.effectivePrincipal
-    : stockOcrSumFieldStock(cards,"costBasis");
-  const pnl = options.pnl !== undefined
-    ? options.pnl
-    : stockOcrSumFieldStock(cards,"pnl");
-
-  for (const [field,fieldValue] of [
-    ["有効元本",effectivePrincipal],
-    ["評価損益",pnl]
-  ]) {
-    if (fieldValue !== null &&
-        fieldValue !== undefined &&
-        (typeof fieldValue !== "number" ||
-         !Number.isFinite(fieldValue))) {
-      return {
-        eligible:false,
-        snapshot:null,
-        reason:field + "が正しくありません。"
-      };
-    }
-  }
+  const effectivePrincipal = state.canAutoFill
+    ? stockOcrSumFieldStock(cards,"costBasis")
+    : null;
+  const pnl = state.canAutoFill
+    ? stockOcrSumFieldStock(cards,"pnl")
+    : null;
 
   return {
     eligible:true,
@@ -411,17 +393,16 @@ function stockOcrBuildAccountSnapshotStock(
       asOfDate:targetDate,
       recordedAt:options.recordedAt,
       value,
+      cash:null,
+      pnl,
+      principal:null,
       cumulativeInvested:null,
-      effectivePrincipal:effectivePrincipal ?? null,
-      pnl:pnl ?? null,
+      effectivePrincipal,
       realizedPnlTotal:null,
       realizedPnlDaily:null,
-      cash:null,
       swapTotal:null,
       requiredMargin:null,
-      memo:"",
-      createdAt:options.recordedAt,
-      updatedAt:options.recordedAt
+      memo:""
     }
   };
 }
