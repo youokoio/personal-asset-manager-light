@@ -112,6 +112,17 @@ function renderStockOcrUpdate() {
     snapshotLabel.appendChild(snapshotCheckbox);
     snapshotCard.appendChild(snapshotLabel);
 
+    const snapshotState = stockOcrUpdateSnapshotState ||
+      stockOcrUpdateRefreshSnapshotState();
+
+    if (!snapshotState.canAutoFill) {
+      snapshotCard.appendChild(el(
+        "div",
+        "help",
+        "商品カードがすべて確定し、保存対象から外したカードがない場合に、商品別評価額の合計を自動反映します。現在は「確定後に反映」です。口座全体の評価額は手入力できます。"
+      ));
+    }
+
     const snapshotValueField = makeField(
       "口座全体の評価額",
       "stockOcrSnapshotValue",
@@ -126,20 +137,19 @@ function renderStockOcrUpdate() {
     app.appendChild(snapshotCard);
 
     const selectedCount = stockOcrUpdateCards.filter(card =>
-      card.selected !== false && !card.duplicate
+      card.selected !== false &&
+      !card.duplicate &&
+      card.status === "recognized"
     ).length;
-    const unresolved = stockOcrUpdateCards.some(card =>
-      card.status !== "recognized"
-    );
     const snapshotValue = toNumberOrNull(stockOcrUpdateSnapshotValue);
 
     const saveButton = makeButton(
       "保存（" + selectedCount + "件）",
       "stock-ocr-save"
     );
-    saveButton.disabled = unresolved ||
-      (selectedCount === 0 && !stockOcrUpdateSnapshotEnabled) ||
-      (stockOcrUpdateSnapshotEnabled && snapshotValue === null);
+    saveButton.disabled =
+      (stockOcrUpdateSnapshotEnabled && snapshotValue === null) ||
+      (selectedCount === 0 && !stockOcrUpdateSnapshotEnabled);
     app.appendChild(saveButton);
   }
 }
