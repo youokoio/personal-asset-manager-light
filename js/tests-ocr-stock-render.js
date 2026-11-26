@@ -12,6 +12,8 @@ function withStockOcrRenderStateTest(data,callback) {
     comparison:stockOcrUpdateComparison,
     snapshotEnabled:stockOcrUpdateSnapshotEnabled,
     snapshotValue:stockOcrUpdateSnapshotValue,
+    snapshotManual:stockOcrUpdateSnapshotManual,
+    snapshotState:stockOcrUpdateSnapshotState,
     message:stockOcrUpdateMessage,
     error:stockOcrUpdateError
   };
@@ -24,8 +26,10 @@ function withStockOcrRenderStateTest(data,callback) {
     stockOcrUpdatePasteText = "";
     stockOcrUpdateCards = [];
     stockOcrUpdateComparison = null;
-    stockOcrUpdateSnapshotEnabled = false;
+    stockOcrUpdateSnapshotEnabled = true;
     stockOcrUpdateSnapshotValue = "";
+    stockOcrUpdateSnapshotManual = false;
+    stockOcrUpdateSnapshotState = null;
     stockOcrUpdateMessage = "";
     stockOcrUpdateError = "";
     app.replaceChildren();
@@ -40,6 +44,8 @@ function withStockOcrRenderStateTest(data,callback) {
     stockOcrUpdateComparison = previousState.comparison;
     stockOcrUpdateSnapshotEnabled = previousState.snapshotEnabled;
     stockOcrUpdateSnapshotValue = previousState.snapshotValue;
+    stockOcrUpdateSnapshotManual = previousState.snapshotManual;
+    stockOcrUpdateSnapshotState = previousState.snapshotState;
     stockOcrUpdateMessage = previousState.message;
     stockOcrUpdateError = previousState.error;
     app.replaceChildren(...previousChildren);
@@ -192,8 +198,9 @@ function registerStockOcrRenderTests(context) {
     });
   });
 
-  runTest("S11b描画④：口座全体履歴と保存件数",() => {
+  runTest("S11b描画④：口座全体履歴の初期状態と保存件数",() => {
     withStockOcrRenderStateTest(makeStockOcrRenderTestData(makeAccount),() => {
+      stockOcrUpdateAccountId = "stock-ocr-render-rakuten";
       stockOcrUpdateCards = [
         makeStockOcrRenderCardTest()
       ];
@@ -212,10 +219,12 @@ function registerStockOcrRenderTests(context) {
 
       assert(checkbox !== null,
         "口座全体履歴のチェック欄がありません。");
-      assert(!checkbox.checked,
-        "口座全体履歴の初期状態がオフではありません。");
+      assert(checkbox.checked,
+        "口座全体履歴の初期状態がオンではありません。");
       assert(valueInput !== null,
         "口座全体の評価額入力欄がありません。");
+      assert(valueInput.value === "60000",
+        "確定済みカードの商品別評価額合計が反映されていません。");
       assert(saveButton !== null,
         "保存ボタンがありません。");
       assert(saveButton.textContent === "保存（1件）",
@@ -225,7 +234,45 @@ function registerStockOcrRenderTests(context) {
     });
   });
 
-  runTest("S11b描画⑤：株式以外の口座を選択肢に含めない",() => {
+  runTest("S11b描画⑤：候補ボタン・選択済み・解除ボタン",() => {
+    const card = makeStockOcrRenderCardTest({
+      status:"needs-confirmation",
+      manualConfirmed:false,
+      valueCandidates:[
+        {value:60000,label:"60,000円"},
+        {value:61000,label:"61,000円"}
+      ],
+      candidateSelections:{
+        value:{
+          value:60000,
+          label:"60,000円"
+        }
+      }
+    });
+
+    const section = stockOcrUpdateRenderCard(card,0);
+    const candidateButtons = section.querySelectorAll(
+      'button[data-action="stock-ocr-candidate"]'
+    );
+    const clearButton = section.querySelector(
+      'button[data-action="stock-ocr-candidate-clear"]'
+    );
+
+    assert(candidateButtons.length === 2,
+      "評価額の候補ボタンが2つ表示されていません。");
+    assert(section.textContent.includes("選択済み：60,000円"),
+      "選択済みの候補が表示されていません。");
+    assert(candidateButtons[0].dataset.candidateIndex === "0",
+      "1つ目の候補の番号が正しくありません。");
+    assert(candidateButtons[1].dataset.candidateIndex === "1",
+      "2つ目の候補の番号が正しくありません。");
+    assert(clearButton !== null,
+      "選択を解除するボタンがありません。");
+    assert(clearButton.textContent === "選択を解除",
+      "解除ボタンの表示が正しくありません。");
+  });
+
+  runTest("S11b描画⑥：株式以外の口座を選択肢に含めない",() => {
     const data = makeStockOcrRenderTestData(makeAccount);
     const stockAccount = data.accounts.find(account =>
       account.category === "stock"
@@ -250,7 +297,7 @@ function registerStockOcrRenderTests(context) {
     });
   });
 
-  runTest("S11b描画⑥：入力文字列をHTMLとして解釈しない",() => {
+  runTest("S11b描画⑦：入力文字列をHTMLとして解釈しない",() => {
     const unsafeText = '<img src=x onerror="alert(1)">';
 
     const section = stockOcrUpdateRenderCard(
@@ -274,14 +321,14 @@ function registerStockOcrRenderTests(context) {
       "伏せ字処理済みOCR行の表示欄がありません。");
   });
 
-  runTest("S11b描画⑦：8桁以上の連続数字を伏せ字にする",() => {
+  runTest("S11b描画⑧：8桁以上の連続数字を伏せ字にする",() => {
     const masked = stockOcrMaskStock("12345678");
 
     assert(masked === "●●●●●●●●",
       "8桁の連続数字が伏せ字になっていません。");
   });
 
-  runTest("S11b描画⑧：口座データが空でも画面を描画できる",() => {
+  runTest("S11b描画⑨：口座データが空でも画面を描画できる",() => {
     const data = makeStockOcrRenderTestData(makeAccount);
     data.accounts = [];
 
