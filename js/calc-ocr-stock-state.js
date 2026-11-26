@@ -19,6 +19,20 @@ function stockOcrGetCandidateOptionsStock(card,field,rule = null) {
 
   if (field === "wrapper") {
     const wrapperField = card.fields && card.fields.wrapper;
+    const selections = card.candidateSelections || {};
+    const hasSelection = Object.prototype.hasOwnProperty.call(
+      selections,"wrapper"
+    );
+
+    if (hasSelection &&
+        wrapperField &&
+        Array.isArray(wrapperField.candidates)) {
+      return Array.from(new Set(wrapperField.candidates)).map(value => ({
+        value,
+        label:value
+      }));
+    }
+
     const format = rule && Array.isArray(rule.formats)
       ? rule.formats[0]
       : null;
@@ -86,7 +100,7 @@ function stockOcrGetCandidateOptionsStock(card,field,rule = null) {
       });
     }
 
-    return options;
+    return options.length >= 2 ? options : [];
   }
 
   return [];
@@ -205,6 +219,11 @@ function stockOcrSelectCandidateStateStock(
       status:"recognized",
       source:"candidate"
     };
+    if (field === "wrapper") {
+      next.fields.wrapper.candidates = options.map(item =>
+        item.value
+      );
+    }
   }
 
   next.candidateSelections[field] = {
@@ -360,10 +379,28 @@ function stockOcrBuildAccountSnapshotStock(
     };
   }
 
-  const effectivePrincipal = stockOcrSumFieldStock(
-    cards,"costBasis"
-  );
-  const pnl = stockOcrSumFieldStock(cards,"pnl");
+  const effectivePrincipal = options.effectivePrincipal !== undefined
+    ? options.effectivePrincipal
+    : stockOcrSumFieldStock(cards,"costBasis");
+  const pnl = options.pnl !== undefined
+    ? options.pnl
+    : stockOcrSumFieldStock(cards,"pnl");
+
+  for (const [field,fieldValue] of [
+    ["有効元本",effectivePrincipal],
+    ["評価損益",pnl]
+  ]) {
+    if (fieldValue !== null &&
+        fieldValue !== undefined &&
+        (typeof fieldValue !== "number" ||
+         !Number.isFinite(fieldValue))) {
+      return {
+        eligible:false,
+        snapshot:null,
+        reason:field + "が正しくありません。"
+      };
+    }
+  }
 
   return {
     eligible:true,
@@ -375,8 +412,8 @@ function stockOcrBuildAccountSnapshotStock(
       recordedAt:options.recordedAt,
       value,
       cumulativeInvested:null,
-      effectivePrincipal,
-      pnl,
+      effectivePrincipal:effectivePrincipal ?? null,
+      pnl:pnl ?? null,
       realizedPnlTotal:null,
       realizedPnlDaily:null,
       cash:null,
