@@ -253,7 +253,7 @@ function getAccountSnapshots(data, accountId) {
   for (const snapshot of snapshots) {
     const current = latestByDate.get(snapshot.asOfDate);
     if (!current ||
-        String(snapshot.recordedAt || "") >=
+        String(snapshot.recordedAt || "") >
         String(current.recordedAt || "")) {
       latestByDate.set(snapshot.asOfDate,snapshot);
     }
