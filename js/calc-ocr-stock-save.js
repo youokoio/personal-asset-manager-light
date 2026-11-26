@@ -62,7 +62,12 @@ function saveStockOcrImportStock(
     throw new Error("未確認の商品カードがあります。確認後に保存してください。");
   }
 
-  const raw = localStorage.getItem(STORAGE_KEY);
+  const storage = options.storage &&
+    typeof options.storage.getItem === "function" &&
+    typeof options.storage.setItem === "function"
+      ? options.storage
+      : localStorage;
+  const raw = storage.getItem(STORAGE_KEY);
   if (typeof raw !== "string" || !raw) {
     throw new Error("保存データを読み込めません。");
   }
@@ -99,7 +104,10 @@ function saveStockOcrImportStock(
 
   selectedCards.forEach(stockOcrValidateSaveCardStock);
 
-  const now = new Date().toISOString();
+  const now = typeof options.recordedAt === "string" &&
+    options.recordedAt
+      ? options.recordedAt
+      : new Date().toISOString();
   const idFactory = typeof options.idFactory === "function"
     ? options.idFactory
     : createId;
@@ -142,58 +150,29 @@ function saveStockOcrImportStock(
   let snapshot = null;
 
   if (options.addAccountSnapshot === true) {
-    const value = options.value ??
-      stockOcrSumFieldStock(selectedCards,"value");
-    const effectivePrincipal = options.effectivePrincipal !== undefined
-      ? options.effectivePrincipal
-      : stockOcrSumFieldStock(selectedCards,"costBasis");
-    const pnl = options.pnl !== undefined
-      ? options.pnl
-      : stockOcrSumFieldStock(selectedCards,"pnl");
-
-    if (typeof value !== "number" || !Number.isFinite(value)) {
-      throw new Error("口座全体の評価額が確定できません。");
-    }
-
-    for (const [field,fieldValue] of [
-      ["有効元本",effectivePrincipal],
-      ["評価損益",pnl]
-    ]) {
-      if (fieldValue !== null &&
-          fieldValue !== undefined &&
-          (typeof fieldValue !== "number" ||
-           !Number.isFinite(fieldValue))) {
-        throw new Error(field + "が正しくありません。");
+    const builtSnapshot = stockOcrBuildAccountSnapshotStock(
+      currentData,
+      accountId,
+      targetDate,
+      cards,
+      {
+        id:idFactory(),
+        recordedAt:now,
+        value:options.value ??
+          stockOcrSumFieldStock(cards,"value"),
+        effectivePrincipal:options.effectivePrincipal,
+        pnl:options.pnl
       }
-    }
-
-    const duplicateSnapshot = nextData.snapshots.some(item =>
-      item.accountId === accountId &&
-      item.asOfDate === targetDate
     );
 
-    if (!duplicateSnapshot) {
-      snapshot = {
-        id:idFactory(),
-        accountId,
-        asOfDate:targetDate,
-        recordedAt:now,
-        value,
-        cumulativeInvested:null,
-        effectivePrincipal:effectivePrincipal ?? null,
-        pnl:pnl ?? null,
-        realizedPnlTotal:null,
-        realizedPnlDaily:null,
-        cash:null,
-        swapTotal:null,
-        requiredMargin:null,
-        memo:typeof options.memo === "string"
-          ? options.memo
-          : "",
-        createdAt:now,
-        updatedAt:now
-      };
+    if (!builtSnapshot.eligible) {
+      throw new Error(
+        builtSnapshot.reason ||
+        "口座全体の履歴を追加できません。"
+      );
     }
+
+    snapshot = builtSnapshot.snapshot;
   }
 
   if (additions.length === 0 && !snapshot) {
@@ -205,14 +184,14 @@ function saveStockOcrImportStock(
     };
   }
 
-  localStorage.setItem("pam2_pre_holdocr",raw);
+  storage.setItem("pam2_pre_holdocr",raw);
 
   nextData.holdings.push(...additions);
   if (snapshot) nextData.snapshots.push(snapshot);
 
   validateData(nextData);
 
-  localStorage.setItem(STORAGE_KEY,JSON.stringify(nextData));
+  storage.setItem(STORAGE_KEY,JSON.stringify(nextData));
 
   return {
     saved:true,
