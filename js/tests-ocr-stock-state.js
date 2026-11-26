@@ -753,6 +753,7 @@ function registerStockOcrStateTests(context) {
         pnl:420000
       })
     ];
+    const idFactory = makeStockOcrStateIdFactoryStock();
 
     saveStockOcrImportStock(
       account.id,"2026-11-26",cards,{
@@ -760,7 +761,7 @@ function registerStockOcrStateTests(context) {
         addAccountSnapshot:true,
         value:6420000,
         recordedAt:"2026-11-26T10:00:00.000Z",
-        idFactory:makeStockOcrStateIdFactoryStock()
+        idFactory
       }
     );
 
@@ -770,7 +771,7 @@ function registerStockOcrStateTests(context) {
         addAccountSnapshot:true,
         value:6400000,
         recordedAt:"2026-11-26T11:00:00.000Z",
-        idFactory:makeStockOcrStateIdFactoryStock()
+        idFactory
       }
     );
 
