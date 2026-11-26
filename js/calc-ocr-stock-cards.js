@@ -199,8 +199,22 @@ function stockOcrExtractRakutenNameStock(lines,format,heading) {
     current.push(text);
   }
   finishSegment();
-  if (codeAmbiguous || segments.length > 1) return stockOcrFieldStock(null,"multiple");
   if (segments.length === 0) return stockOcrFieldStock(null,"missing");
+
+  if (segments.length > 1) {
+    const candidates = segments.map(segment => {
+      const productName = segment.join("").trim();
+      return code && !codeAmbiguous
+        ? productName + " (" + code + ")"
+        : productName;
+    }).filter(Boolean);
+
+    const field = stockOcrFieldStock(null,"multiple");
+    field.candidates = [...new Set(candidates)];
+    return field;
+  }
+
+  if (codeAmbiguous) return stockOcrFieldStock(null,"multiple");
   const productName = segments[0].join("").trim();
   if (!productName) return stockOcrFieldStock(null,"missing");
   const finalName = code ? productName + " (" + code + ")" : productName;
