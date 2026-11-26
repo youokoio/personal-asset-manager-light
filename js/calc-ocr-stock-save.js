@@ -1,3 +1,4 @@
+
 "use strict";
 
 /* ---------- S11b 株式OCRの保存 ---------- */
@@ -190,9 +191,7 @@ function saveStockOcrImportStock(
       {
         id:idFactory(),
         recordedAt:now,
-        value:options.value === undefined
-          ? stockOcrSumFieldStock(cards,"value")
-          : options.value,
+        value:options.value,
         effectivePrincipal:options.effectivePrincipal,
         pnl:options.pnl
       }
