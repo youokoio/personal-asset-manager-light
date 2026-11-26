@@ -301,19 +301,22 @@ function stockOcrUpdateSave() {
     return;
   }
 
-  if (stockOcrUpdateCards.length === 0 ||
-      stockOcrUpdateCards.some(card =>
-        card.status !== "recognized"
-      )) {
-    stockOcrUpdateError =
-      "要確認の商品カードがあります。すべて確認してから保存してください。";
+  if (stockOcrUpdateCards.length === 0) {
+    stockOcrUpdateError = "商品カードがありません。";
     render();
     return;
   }
 
-  const selectedCount = stockOcrUpdateCards.filter(card =>
+  const selectedCards = stockOcrUpdateCards.filter(card =>
     card.selected !== false && !card.duplicate
-  ).length;
+  );
+  const selectedConfirmedCards = selectedCards.filter(card =>
+    card.status === "recognized"
+  );
+  const selectedUnconfirmedCount =
+    selectedCards.length - selectedConfirmedCards.length;
+
+  const selectedCount = selectedConfirmedCards.length;
   const duplicateCount = stockOcrUpdateCards.filter(card =>
     card.duplicate
   ).length;
@@ -328,35 +331,79 @@ function stockOcrUpdateSave() {
     return;
   }
 
+  if (selectedUnconfirmedCount > 0 &&
+      !stockOcrUpdateSnapshotEnabled) {
+    stockOcrUpdateError =
+      "選択中の未確認カードがあります。確認するか、選択を解除してください。";
+    render();
+    return;
+  }
+
   if (selectedCount === 0 && !stockOcrUpdateSnapshotEnabled) {
     stockOcrUpdateError = "保存対象を選択してください。";
     render();
     return;
   }
 
+  const existingSnapshots = appData.snapshots
+    .filter(snapshot =>
+      snapshot.accountId === account.id &&
+      snapshot.asOfDate === stockOcrUpdateTargetDate
+    )
+    .sort((a,b) =>
+      String(b.recordedAt || "").localeCompare(
+        String(a.recordedAt || "")
+      )
+    );
+
+  const existingSnapshot = existingSnapshots[0] || null;
+  const existingSnapshotMessage = existingSnapshot
+    ? "\n同じ対象日の既存記録: " +
+      formatYen(existingSnapshot.value) +
+      "\n登録日時: " +
+      (existingSnapshot.recordedAt
+        ? new Date(existingSnapshot.recordedAt).toLocaleString("ja-JP")
+        : "不明") +
+      "\n既存記録は残し、新しい履歴を追加します。"
+    : "\n同じ対象日の既存記録: ありません。";
+
+  const unconfirmedMessage = selectedUnconfirmedCount > 0
+    ? "\n未確認カード " + selectedUnconfirmedCount +
+      "件は商品別保有に保存しません。"
+    : "";
+
   const confirmed = window.confirm(
     "商品別保有を" + selectedCount + "件追加します。" +
-    "重複は" + duplicateCount + "件です。保存しますか？"
+    "重複は" + duplicateCount + "件です。" +
+    unconfirmedMessage +
+    (stockOcrUpdateSnapshotEnabled
+      ? "\n口座全体の履歴を1件追加します。"
+      : "") +
+    existingSnapshotMessage +
+    "\n保存しますか？"
   );
   if (!confirmed) return;
 
   try {
-    const selectedCards = stockOcrUpdateCards.filter(card =>
-      card.selected !== false && !card.duplicate
-    );
+    const saveCards = stockOcrUpdateCards.map(card => ({
+      ...card,
+      selected:card.selected !== false &&
+        card.status === "recognized" &&
+        !card.duplicate
+    }));
 
     const result = saveStockOcrImportStock(
       account.id,
       stockOcrUpdateTargetDate,
-      stockOcrUpdateCards,
+      saveCards,
       {
         addAccountSnapshot:stockOcrUpdateSnapshotEnabled,
         value:snapshotValue,
-        effectivePrincipal:selectedCards.length > 0
-          ? stockOcrSumFieldStock(selectedCards,"costBasis")
+        effectivePrincipal:selectedConfirmedCards.length > 0
+          ? stockOcrSumFieldStock(selectedConfirmedCards,"costBasis")
           : null,
-        pnl:selectedCards.length > 0
-          ? stockOcrSumFieldStock(selectedCards,"pnl")
+        pnl:selectedConfirmedCards.length > 0
+          ? stockOcrSumFieldStock(selectedConfirmedCards,"pnl")
           : null
       }
     );
@@ -369,9 +416,7 @@ function stockOcrUpdateSave() {
         " 重複 " + duplicateCount + "件。" +
         (result.addedSnapshot
           ? " 口座全体の履歴も追加しました。"
-          : stockOcrUpdateSnapshotEnabled
-            ? " 口座全体の履歴は同じ対象日の記録があるため追加していません。"
-            : "");
+          : "");
 
       stockOcrUpdatePasteText = "";
       stockOcrUpdateCards = [];
