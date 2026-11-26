@@ -1,4 +1,3 @@
-
 "use strict";
 
 /* ---------- S11b追補C：snapshot・候補状態テスト ---------- */
@@ -262,6 +261,7 @@ function registerStockOcrStateTests(context) {
       account.id,"2026-11-26",cards,{
         storage,
         addAccountSnapshot:true,
+        value:6420000,
         recordedAt:"2026-11-26T10:00:00.000Z",
         idFactory:makeStockOcrStateIdFactoryStock()
       }
@@ -303,6 +303,7 @@ function registerStockOcrStateTests(context) {
         ],{
           storage,
           addAccountSnapshot:true,
+          value:1234567,
           recordedAt:"2026-11-26T10:00:00.000Z",
           idFactory:makeStockOcrStateIdFactoryStock()
         }
