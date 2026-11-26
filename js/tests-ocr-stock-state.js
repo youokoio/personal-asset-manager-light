@@ -740,4 +740,116 @@ function registerStockOcrStateTests(context) {
         key + " がholdingへ保存されています。");
     }
   });
+
+  runTest("S11b追補C：snapshot②・OCRの後に手入力すると手入力値を採用",() => {
+    const {data,account} =
+      makeStockOcrStateDataStock("楽天証券");
+    const {storage,values} =
+      makeStockOcrStateStorageStock(data);
+    const cards = [
+      makeStockOcrStateCardStock({
+        value:6420000,
+        costBasis:6000000,
+        pnl:420000
+      })
+    ];
+
+    saveStockOcrImportStock(
+      account.id,"2026-11-26",cards,{
+        storage,
+        addAccountSnapshot:true,
+        value:6420000,
+        recordedAt:"2026-11-26T10:00:00.000Z",
+        idFactory:makeStockOcrStateIdFactoryStock()
+      }
+    );
+
+    const manualResult = saveStockOcrImportStock(
+      account.id,"2026-11-26",cards,{
+        storage,
+        addAccountSnapshot:true,
+        value:6400000,
+        recordedAt:"2026-11-26T11:00:00.000Z",
+        idFactory:makeStockOcrStateIdFactoryStock()
+      }
+    );
+
+    const saved = JSON.parse(values.get(STORAGE_KEY));
+    const sameDate = saved.snapshots.filter(snapshot =>
+      snapshot.accountId === account.id &&
+      snapshot.asOfDate === "2026-11-26"
+    );
+    const latest = getAccountSnapshots(
+      saved,account.id
+    ).find(snapshot => snapshot.asOfDate === "2026-11-26");
+
+    assert(manualResult.addedSnapshot,
+      "後からの手入力snapshotが追加されていません。");
+    assert(sameDate.length === 2,
+      "OCRと手入力の2件が履歴に残っていません。");
+    assert(latest && latest.value === 6400000,
+      "後から登録した手入力値が採用されていません。");
+    assert(sameDate.some(snapshot => snapshot.value === 6420000),
+      "先に登録したOCR値が履歴に残っていません。");
+  });
+
+  runTest("S11b追補C：候補⑧・未確定カードは商品別保存できない",() => {
+    const {data,account} =
+      makeStockOcrStateDataStock("楽天証券");
+    const before = JSON.stringify(data);
+    const {storage,values} =
+      makeStockOcrStateStorageStock(data);
+    let failed = false;
+
+    try {
+      saveStockOcrImportStock(
+        account.id,"2026-11-26",[
+          makeStockOcrStateCardStock({
+            status:"needs-confirmation"
+          })
+        ],{
+          storage,
+          recordedAt:"2026-11-26T10:00:00.000Z",
+          idFactory:makeStockOcrStateIdFactoryStock()
+        }
+      );
+    } catch (error) {
+      failed = true;
+    }
+
+    assert(failed,
+      "未確定カードを商品別保有として保存できてしまいます。");
+    assert(values.get(STORAGE_KEY) === before,
+      "未確定カードの保存失敗で本体データが変更されています。");
+  });
+
+  runTest("S11b追補C：候補①・選択だけでは保存先を書き換えない",() => {
+    const {data} =
+      makeStockOcrStateDataStock("楽天証券");
+    const {values} =
+      makeStockOcrStateStorageStock(data);
+    const before = values.get(STORAGE_KEY);
+    const card = makeStockOcrStateCardStock({
+      status:"needs-confirmation",
+      value:null,
+      valueCandidates:[
+        {value:1234567,label:"1,234,567円"},
+        {value:1284567,label:"1,284,567円"}
+      ]
+    });
+
+    const selected = stockOcrSelectCandidateStateStock(
+      card,"value",0
+    );
+
+    assert(selected !== null,
+      "候補を選択できません。");
+    assert(values.get(STORAGE_KEY) === before,
+      "候補を選択しただけで保存データが変更されています。");
+    assert(!values.has("pam2_pre_holdocr"),
+      "候補を選択しただけで保存前バックアップが作成されています。");
+    assert(selected.value === 1234567,
+      "選択した候補値が画面状態に反映されていません。");
+  });
+
 }
