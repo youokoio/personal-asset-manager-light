@@ -34,7 +34,7 @@ function stockOcrUpdateMakeSelect(
 ) {
   const wrapper = el("div","field");
   const inputId = "stock-ocr-" + index + "-" + field;
-  const label = el("label","",labelText);
+  const label = el("label","",""+labelText);
   label.htmlFor = inputId;
 
   const select = document.createElement("select");
@@ -58,6 +58,68 @@ function stockOcrUpdateMakeSelect(
   select.value = selected || "";
   wrapper.append(label,select);
   return wrapper;
+}
+
+function stockOcrUpdateRenderCandidateOptions(
+  section,card,index,field,labelText
+) {
+  const options = stockOcrGetCandidateOptionsStateStock(
+    card,
+    field
+  );
+  if (options.length === 0) return;
+
+  const candidateSection = el("div","field");
+  candidateSection.appendChild(el(
+    "div",
+    "metric-sub",
+    labelText + "の候補"
+  ));
+
+  const selection = card.candidateSelections &&
+    card.candidateSelections[field]
+      ? card.candidateSelections[field]
+      : null;
+
+  if (selection) {
+    candidateSection.appendChild(el(
+      "div",
+      "success",
+      "選択済み：" + selection.label
+    ));
+  }
+
+  options.forEach((option,candidateIndex) => {
+    const selected = Boolean(
+      selection &&
+      JSON.stringify(selection.value) ===
+        JSON.stringify(option.value)
+    );
+
+    const button = makeButton(
+      (selected ? "選択中：" : "候補" + (candidateIndex + 1) + "：") +
+        option.label,
+      "stock-ocr-candidate",
+      selected ? "primary" : "secondary"
+    );
+    button.dataset.index = String(index);
+    button.dataset.field = field;
+    button.dataset.candidateIndex = String(candidateIndex);
+    candidateSection.appendChild(button);
+  });
+
+  if (selection) {
+    const clearButton = makeButton(
+      "選択を解除",
+      "stock-ocr-candidate-clear",
+      "secondary"
+    );
+    clearButton.dataset.index = String(index);
+    clearButton.dataset.field = field;
+    candidateSection.appendChild(clearButton);
+  }
+
+  section.appendChild(candidateSection);
 }
 
 function stockOcrUpdateRenderCard(card,index) {
@@ -100,21 +162,42 @@ function stockOcrUpdateRenderCard(card,index) {
   section.appendChild(stockOcrUpdateMakeInput(
     index,"name","商品名",card.name
   ));
+  stockOcrUpdateRenderCandidateOptions(
+    section,card,index,"name","商品名"
+  );
+
   section.appendChild(stockOcrUpdateMakeSelect(
     index,"wrapper","wrapper",HOLDING_WRAPPERS,card.wrapper
   ));
+  stockOcrUpdateRenderCandidateOptions(
+    section,card,index,"wrapper","wrapper"
+  );
+
   section.appendChild(stockOcrUpdateMakeSelect(
     index,"kind","種別",HOLDING_KINDS,card.kind
   ));
+  stockOcrUpdateRenderCandidateOptions(
+    section,card,index,"kind","種別"
+  );
+
   section.appendChild(stockOcrUpdateMakeInput(
     index,"value","評価額",card.value,{numeric:true}
   ));
+  stockOcrUpdateRenderCandidateOptions(
+    section,card,index,"value","評価額"
+  );
+
   section.appendChild(stockOcrUpdateMakeInput(
     index,"pnl","評価損益",card.pnl,{numeric:true}
   ));
   section.appendChild(stockOcrUpdateMakeInput(
     index,"costBasis","取得額",card.costBasis,{numeric:true}
   ));
+
+  stockOcrUpdateRenderCandidateOptions(
+    section,card,index,"amountPair","評価額・評価損益・取得額"
+  );
+
   if (card.costBasisSource === "value-minus-pnl") {
     section.appendChild(el("div","help","取得額：計算値"));
   }
