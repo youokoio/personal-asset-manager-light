@@ -2,67 +2,43 @@
 
 /* ---------- S11b追補C：株式OCRの状態遷移 ---------- */
 
-function stockOcrGetCandidateOptionsStateStock(card,field,rule = null) {
+function stockOcrGetCandidateOptionsStateStock(card,field) {
   if (!card || card.duplicate || card.batchDuplicate) return [];
 
-  if (field === "name") {
-    return Array.from(new Set(
-      (Array.isArray(card.similarNames) ? card.similarNames : [])
-        .filter(value =>
-          typeof value === "string" && value.trim()
-        )
-    )).map(value => ({value,label:value}));
+  const candidates = card[field + "Candidates"];
+  if (Array.isArray(candidates)) {
+    return candidates
+      .filter(candidate =>
+        candidate &&
+        candidate.value !== null &&
+        candidate.value !== undefined
+      )
+      .map(candidate => ({
+        value:candidate.value,
+        label:typeof candidate.label === "string"
+          ? candidate.label
+          : String(candidate.value)
+      }));
   }
 
-  if (field === "wrapper") {
-    const wrapperField = card.fields && card.fields.wrapper;
-    const format = rule && Array.isArray(rule.formats)
-      ? rule.formats[0]
-      : null;
-    const aliases = format && format.wrapperAliases
-      ? format.wrapperAliases
-      : null;
-
-    if (!wrapperField || wrapperField.status !== "multiple" ||
-        !aliases || !Array.isArray(card.safeLines)) return [];
-
-    const values = [];
-    for (const line of card.safeLines) {
-      const text = stockOcrNormalizeTextStock(line.text);
-      if (Object.prototype.hasOwnProperty.call(aliases,text)) {
-        values.push(aliases[text]);
-      }
-    }
-
-    return Array.from(new Set(values)).map(value => ({
-      value,
-      label:value
-    }));
-  }
-
-  if (field === "amountPair") {
-    if (!Array.isArray(card.candidatePairs) ||
-        card.candidatePairs.length < 2 ||
-        !Array.isArray(card.amountCandidates)) return [];
-
-    const options = [];
-
-    for (const pair of card.candidatePairs) {
+  if (field === "amountPair" &&
+      Array.isArray(card.candidatePairs) &&
+      Array.isArray(card.amountCandidates)) {
+    return card.candidatePairs.map(pair => {
       const valueTokens = card.amountCandidates.filter(token =>
         token.original === pair.valueOriginal &&
-        token.signed === false &&
         typeof token.value === "number" &&
         Number.isFinite(token.value)
       );
       const pnlTokens = card.amountCandidates.filter(token =>
         token.original === pair.pnlOriginal &&
-        token.signed === (pair.signInferred !== true) &&
         typeof token.value === "number" &&
         Number.isFinite(token.value)
       );
 
-      if (valueTokens.length !== 1 || pnlTokens.length !== 1 ||
-          valueTokens[0] === pnlTokens[0]) continue;
+      if (valueTokens.length !== 1 || pnlTokens.length !== 1) {
+        return null;
+      }
 
       const value = valueTokens[0].value;
       const pnl = pair.signInferred
@@ -72,17 +48,17 @@ function stockOcrGetCandidateOptionsStateStock(card,field,rule = null) {
         : pnlTokens[0].value;
       const costBasis = value - pnl;
 
-      if (![value,pnl,costBasis].every(Number.isFinite)) continue;
+      if (![value,pnl,costBasis].every(Number.isFinite)) {
+        return null;
+      }
 
-      options.push({
+      return {
         value:{value,pnl,costBasis},
         label:"評価額 " + formatYen(value) +
           " ／ 評価損益 " + formatSignedYen(pnl) +
           " ／ 取得額 " + formatYen(costBasis)
-      });
-    }
-
-    return options.length >= 2 ? options : [];
+      };
+    }).filter(Boolean);
   }
 
   return [];
@@ -110,23 +86,10 @@ function stockOcrCaptureCandidateOriginalsStateStock(card) {
   };
 }
 
-function stockOcrGetCandidateIssuesStateStock(card,field) {
-  const resolvedReasons = {
-    name:["商品名を確定できません。"],
-    wrapper:["wrapperを確定できません。"],
-    amountPair:[
-      "評価額と評価損益の組み合わせが複数あります。候補を確認してください。",
-      "評価額と評価損益の組み合わせを検算で確定できません。候補を確認してください。",
-      "評価額・取得額・評価損益・率の整合が取れません。",
-      "評価額・取得額・評価損益・率の整合が取れません。内容を確認してください。",
-      "評価損益を確認してください。",
-      "取得額を算出できません。"
-    ]
-  };
-
-  const issues = (card.reasons || []).filter(reason =>
-    !(resolvedReasons[field] || []).includes(reason)
-  );
+function stockOcrGetCandidateIssuesStateStock(card) {
+  const issues = Array.isArray(card.reasons)
+    ? card.reasons.slice()
+    : [];
 
   for (const [label,key] of [
     ["商品名","name"],
@@ -147,9 +110,11 @@ function stockOcrGetCandidateIssuesStateStock(card,field) {
       ["unreadable","multiple"].includes(pnlField.status)) {
     issues.push("評価損益を確認してください。");
   }
+
   if (costBasisField &&
       costBasisField.status === "missing" &&
-      pnlField && pnlField.status === "recognized") {
+      pnlField &&
+      pnlField.status === "recognized") {
     issues.push("取得額を算出できません。");
   }
 
@@ -174,10 +139,10 @@ function stockOcrGetCandidateIssuesStateStock(card,field) {
 }
 
 function stockOcrSelectCandidateStateStock(
-  card,field,candidateIndex,rule = null
+  card,field,candidateIndex
 ) {
   const options = stockOcrGetCandidateOptionsStateStock(
-    card,field,rule
+    card,field
   );
 
   if (!Number.isInteger(candidateIndex) ||
@@ -232,7 +197,7 @@ function stockOcrSelectCandidateStateStock(
     label:option.label
   };
 
-  const result = stockOcrGetCandidateIssuesStateStock(next,field);
+  const result = stockOcrGetCandidateIssuesStateStock(next);
   next.integrity = result.integrity;
   next.reasons = result.issues;
   next.status = result.issues.length === 0
@@ -249,8 +214,9 @@ function stockOcrClearCandidateStateStock(card,field) {
         card.candidateSelections,field
       )) return null;
 
-  const original = card.candidateOriginals ||
+  const original = card.candidateOriginals || 
     stockOcrCaptureCandidateOriginalsStateStock(card);
+
   const next = {
     ...card,
     name:original.name,
@@ -265,9 +231,22 @@ function stockOcrClearCandidateStateStock(card,field) {
   };
 
   delete next.candidateSelections[field];
+
+  const result = stockOcrGetCandidateIssuesStateStock(next);
+  next.integrity = result.integrity;
+  next.reasons = result.issues;
   next.status = "needs-confirmation";
   next.manualConfirmed = false;
-  next.reasons.push("候補選択を解除しました。内容を確認してください。");
+
+  return next;
+}
+
+function stockOcrResetCandidateStateStock(card) {
+  if (!card) return null;
+
+  const next = {...card};
+  delete next.candidateSelections;
+  delete next.candidateOriginals;
 
   return next;
 }
@@ -282,6 +261,7 @@ function stockOcrBuildAccountSnapshotStateStock(
         item.id === accountId && item.category === "stock"
       )
     : null;
+
   const validDate = isValidFxDateForStorage(targetDate);
   const cardList = Array.isArray(cards) ? cards : [];
 
@@ -291,6 +271,7 @@ function stockOcrBuildAccountSnapshotStateStock(
       card.status === "recognized" &&
       card.batchDuplicate !== true
     );
+
   const allSelected = cardList.length > 0 &&
     cardList.every(card =>
       card &&
@@ -352,6 +333,14 @@ function stockOcrBuildAccountSnapshotStock(
     };
   }
 
+  if (!state.allConfirmed || !state.allSelected) {
+    return {
+      eligible:false,
+      snapshot:null,
+      reason:state.reason
+    };
+  }
+
   const value = options.value === undefined ||
     options.value === null
       ? state.canAutoFill
@@ -380,6 +369,7 @@ function stockOcrBuildAccountSnapshotStock(
   const effectivePrincipal = state.canAutoFill
     ? stockOcrSumFieldStock(cards,"costBasis")
     : null;
+
   const pnl = state.canAutoFill
     ? stockOcrSumFieldStock(cards,"pnl")
     : null;
