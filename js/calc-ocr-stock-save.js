@@ -86,12 +86,6 @@ function saveStockOcrImportStock(
     throw new Error("商品カードの形式が正しくありません。");
   }
 
-  if (cards.some(card =>
-    !card || card.status !== "recognized"
-  )) {
-    throw new Error("未確認の商品カードがあります。確認後に保存してください。");
-  }
-
   const storage = options.storage &&
     typeof options.storage.getItem === "function" &&
     typeof options.storage.setItem === "function"
