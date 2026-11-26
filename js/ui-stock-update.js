@@ -9,8 +9,10 @@ let stockOcrUpdateTargetDate = "";
 let stockOcrUpdatePasteText = "";
 let stockOcrUpdateCards = [];
 let stockOcrUpdateComparison = null;
-let stockOcrUpdateSnapshotEnabled = false;
+let stockOcrUpdateSnapshotEnabled = true;
 let stockOcrUpdateSnapshotValue = "";
+let stockOcrUpdateSnapshotManual = false;
+let stockOcrUpdateSnapshotState = null;
 let stockOcrUpdateMessage = "";
 let stockOcrUpdateError = "";
 
@@ -24,8 +26,10 @@ function openStockOcrUpdate(accountId = null) {
   stockOcrUpdatePasteText = "";
   stockOcrUpdateCards = [];
   stockOcrUpdateComparison = null;
-  stockOcrUpdateSnapshotEnabled = false;
+  stockOcrUpdateSnapshotEnabled = true;
   stockOcrUpdateSnapshotValue = "";
+  stockOcrUpdateSnapshotManual = false;
+  stockOcrUpdateSnapshotState = null;
   stockOcrUpdateMessage = "";
   stockOcrUpdateError = "";
 }
@@ -61,6 +65,27 @@ function stockOcrUpdateGetAccounts() {
       rule.accountNames.includes(account.name)
     )
   );
+}
+
+function stockOcrUpdateRefreshSnapshotState() {
+  const account = stockOcrUpdateGetAccount();
+
+  stockOcrUpdateSnapshotState =
+    stockOcrBuildAccountSnapshotStateStock(
+      appData,
+      account ? account.id : stockOcrUpdateAccountId,
+      stockOcrUpdateTargetDate,
+      stockOcrUpdateCards
+    );
+
+  if (!stockOcrUpdateSnapshotManual) {
+    stockOcrUpdateSnapshotValue =
+      stockOcrUpdateSnapshotState.canAutoFill
+        ? String(stockOcrUpdateSnapshotState.autoValue)
+        : "";
+  }
+
+  return stockOcrUpdateSnapshotState;
 }
 
 function stockOcrUpdateGetCardIssues(card) {
@@ -138,6 +163,7 @@ function stockOcrUpdateRefreshComparison() {
       !isValidFxDateForStorage(stockOcrUpdateTargetDate) ||
       stockOcrUpdateCards.length === 0) {
     stockOcrUpdateComparison = null;
+    stockOcrUpdateRefreshSnapshotState();
     return;
   }
 
@@ -167,6 +193,7 @@ function stockOcrUpdateRefreshComparison() {
   });
 
   stockOcrUpdateComparison = result;
+  stockOcrUpdateRefreshSnapshotState();
 }
 
 function stockOcrUpdateParse() {
@@ -189,6 +216,9 @@ function stockOcrUpdateParse() {
     return;
   }
 
+  stockOcrUpdateSnapshotManual = false;
+  stockOcrUpdateSnapshotValue = "";
+
   try {
     const parsed = parseStockOcrText(
       stockOcrUpdatePasteText,
@@ -198,6 +228,7 @@ function stockOcrUpdateParse() {
     if (!parsed.success) {
       stockOcrUpdateCards = [];
       stockOcrUpdateComparison = null;
+      stockOcrUpdateRefreshSnapshotState();
       stockOcrUpdateError = parsed.reasons.join(" ") ||
         "OCRテキストを解析できませんでした。";
       render();
@@ -220,6 +251,7 @@ function stockOcrUpdateParse() {
   } catch (error) {
     stockOcrUpdateCards = [];
     stockOcrUpdateComparison = null;
+    stockOcrUpdateRefreshSnapshotState();
     stockOcrUpdateError = error.message ||
       "OCRテキストを解析できませんでした。";
   }
@@ -268,6 +300,7 @@ function stockOcrUpdateConfirmCard(index) {
     card.manualConfirmed = false;
     card.reasons = issues;
     stockOcrUpdateError = issues.join(" ");
+    stockOcrUpdateRefreshSnapshotState();
     render();
     return;
   }
@@ -284,8 +317,10 @@ function stockOcrUpdateClear() {
   stockOcrUpdatePasteText = "";
   stockOcrUpdateCards = [];
   stockOcrUpdateComparison = null;
-  stockOcrUpdateSnapshotEnabled = false;
+  stockOcrUpdateSnapshotEnabled = true;
   stockOcrUpdateSnapshotValue = "";
+  stockOcrUpdateSnapshotManual = false;
+  stockOcrUpdateSnapshotState = null;
   stockOcrUpdateMessage = "";
   stockOcrUpdateError = "";
   render();
@@ -321,12 +356,18 @@ function stockOcrUpdateSave() {
     card.duplicate
   ).length;
 
+  const snapshotState = stockOcrUpdateRefreshSnapshotState();
   const snapshotValue = stockOcrUpdateSnapshotEnabled
-    ? toNumberOrNull(stockOcrUpdateSnapshotValue)
+    ? stockOcrUpdateSnapshotManual
+      ? toNumberOrNull(stockOcrUpdateSnapshotValue)
+      : snapshotState.canAutoFill
+        ? snapshotState.autoValue
+        : toNumberOrNull(stockOcrUpdateSnapshotValue)
     : null;
 
   if (stockOcrUpdateSnapshotEnabled && snapshotValue === null) {
-    stockOcrUpdateError = "口座全体の評価額を入力してください。";
+    stockOcrUpdateError = snapshotState.reason ||
+      "口座全体の評価額を入力してください。";
     render();
     return;
   }
@@ -345,18 +386,7 @@ function stockOcrUpdateSave() {
     return;
   }
 
-  const existingSnapshots = appData.snapshots
-    .filter(snapshot =>
-      snapshot.accountId === account.id &&
-      snapshot.asOfDate === stockOcrUpdateTargetDate
-    )
-    .sort((a,b) =>
-      String(b.recordedAt || "").localeCompare(
-        String(a.recordedAt || "")
-      )
-    );
-
-  const existingSnapshot = existingSnapshots[0] || null;
+  const existingSnapshot = snapshotState.existingSnapshot;
   const existingSnapshotMessage = existingSnapshot
     ? "\n同じ対象日の既存記録: " +
       formatYen(existingSnapshot.value) +
@@ -364,7 +394,7 @@ function stockOcrUpdateSave() {
       (existingSnapshot.recordedAt
         ? new Date(existingSnapshot.recordedAt).toLocaleString("ja-JP")
         : "不明") +
-      "\n既存記録は残し、新しい履歴を追加します。"
+      "\n今回の値が口座全体の評価額として採用されます。既存の記録は残ります。"
     : "\n同じ対象日の既存記録: ありません。";
 
   const unconfirmedMessage = selectedUnconfirmedCount > 0
@@ -377,9 +407,12 @@ function stockOcrUpdateSave() {
     "重複は" + duplicateCount + "件です。" +
     unconfirmedMessage +
     (stockOcrUpdateSnapshotEnabled
-      ? "\n口座全体の履歴を1件追加します。"
+      ? "\n口座全体の履歴を1件追加します。" +
+        "\n口座全体の評価額: " + formatYen(snapshotValue)
       : "") +
-    existingSnapshotMessage +
+    (stockOcrUpdateSnapshotEnabled
+      ? existingSnapshotMessage
+      : "") +
     "\n保存しますか？"
   );
   if (!confirmed) return;
@@ -421,8 +454,10 @@ function stockOcrUpdateSave() {
       stockOcrUpdatePasteText = "";
       stockOcrUpdateCards = [];
       stockOcrUpdateComparison = null;
-      stockOcrUpdateSnapshotEnabled = false;
+      stockOcrUpdateSnapshotEnabled = true;
       stockOcrUpdateSnapshotValue = "";
+      stockOcrUpdateSnapshotManual = false;
+      stockOcrUpdateSnapshotState = null;
       stockOcrUpdateError = "";
     } else {
       stockOcrUpdateMessage =
