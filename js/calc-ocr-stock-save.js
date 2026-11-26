@@ -45,6 +45,36 @@ function stockOcrSumFieldStock(cards,field) {
   return cards.reduce((total,card) => total + card[field],0);
 }
 
+function stockOcrGetNewRecordedAtStock(
+  snapshots,accountId,targetDate,requestedAt
+) {
+  const requestedTime = new Date(requestedAt).getTime();
+  if (!Number.isFinite(requestedTime)) {
+    throw new Error("登録日時が正しくありません。");
+  }
+
+  const sameDateSnapshots = snapshots.filter(snapshot =>
+    snapshot.accountId === accountId &&
+    snapshot.asOfDate === targetDate
+  );
+
+  let latestTime = null;
+  for (const snapshot of sameDateSnapshots) {
+    const time = new Date(snapshot.recordedAt).getTime();
+    if (Number.isFinite(time) &&
+        (latestTime === null || time > latestTime)) {
+      latestTime = time;
+    }
+  }
+
+  const nextTime = latestTime !== null &&
+    requestedTime <= latestTime
+      ? latestTime + 1
+      : requestedTime;
+
+  return new Date(nextTime).toISOString();
+}
+
 function saveStockOcrImportStock(
   accountId,targetDate,cards,options = {}
 ) {
@@ -104,10 +134,18 @@ function saveStockOcrImportStock(
 
   selectedCards.forEach(stockOcrValidateSaveCardStock);
 
-  const now = typeof options.recordedAt === "string" &&
+  const requestedAt = typeof options.recordedAt === "string" &&
     options.recordedAt
       ? options.recordedAt
       : new Date().toISOString();
+
+  const now = stockOcrGetNewRecordedAtStock(
+    currentData.snapshots,
+    accountId,
+    targetDate,
+    requestedAt
+  );
+
   const idFactory = typeof options.idFactory === "function"
     ? options.idFactory
     : createId;
@@ -158,8 +196,9 @@ function saveStockOcrImportStock(
       {
         id:idFactory(),
         recordedAt:now,
-        value:options.value ??
-          stockOcrSumFieldStock(cards,"value"),
+        value:options.value === undefined
+          ? stockOcrSumFieldStock(cards,"value")
+          : options.value,
         effectivePrincipal:options.effectivePrincipal,
         pnl:options.pnl
       }
