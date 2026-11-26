@@ -2,8 +2,8 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S11bB-v3";
-const SPEC_VERSION = "v1.24";
+const APP_VERSION = "S11bC-v1";
+const SPEC_VERSION = "v1.25";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 4;
 
@@ -253,7 +253,7 @@ function getAccountSnapshots(data, accountId) {
   for (const snapshot of snapshots) {
     const current = latestByDate.get(snapshot.asOfDate);
     if (!current ||
-        String(snapshot.recordedAt || "") >
+        String(snapshot.recordedAt || "") >=
         String(current.recordedAt || "")) {
       latestByDate.set(snapshot.asOfDate,snapshot);
     }
