@@ -134,10 +134,23 @@ function stockOcrParseRakutenCardStock(card,format) {
     hasYen:token.hasYen,original:token.original,
     lineNumber:token.lineNumber
   }));
-  result.candidatePairs = pairResult.pairs.map(pair => ({
-    valueOriginal:pair.valueToken.original,pnlOriginal:pair.pnlToken.original,
-    expectedRate:pair.expectedRate,difference:pair.difference,signInferred:pair.signInferred
-  }));
+  result.candidatePairs = pairResult.status === "no-match"
+    ? pairResult.nearbyPairs.map(pair => ({
+        valueOriginal:pair.valueToken.original,
+        pnlOriginal:pair.pnlToken.original,
+        valueLineNumber:pair.valueToken.lineNumber,
+        pnlLineNumber:pair.pnlToken.lineNumber,
+        expectedRate:pair.expectedRate,
+        difference:pair.difference,
+        signInferred:pair.signInferred
+      }))
+    : pairResult.pairs.map(pair => ({
+        valueOriginal:pair.valueToken.original,pnlOriginal:pair.pnlToken.original,
+        valueLineNumber:pair.valueToken.lineNumber,
+        pnlLineNumber:pair.pnlToken.lineNumber,
+        expectedRate:pair.expectedRate,difference:pair.difference,
+        signInferred:pair.signInferred
+      }));
   return result;
 }
 
@@ -509,13 +522,14 @@ function stockOcrExtractRakutenAmountTokensStock(lines,format) {
 
 function stockOcrFindRakutenAmountPairsStock(tokens,rate,tolerance) {
   if (tokens.some(token => token.status !== "recognized")) {
-    return {status:"unreadable-candidate",pairs:[]};
+    return {status:"unreadable-candidate",pairs:[],nearbyPairs:[]};
   }
   const unsigned = tokens.filter(token => !token.signed);
   const signed = tokens.filter(token => token.signed);
   const pairs = [];
+  const nearbyPairs = [];
   if (!rate || rate.status !== "recognized" || typeof rate.value !== "number") {
-    return {status:rate && rate.status === "multiple" ? "multiple-rates" : "rate-unavailable",pairs:[]};
+    return {status:rate && rate.status === "multiple" ? "multiple-rates" : "rate-unavailable",pairs:[],nearbyPairs:[]};
   }
   const findPairs = candidates => {
     for (const valueToken of unsigned) {
@@ -525,17 +539,20 @@ function stockOcrFindRakutenAmountPairsStock(tokens,rate,tolerance) {
         if (!Number.isFinite(costBasis) || costBasis === 0) continue;
         const expectedRate = 100 * candidate.pnl / costBasis;
         const difference = Math.abs(rate.value - expectedRate);
+        const pair = {
+          valueToken,
+          pnlToken:candidate.token,
+          pnlValue:candidate.pnl,
+          costBasis,
+          expectedRate,
+          actualRate:rate.value,
+          difference,
+          signInferred:candidate.signInferred
+        };
         if (difference <= tolerance) {
-          pairs.push({
-            valueToken,
-            pnlToken:candidate.token,
-            pnlValue:candidate.pnl,
-            costBasis,
-            expectedRate,
-            actualRate:rate.value,
-            difference,
-            signInferred:candidate.signInferred
-          });
+          pairs.push(pair);
+        } else if (difference <= 1.00) {
+          nearbyPairs.push(pair);
         }
       }
     }
@@ -551,9 +568,17 @@ function stockOcrFindRakutenAmountPairsStock(tokens,rate,tolerance) {
       signInferred:true
     })));
   }
+
+  nearbyPairs.sort((a,b) =>
+    a.difference - b.difference ||
+    a.valueToken.lineNumber - b.valueToken.lineNumber ||
+    a.pnlToken.lineNumber - b.pnlToken.lineNumber
+  );
+
   return {
     status:pairs.length === 1 ? "unique" : pairs.length === 0 ? "no-match" : "ambiguous",
-    pairs
+    pairs,
+    nearbyPairs:pairs.length === 0 ? nearbyPairs.slice(0,2) : []
   };
 }
 
