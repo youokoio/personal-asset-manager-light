@@ -36,14 +36,18 @@ function stockOcrGetCandidateOptionsStateStock(card,field) {
       Array.isArray(card.amountCandidates)) {
     return card.candidatePairs.map(pair => {
       const valueTokens = card.amountCandidates.filter(token =>
-        token.original === pair.valueOriginal &&
-        typeof token.value === "number" &&
-        Number.isFinite(token.value)
+        pair.valueLineNumber !== undefined
+          ? token.lineNumber === pair.valueLineNumber
+          : token.original === pair.valueOriginal &&
+            typeof token.value === "number" &&
+            Number.isFinite(token.value)
       );
       const pnlTokens = card.amountCandidates.filter(token =>
-        token.original === pair.pnlOriginal &&
-        typeof token.value === "number" &&
-        Number.isFinite(token.value)
+        pair.pnlLineNumber !== undefined
+          ? token.lineNumber === pair.pnlLineNumber
+          : token.original === pair.pnlOriginal &&
+            typeof token.value === "number" &&
+            Number.isFinite(token.value)
       );
 
       if (valueTokens.length !== 1 || pnlTokens.length !== 1) {
@@ -66,7 +70,10 @@ function stockOcrGetCandidateOptionsStateStock(card,field) {
         value:{value,pnl,costBasis},
         label:"評価額 " + formatYen(value) +
           " ／ 評価損益 " + formatSignedYen(pnl) +
-          " ／ 取得額 " + formatYen(costBasis)
+          " ／ 取得額 " + formatYen(costBasis) +
+          (typeof pair.difference === "number"
+            ? " ／ 率の差 " + pair.difference.toFixed(2) + "ポイント"
+            : "")
       };
     }).filter(Boolean);
   }
@@ -354,8 +361,8 @@ function stockOcrBuildAccountSnapshotStateStock(
   const allSelected = cardList.length > 0 &&
     cardList.every(card =>
       card &&
-      card.selected !== false &&
-      card.duplicate !== true
+      (card.duplicate === true || card.selected !== false) &&
+      card.excludedByUser !== true
     );
 
   const canAutoFill = Boolean(
@@ -378,7 +385,7 @@ function stockOcrBuildAccountSnapshotStateStock(
   } else if (!validDate) {
     reason = "対象日を入力してください。";
   } else if (!allConfirmed) {
-    reason = "未確定の商品カードがあります。確定後に反映します。";
+    reason = "未確定の商品カードまたは同一OCR内の重複カードがあります。確定後に反映します。";
   } else if (!allSelected) {
     reason = "保存対象から外した商品カードがあります。";
   } else if (autoValue === null) {
