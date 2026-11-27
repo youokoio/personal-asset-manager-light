@@ -44,7 +44,13 @@ app.addEventListener("change",event => {
       target.dataset.stockOcrSelect === "true") {
     const index = Number(target.dataset.stockOcrIndex);
     if (stockOcrUpdateCards[index]) {
-      stockOcrUpdateCards[index].selected = target.checked;
+      const card = stockOcrUpdateCards[index];
+      card.selected = target.checked;
+
+      if (!card.duplicate) {
+        card.excludedByUser = !target.checked;
+      }
+
       stockOcrUpdateRefreshSnapshotState();
       render();
     }
