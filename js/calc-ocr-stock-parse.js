@@ -40,9 +40,10 @@ function stockOcrFindGroupedAmountsStock(lines,format,requiredCount) {
     });
   }
 
-  if (yenTokens.length !== 4) {
+  if (yenTokens.length !== requiredCount &&
+      yenTokens.length !== requiredCount * 2) {
     return {
-      status:yenTokens.length < 4 ? "insufficient" : "ambiguous",
+      status:yenTokens.length < requiredCount ? "insufficient" : "ambiguous",
       tokens:[]
     };
   }
@@ -325,20 +326,21 @@ function stockOcrParseDcCardStock(card,format) {
     }
   } else if (tokens.length === 2 && isPrincipalProtected &&
       format.principalProtectedTwoValuesEqualAllowed &&
-      orderedAmountFields.length === 2 &&
-      orderedAmountFields.some(item => item.fieldName === "value") &&
-      orderedAmountFields.some(item => item.fieldName === "costBasis") &&
-      tokens[0].value !== null &&
+      format.principalProtectedEqualityRule &&
+      format.principalProtectedEqualityRule.valueEqualsCostBasis === true &&
+      format.principalProtectedEqualityRule.pnl === null &&
+      orderedAmountFields.length === 3 &&
+      orderedAmountFields[0].fieldName === "value" &&
+      orderedAmountFields[1].fieldName === "costBasis" &&
+      orderedAmountFields[2].fieldName === "pnl" &&
+      tokens.every(token =>
+        token.status === "recognized" &&
+        typeof token.value === "number" &&
+        Number.isFinite(token.value)
+      ) &&
       tokens[0].value === tokens[1].value) {
-    const valuesByField = new Map();
-    for (let index = 0; index < orderedAmountFields.length; index += 1) {
-      valuesByField.set(
-        orderedAmountFields[index].fieldName,
-        tokens[index]
-      );
-    }
-    const valueToken = valuesByField.get("value");
-    const costBasisToken = valuesByField.get("costBasis");
+    const valueToken = tokens[0];
+    const costBasisToken = tokens[1];
     value = stockOcrFieldStock(
       valueToken.value,"recognized",valueToken.original,"labels-before-values"
     );
