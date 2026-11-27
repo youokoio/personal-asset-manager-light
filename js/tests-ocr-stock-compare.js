@@ -200,6 +200,28 @@ function registerStockOcrComparisonTests(context) {
       "消失候補の商品名が一致しません。");
   });
 
+  runTest("S11b候補：商品名のl/i誤認識を選択候補にする",() => {
+    const previous = stockOcrMakeCompareHoldingTest(
+      "previous-ispace","account-a","iSpace",
+      "特定","2026-10-31",100000,90000,10000
+    );
+    const card = stockOcrMakeCompareCardTest(
+      "lSpace","特定",110000,100000,10000
+    );
+    const data = stockOcrMakeCompareDataTest([previous]);
+
+    const result = stockOcrCompareCardsStock(
+      data,"account-a",[card],"2026-11-30"
+    );
+
+    assert(result.cards[0].name === "lSpace",
+      "候補表示だけでOCRの商品名が自動変更されています。");
+    assert(result.cards[0].similarNames.includes("iSpace"),
+      "既存商品名 iSpace が類似候補として検出されていません。");
+    assert(result.cards[0].nameCandidates.includes("iSpace"),
+      "既存商品名 iSpace が商品名候補ボタン用に渡されていません。");
+  });
+
   runTest("S11b前回比較①：前回・今回・増減の合計",() => {
     const previous = [
       stockOcrMakeCompareHoldingTest(
