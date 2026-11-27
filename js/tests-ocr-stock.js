@@ -423,7 +423,7 @@ function registerStockOcrTests(context) {
     );
 
     const card = result.cards[0];
-    assert(card.name === "架空DC定期預金（1年） (99999)",
+    assert(card.name === "架空DC定期預金(1年) (99999)",
       "元本確保型の商品名が正しく取得できていません。");
     assert(card.value === 12345,
       "元本確保型の評価額12345円が取得できていません。");
