@@ -1,6 +1,6 @@
 "use strict";
 
-/* ---------- S11b追補C：株式OCRの状態遷移 ---------- */
+/* ---------- S11b 株式の月次更新画面 ---------- */
 
 function stockOcrGetCandidateOptionsStateStock(card,field) {
   if (!card || card.duplicate || card.batchDuplicate) return [];
@@ -446,12 +446,32 @@ function stockOcrBuildAccountSnapshotStock(
     };
   }
 
-  const effectivePrincipal = state.canAutoFill
+  const totalValue = state.canAutoFill
+    ? stockOcrSumFieldStock(cards,"value")
+    : null;
+  const totalCostBasis = state.canAutoFill
     ? stockOcrSumFieldStock(cards,"costBasis")
+    : null;
+  const totalPnl = state.canAutoFill
+    ? stockOcrSumFieldStock(cards,"pnl")
+    : null;
+
+  const effectivePrincipal = state.canAutoFill
+    ? totalCostBasis !== null
+      ? totalCostBasis
+      : state.account.name === "iDeCo" &&
+        totalValue !== null && totalPnl !== null
+          ? totalValue - totalPnl
+          : null
     : null;
 
   const pnl = state.canAutoFill
-    ? stockOcrSumFieldStock(cards,"pnl")
+    ? totalPnl !== null
+      ? totalPnl
+      : state.account.name === "企業型DC" &&
+        totalValue !== null && totalCostBasis !== null
+          ? totalValue - totalCostBasis
+          : null
     : null;
 
   return {
