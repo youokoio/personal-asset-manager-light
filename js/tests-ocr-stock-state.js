@@ -651,8 +651,9 @@ function registerStockOcrStateTests(context) {
         value:1234567,
         pnl:123456,
         costBasis:1111111,
-        costBasisSource:"value-minus-pnl",
-        fields:{
+        costBasisSource:"value-minus-pnl"
+      },
+      fields:{
           name:{value:null,status:"multiple"},
           wrapper:{value:"NISA成長",status:"recognized"},
           kind:{value:"投信",status:"recognized"},
