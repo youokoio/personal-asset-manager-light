@@ -182,6 +182,7 @@ function stockOcrUpdateRefreshComparison() {
       ...card,
       manualConfirmed:previous.manualConfirmed === true,
       batchDuplicate:previous.batchDuplicate === true,
+      excludedByUser:previous.excludedByUser === true,
       selected:card.duplicate
         ? false
         : previous.selected !== false,
@@ -238,6 +239,7 @@ function stockOcrUpdateParse() {
     stockOcrUpdateCards = parsed.cards.map(card => ({
       ...card,
       selected:true,
+      excludedByUser:false,
       manualConfirmed:card.status === "recognized",
       batchDuplicate:false
     }));
