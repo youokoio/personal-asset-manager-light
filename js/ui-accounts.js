@@ -38,9 +38,96 @@ function appendContributionAccountListMetric(container,account) {
   }
 }
 
+function renderBankAccountCreateForm() {
+  const card = el("section","card");
+  card.appendChild(el("h3","","銀行口座を追加"));
+  card.appendChild(makeField(
+    "口座名",
+    "bank-account-name",
+    "ゆうちょ銀行",
+    {type:"text",required:true}
+  ));
+  card.appendChild(makeField(
+    "メモ（任意）",
+    "bank-account-memo",
+    "",
+    {textarea:true}
+  ));
+  card.appendChild(makeButton(
+    "口座を追加",
+    "bank-account-add"
+  ));
+  return card;
+}
+
+function addBankAccountFromForm() {
+  const nameInput = document.getElementById("field-bank-account-name");
+  const memoInput = document.getElementById("field-bank-account-memo");
+
+  if (!nameInput) {
+    showMessage("口座名の入力欄が見つかりません。",true);
+    render();
+    return;
+  }
+
+  const name = nameInput.value.trim();
+  const memo = memoInput ? memoInput.value.trim() : "";
+
+  if (!name) {
+    showMessage("口座名を入力してください。",true);
+    render();
+    return;
+  }
+
+  if (appData.accounts.some(account =>
+    account.name.trim() === name
+  )) {
+    showMessage("同じ口座名がすでに登録されています。",true);
+    render();
+    return;
+  }
+
+  try {
+    const nextData = JSON.parse(JSON.stringify(appData));
+    const sortOrder = nextData.accounts.reduce(
+      (maximum,account) => Math.max(maximum,account.sortOrder),
+      -1
+    ) + 1;
+    const now = new Date().toISOString();
+    const account = createInitialAccount(
+      {
+        name,
+        type:"bank",
+        category:"bank"
+      },
+      sortOrder,
+      now
+    );
+
+    account.memo = memo;
+    nextData.accounts.push(account);
+
+    saveData(nextData);
+    appData = nextData;
+    selectedAccountId = account.id;
+    showMessage("銀行口座を追加しました。");
+  } catch (error) {
+    showMessage(
+      error.message || "銀行口座を追加できませんでした。",
+      true
+    );
+  }
+
+  render();
+}
+
 function renderCategoryAccountList(category) {
   const label = CATEGORY_LABELS[category];
   app.appendChild(heading(label));
+
+  if (category === "bank") {
+    app.appendChild(renderBankAccountCreateForm());
+  }
 
   const accounts = appData.accounts.filter(
     account => getCategory(account) === category
