@@ -667,14 +667,14 @@ function registerStockOcrComparisonTests(context) {
         "snapshotの評価額が120,000円ではありません。");
       assert(snapshot.effectivePrincipal === 100000,
         "snapshotの有効元本が100,000円ではありません。");
-      assert(snapshot.pnl === 5000,
-        "snapshotの評価損益が5,000円ではありません。");
+      assert(snapshot.pnl === 20000,
+        "snapshotの評価損益が20,000円ではありません。");
       assert(snapshot.memo === "",
         "指定していないメモが追加されています。");
     });
   });
 
-  runTest("S11b保存⑤：同じ日のsnapshotを上書きしない",() => {
+  runTest("S11b保存⑤：同日snapshotを追加し既存記録を保持",() => {
     const data = createInitialData();
     const account = data.accounts.find(item =>
       item.name === "楽天証券"
@@ -716,8 +716,8 @@ function registerStockOcrComparisonTests(context) {
 
       assert(result.addedHoldings === 1,
         "商品別保有の追加が行われていません。");
-      assert(result.addedSnapshot === false,
-        "同じ対象日のsnapshotが追加されています。");
+      assert(result.addedSnapshot === true,
+        "同じ対象日のsnapshotが追加されていません。");
 
       const saved = JSON.parse(values.get(STORAGE_KEY));
       const snapshots = saved.snapshots.filter(item =>
@@ -725,11 +725,14 @@ function registerStockOcrComparisonTests(context) {
         item.asOfDate === "2026-11-30"
       );
 
-      assert(snapshots.length === 1,
-        "同じ対象日のsnapshotが重複しています。");
-      assert(snapshots[0].value === 999999,
+      assert(snapshots.length === 2,
+        "同じ対象日のsnapshotが追加されていません。");
+      const preserved = snapshots.find(item =>
+        item.id === "existing-snapshot-m"
+      );
+      assert(preserved && preserved.value === 999999,
         "既存snapshotの評価額が上書きされています。");
-      assert(snapshots[0].memo === "既存の架空履歴",
+      assert(preserved.memo === "既存の架空履歴",
         "既存snapshotのメモが変更されています。");
     });
   });
