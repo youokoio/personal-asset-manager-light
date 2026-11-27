@@ -190,6 +190,8 @@ app.addEventListener("click",event => {
   if (action === "open-account") {
     selectedAccountId = id;
     render();
+  } else if (action === "bank-account-add") {
+    addBankAccountFromForm();
   } else if (action === "open-stock-update-account") {
     openStockOcrUpdate(id);
     render();
