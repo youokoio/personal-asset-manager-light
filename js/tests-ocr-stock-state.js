@@ -924,4 +924,121 @@ function registerStockOcrStateTests(context) {
       "選択した候補値が画面状態に反映されていません。");
   });
 
+  runTest("S11b追補C：snapshot⑩・iDeCoの有効元本を評価額－評価損益で補完",() => {
+    const {data,account} =
+      makeStockOcrStateDataStock("iDeCo");
+    const cards = [
+      makeStockOcrStateCardStock({
+        value:1000,
+        pnl:100,
+        costBasis:null,
+        fields:{
+          name:{value:"架空iDeCoファンドA",status:"recognized"},
+          wrapper:{value:"iDeCo",status:"recognized"},
+          kind:{value:"投信",status:"recognized"},
+          value:{value:1000,status:"recognized"},
+          pnl:{value:100,status:"recognized"},
+          costBasis:{value:null,status:"missing"}
+        }
+      }),
+      makeStockOcrStateCardStock({
+        name:"架空iDeCoファンドB",
+        value:2000,
+        pnl:300,
+        costBasis:1700
+      })
+    ];
+
+    const built = stockOcrBuildAccountSnapshotStock(
+      data,account.id,"2026-11-26",cards,{
+        id:"fictional-snapshot-ideco-derived-principal",
+        recordedAt:"2026-11-26T10:00:00.000Z"
+      }
+    );
+
+    assert(built.eligible,
+      "iDeCoのsnapshotを生成できません。");
+    assert(built.snapshot.effectivePrincipal === 2600,
+      "iDeCoの有効元本が評価額合計3000円－評価損益合計400円になっていません。");
+    assert(built.snapshot.pnl === 400,
+      "iDeCoの既存評価損益合計が変わっています。");
+  });
+
+  runTest("S11b追補C：snapshot⑪・企業型DCの評価損益を評価額－取得額で補完",() => {
+    const {data,account} =
+      makeStockOcrStateDataStock("企業型DC");
+    const cards = [
+      makeStockOcrStateCardStock({
+        name:"架空DC元本確保型",
+        wrapper:"企業型DC",
+        value:1000,
+        pnl:null,
+        costBasis:1000,
+        fields:{
+          name:{value:"架空DC元本確保型",status:"recognized"},
+          wrapper:{value:"企業型DC",status:"recognized"},
+          kind:{value:"投信",status:"recognized"},
+          value:{value:1000,status:"recognized"},
+          pnl:{value:null,status:"missing"},
+          costBasis:{value:1000,status:"calculated"}
+        }
+      }),
+      makeStockOcrStateCardStock({
+        name:"架空DC投資信託",
+        wrapper:"企業型DC",
+        value:2000,
+        pnl:200,
+        costBasis:1800
+      })
+    ];
+
+    const built = stockOcrBuildAccountSnapshotStock(
+      data,account.id,"2026-11-26",cards,{
+        id:"fictional-snapshot-dc-derived-pnl",
+        recordedAt:"2026-11-26T10:00:00.000Z"
+      }
+    );
+
+    assert(built.eligible,
+      "企業型DCのsnapshotを生成できません。");
+    assert(built.snapshot.pnl === 200,
+      "企業型DCの評価損益が評価額合計3000円－取得額合計2800円になっていません。");
+    assert(built.snapshot.effectivePrincipal === 2800,
+      "企業型DCの有効元本合計が変わっています。");
+  });
+
+  runTest("S11b追補C：snapshot⑫・必要な金額が不足する場合は補完しない",() => {
+    const {data,account} =
+      makeStockOcrStateDataStock("iDeCo");
+    const cards = [
+      makeStockOcrStateCardStock({
+        value:1000,
+        pnl:null,
+        costBasis:null,
+        fields:{
+          name:{value:"架空iDeCo未確定ファンド",status:"recognized"},
+          wrapper:{value:"iDeCo",status:"recognized"},
+          kind:{value:"投信",status:"recognized"},
+          value:{value:1000,status:"recognized"},
+          pnl:{value:null,status:"missing"},
+          costBasis:{value:null,status:"missing"}
+        }
+      })
+    ];
+
+    const built = stockOcrBuildAccountSnapshotStock(
+      data,account.id,"2026-11-26",cards,{
+        id:"fictional-snapshot-insufficient-data",
+        recordedAt:"2026-11-26T10:00:00.000Z"
+      }
+    );
+
+    assert(built.eligible,
+      "評価額があるsnapshotを生成できません。");
+    assert(built.snapshot.effectivePrincipal === null,
+      "評価損益がないのに有効元本を推測しています。");
+    assert(built.snapshot.pnl === null,
+      "未入力の評価損益が0円として扱われています。");
+  });
+
 }
