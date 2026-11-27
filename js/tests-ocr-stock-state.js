@@ -168,7 +168,8 @@ function registerStockOcrStateTests(context) {
       makeStockOcrStateCardStock(),
       makeStockOcrStateCardStock({
         name:"架空除外ファンド",
-        selected:false
+        selected:false,
+        excludedByUser:true
       })
     ];
 
@@ -180,6 +181,66 @@ function registerStockOcrStateTests(context) {
       "保存対象を外したカードがあるのに自動入力可能です。");
     assert(state.autoValue === null,
       "保存対象を外したカードを含む合計が返されています。");
+  });
+
+  runTest("S11b追補C-2：重複商品も口座全体snapshotに含める",() => {
+    const {data,account} =
+      makeStockOcrStateDataStock("楽天証券");
+    const cards = [
+      makeStockOcrStateCardStock({
+        name:"架空既存商品A",
+        value:60000,
+        costBasis:55000,
+        pnl:5000,
+        selected:false,
+        duplicate:true
+      }),
+      makeStockOcrStateCardStock({
+        name:"架空新規商品B",
+        value:40000,
+        costBasis:38000,
+        pnl:2000
+      }),
+      makeStockOcrStateCardStock({
+        name:"架空既存商品C",
+        value:100000,
+        costBasis:90000,
+        pnl:10000,
+        selected:false,
+        duplicate:true
+      })
+    ];
+
+    const state = stockOcrBuildAccountSnapshotStateStock(
+      data,account.id,"2026-11-26",cards
+    );
+
+    assert(state.canAutoFill,
+      "重複商品があるだけで口座全体snapshotの自動入力が停止しています。");
+    assert(state.autoValue === 200000,
+      "重複2件を含む評価額合計が200000円ではありません。");
+  });
+
+  runTest("S11b追補C-2：一括重複カードがある場合は自動入力しない",() => {
+    const {data,account} =
+      makeStockOcrStateDataStock("楽天証券");
+    const cards = [
+      makeStockOcrStateCardStock(),
+      makeStockOcrStateCardStock({
+        name:"架空一括重複商品",
+        batchDuplicate:true,
+        selected:false
+      })
+    ];
+
+    const state = stockOcrBuildAccountSnapshotStateStock(
+      data,account.id,"2026-11-26",cards
+    );
+
+    assert(!state.canAutoFill,
+      "一括重複カードがあるのに自動入力可能になっています。");
+    assert(state.autoValue === null,
+      "一括重複カードがある状態で合計が返されています。");
   });
 
   runTest("S11b追補C：snapshot・対象日なしでは自動入力しない",() => {
