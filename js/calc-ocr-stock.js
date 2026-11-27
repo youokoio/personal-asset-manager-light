@@ -1,4 +1,3 @@
-
 "use strict";
 
 /* ---------- S11b 株式OCR解析エンジン ---------- */
@@ -239,6 +238,7 @@ function stockOcrExtractAmountTokensStock(lines,format) {
 
 function stockOcrExtractRateStock(lines) {
   const found = [];
+  const yenLineRates = [];
 
   for (const line of lines) {
     const text = stockOcrNormalizeTextStock(line.text);
@@ -251,19 +251,29 @@ function stockOcrExtractRateStock(lines) {
         source.replace(/[%％\s]/g,"").replace(/[−－]/g,"-")
       );
       if (Number.isFinite(value)) {
-        found.push({
+        const item = {
           value,
           decimals:(source.match(/\.(\d+)/) || ["",""])[1].length,
           original:stockOcrMaskStock(source)
-        });
+        };
+        found.push(item);
+        if (/円/.test(text)) yenLineRates.push(item);
       }
     }
   }
 
-  if (found.length === 0) return stockOcrFieldStock(null,"missing");
-  if (found.length > 1) return stockOcrFieldStock(null,"multiple");
+  const selected = yenLineRates.length > 0
+    ? yenLineRates
+    : found;
+
+  if (selected.length === 0) {
+    return stockOcrFieldStock(null,"missing");
+  }
+  if (selected.length > 1) {
+    return stockOcrFieldStock(null,"multiple");
+  }
 
   return stockOcrFieldStock(
-    found[0].value,"recognized",found[0].original,"screen"
+    selected[0].value,"recognized",selected[0].original,"screen"
   );
 }
