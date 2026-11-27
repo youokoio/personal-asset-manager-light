@@ -438,6 +438,7 @@ async function runTestsAndRender() {
     "./js/tests-ocr-stock.js",
     "./js/tests-ocr-stock-compare.js",
     "./js/tests-ocr-stock-render.js",
+    "./js/tests-ocr-stock-state.js",
     "./js/tests.js"
   ];
 
