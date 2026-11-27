@@ -448,7 +448,7 @@ function registerStockOcrTests(context) {
 
     for (const [wrapper,label] of cases) {
       const card = stockOcrBuildCardResultStock(
-        {name:"架空・同額テスト商品"},
+        {name:"架空・同額テスト商品",lines:[]},
         "test",
         "架空・同額テスト商品",
         wrapper,
@@ -471,7 +471,7 @@ function registerStockOcrTests(context) {
     }
 
     const unequal = stockOcrBuildCardResultStock(
-      {name:"架空・不一致テスト商品"},
+      {name:"架空・不一致テスト商品",lines:[]},
       "test",
       "架空・不一致テスト商品",
       "iDeCo",
@@ -487,7 +487,7 @@ function registerStockOcrTests(context) {
       "評価額と取得額が異なる場合に評価損益が0円補完されています。");
 
     const noBasis = stockOcrBuildCardResultStock(
-      {name:"架空・取得額未確定テスト商品"},
+      {name:"架空・取得額未確定テスト商品",lines:[]},
       "test",
       "架空・取得額未確定テスト商品",
       "企業型DC",
