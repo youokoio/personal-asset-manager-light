@@ -2,7 +2,7 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S11bC-v3";
+const APP_VERSION = "S11bC-v4";
 const SPEC_VERSION = "v1.25";
 const STORAGE_KEY = "pam2";
 const SCHEMA_VERSION = 4;
@@ -21,7 +21,8 @@ const INITIAL_ACCOUNTS = [
   {name:"三井住友", type:"bank", category:"bank"},
   {name:"楽天銀行", type:"bank", category:"bank"},
   {name:"静岡銀行", type:"bank", category:"bank"},
-  {name:"ドコモSMTB", type:"bank", category:"bank"}
+  {name:"ドコモSMTB", type:"bank", category:"bank"},
+  {name:"ゆうちょ銀行", type:"bank", category:"bank"}
 ];
 
 const FX_ACCOUNT_SETTINGS = {
