@@ -190,6 +190,13 @@ function stockOcrCompareCardsStock(
           data,accountId,card.name,card.wrapper,targetDate
         )
       : [];
+    const selectedNameCandidate = card.candidateSelections &&
+      card.candidateSelections.name &&
+      card.candidateSelections.name.value === card.name;
+    const nameCandidates = selectedNameCandidate &&
+      Array.isArray(card.nameCandidates)
+        ? card.nameCandidates
+        : similarNames;
 
     let comparison = "new";
     let costDifference = null;
@@ -245,6 +252,7 @@ function stockOcrCompareCardsStock(
       quantityDifference,
       wrapperWarning,
       similarNames,
+      nameCandidates,
       duplicate
     };
   });
