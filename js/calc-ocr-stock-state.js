@@ -465,14 +465,7 @@ function stockOcrBuildAccountSnapshotStock(
           : null
     : null;
 
-  const pnl = state.canAutoFill
-    ? totalPnl !== null
-      ? totalPnl
-      : state.account.name === "企業型DC" &&
-        totalValue !== null && totalCostBasis !== null
-          ? totalValue - totalCostBasis
-          : null
-    : null;
+  const pnl = state.canAutoFill ? totalPnl : null;
 
   return {
     eligible:true,
