@@ -964,7 +964,7 @@ function registerStockOcrStateTests(context) {
       "iDeCoの既存評価損益合計が変わっています。");
   });
 
-  runTest("S11b追補C：snapshot⑪・企業型DCの評価損益を評価額－取得額で補完",() => {
+  runTest("S11b追補C：snapshot⑪・未確定の評価損益は口座全体で補完しない",() => {
     const {data,account} =
       makeStockOcrStateDataStock("企業型DC");
     const cards = [
@@ -1001,10 +1001,61 @@ function registerStockOcrStateTests(context) {
 
     assert(built.eligible,
       "企業型DCのsnapshotを生成できません。");
-    assert(built.snapshot.pnl === 200,
-      "企業型DCの評価損益が評価額合計3000円－取得額合計2800円になっていません。");
+    assert(built.snapshot.pnl === null,
+      "未確定の評価損益が口座全体の評価額－取得額で補完されています。");
     assert(built.snapshot.effectivePrincipal === 2800,
       "企業型DCの有効元本合計が変わっています。");
+  });
+
+  runTest("S11b追補C：snapshot⑬・3口座共通で同額商品は損益0円として合算",() => {
+    for (const item of getStockOcrStateAccountCasesStock()) {
+      const {data,account} =
+        makeStockOcrStateDataStock(item.name);
+      const cards = [
+        makeStockOcrStateCardStock({
+          name:"架空元本確保商品",
+          wrapper:item.wrapper,
+          kind:item.kind,
+          value:1000,
+          pnl:0,
+          costBasis:1000,
+          fields:{
+            name:{value:"架空元本確保商品",status:"recognized"},
+            wrapper:{value:item.wrapper,status:"recognized"},
+            kind:{value:item.kind,status:"recognized"},
+            value:{value:1000,status:"recognized"},
+            pnl:{
+              value:0,
+              status:"calculated",
+              source:"equal-value-cost-basis"
+            },
+            costBasis:{value:1000,status:"recognized"}
+          }
+        }),
+        makeStockOcrStateCardStock({
+          name:"架空利益商品",
+          wrapper:item.wrapper,
+          kind:item.kind,
+          value:2000,
+          pnl:200,
+          costBasis:1800
+        })
+      ];
+
+      const built = stockOcrBuildAccountSnapshotStock(
+        data,account.id,"2026-11-26",cards,{
+          id:"fictional-snapshot-equal-value-" + item.name,
+          recordedAt:"2026-11-26T10:00:00.000Z"
+        }
+      );
+
+      assert(built.eligible,
+        item.name + " のsnapshotを生成できません。");
+      assert(built.snapshot.pnl === 200,
+        item.name + " の評価損益合計が200円ではありません。");
+      assert(built.snapshot.effectivePrincipal === 2800,
+        item.name + " の有効元本合計が2800円ではありません。");
+    }
   });
 
   runTest("S11b追補C：snapshot⑫・必要な金額が不足する場合は補完しない",() => {
