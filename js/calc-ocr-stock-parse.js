@@ -400,6 +400,20 @@ function stockOcrBuildCardResultStock(
   card,format,name,wrapper,kind,value,pnl,costBasis,quantity,rate,extraReasons
 ) {
   const reasons = Array.isArray(extraReasons) ? extraReasons.slice() : [];
+
+  if (value && value.status === "recognized" &&
+      typeof value.value === "number" && Number.isFinite(value.value) &&
+      costBasis && costBasis.status === "recognized" &&
+      typeof costBasis.value === "number" &&
+      Number.isFinite(costBasis.value) &&
+      value.value === costBasis.value &&
+      pnl && pnl.value === null &&
+      (pnl.status === "missing" || pnl.status === "not-shown")) {
+    pnl = stockOcrFieldStock(
+      0,"calculated",null,"equal-value-cost-basis"
+    );
+  }
+
   const required = [
     ["商品名",name],
     ["wrapper",wrapper],
