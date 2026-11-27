@@ -429,12 +429,78 @@ function registerStockOcrTests(context) {
       "元本確保型の評価額12345円が取得できていません。");
     assert(card.costBasis === 12345,
       "明示ルールによる取得額12345円が取得できていません。");
-    assert(card.pnl === null,
-      "表示されていない評価損益が推測されています。");
-    assert(card.fields.pnl.status === "not-shown",
-      "評価損益が未表示として扱われていません。");
-    assert(card.integrity.status === "unavailable",
-      "評価損益が未表示なのに整合検査が完了扱いになっています。");
+    assert(card.pnl === 0,
+      "評価額と確定取得額が同額なのに評価損益0円になっていません。");
+    assert(card.fields.pnl.status === "calculated",
+      "評価損益0円が計算値として扱われていません。");
+    assert(card.fields.pnl.source === "equal-value-cost-basis",
+      "評価損益0円の計算根拠が記録されていません。");
+    assert(card.integrity.status === "ok",
+      "評価額と取得額が同額なのに整合検査が一致扱いになっていません。");
+  });
+
+  runTest("S11b追補D：3口座共通・評価額と確定取得額が同額なら評価損益0円",() => {
+    const cases = [
+      ["特定","楽天証券"],
+      ["iDeCo","iDeCo"],
+      ["企業型DC","企業型DC"]
+    ];
+
+    for (const [wrapper,label] of cases) {
+      const card = stockOcrBuildCardResultStock(
+        {name:"架空・同額テスト商品"},
+        "test",
+        "架空・同額テスト商品",
+        wrapper,
+        "投信",
+        stockOcrFieldStock(100000,"recognized"),
+        stockOcrFieldStock(null,"missing"),
+        stockOcrFieldStock(100000,"recognized"),
+        stockOcrFieldStock(null,"missing"),
+        stockOcrFieldStock(null,"missing"),
+        []
+      );
+      assert(card.pnl === 0,
+        label + " の評価額と確定取得額が同額なら評価損益0円になる必要があります。");
+      assert(card.fields.pnl.status === "calculated",
+        label + " の評価損益0円が計算値として記録されていません。");
+      assert(card.fields.pnl.source === "equal-value-cost-basis",
+        label + " の計算根拠が記録されていません。");
+      assert(card.integrity.status === "ok",
+        label + " の整合検査が一致になっていません。");
+    }
+
+    const unequal = stockOcrBuildCardResultStock(
+      {name:"架空・不一致テスト商品"},
+      "test",
+      "架空・不一致テスト商品",
+      "iDeCo",
+      "投信",
+      stockOcrFieldStock(100001,"recognized"),
+      stockOcrFieldStock(null,"missing"),
+      stockOcrFieldStock(100000,"recognized"),
+      stockOcrFieldStock(null,"missing"),
+      stockOcrFieldStock(null,"missing"),
+      []
+    );
+    assert(unequal.pnl === null,
+      "評価額と取得額が異なる場合に評価損益が0円補完されています。");
+
+    const noBasis = stockOcrBuildCardResultStock(
+      {name:"架空・取得額未確定テスト商品"},
+      "test",
+      "架空・取得額未確定テスト商品",
+      "企業型DC",
+      "投信",
+      stockOcrFieldStock(100000,"recognized"),
+      stockOcrFieldStock(null,"missing"),
+      stockOcrFieldStock(null,"missing"),
+      stockOcrFieldStock(null,"missing"),
+      stockOcrFieldStock(null,"missing"),
+      []
+    );
+    assert(noBasis.pnl === null,
+      "取得額が未確定なのに評価損益が0円補完されています。");
   });
 
   runTest("S11b⑰：企業型DCの外貨表示",() => {
