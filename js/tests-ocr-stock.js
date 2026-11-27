@@ -297,6 +297,40 @@ function registerStockOcrTests(context) {
     );
   });
 
+  runTest("S11b追補C①：iDeCoの金額2件表示",() => {
+    const text = [
+      "● 外国株式",
+      "架空・iDeCoテストファンド",
+      "構成比",
+      "時価評価額",
+      "評価損益",
+      "詳細",
+      "100.0%",
+      "200,000円",
+      "+17,000 円（+8.5%）"
+    ].join("\n");
+    const result = parseStockOcrText(
+      text,stockOcrGetTestRuleStock("ideco")
+    );
+
+    stockOcrAssertCardCountStock(
+      assert,result,1,"iDeCoの2金額表示カードが1件ではありません。"
+    );
+
+    const card = result.cards[0];
+    assert(card.value === 200000,
+      "iDeCoの評価額200000円が取得できていません。");
+    assert(card.pnl === 17000,
+      "iDeCoの評価損益17000円が取得できていません。");
+    assert(card.costBasis === 183000,
+      "iDeCoの取得額183000円が計算されていません。");
+    assert(card.integrity.status === "rate-mismatch",
+      "取得額から計算した率とOCR表示率の不一致が検出されていません。");
+    stockOcrAssertNeedsConfirmationStock(
+      assert,card,"率の不一致があるiDeCoカードが要確認になっていません。"
+    );
+  });
+
   runTest("S11b⑬：企業型DCの正常カード分割",() => {
     const result = stockOcrRunFixtureStock(
       "corporate-dc","normal"
@@ -350,7 +384,7 @@ function registerStockOcrTests(context) {
       assert,result,1,"見出しだけの企業型DCカードが1件ではありません。"
     );
     stockOcrAssertNeedsConfirmationStock(
-      assert,result.cards[0],"見出しだけの商品が要確認になっていません。"
+      assert,result.cards[0],"見出しだけの企業型DCカードが要確認になっていません。"
     );
     assert(result.cards[0].value === null,
       "値がない商品に評価額が設定されています。");
@@ -370,13 +404,46 @@ function registerStockOcrTests(context) {
     );
   });
 
+  runTest("S11b追補C②：DC元本確保型の金額2件・ラベル3件",() => {
+    const text = [
+      "元本確保型",
+      "架空DC定期預金（1年）（99999）",
+      "評価額",
+      "取得価額累計",
+      "評価損益",
+      "12,345円",
+      "12,345円"
+    ].join("\n");
+    const result = parseStockOcrText(
+      text,stockOcrGetTestRuleStock("corporate-dc")
+    );
+
+    stockOcrAssertCardCountStock(
+      assert,result,1,"元本確保型の2金額表示カードが1件ではありません。"
+    );
+
+    const card = result.cards[0];
+    assert(card.name === "架空DC定期預金（1年） (99999)",
+      "元本確保型の商品名が正しく取得できていません。");
+    assert(card.value === 12345,
+      "元本確保型の評価額12345円が取得できていません。");
+    assert(card.costBasis === 12345,
+      "明示ルールによる取得額12345円が取得できていません。");
+    assert(card.pnl === null,
+      "表示されていない評価損益が推測されています。");
+    assert(card.fields.pnl.status === "not-shown",
+      "評価損益が未表示として扱われていません。");
+    assert(card.integrity.status === "unavailable",
+      "評価損益が未表示なのに整合検査が完了扱いになっています。");
+  });
+
   runTest("S11b⑰：企業型DCの外貨表示",() => {
     const result = stockOcrRunFixtureStock(
       "corporate-dc","foreignCurrency"
     );
 
     stockOcrAssertCardCountStock(
-      assert,result,1,"企業型DC外貨カードが1件ではありません。");
+      assert,result,1,"企業型DC外貨表示カードが1件ではありません。");
     assert(result.cards[0].value === null,
       "企業型DCの外貨金額が円として取り込まれています。");
     stockOcrAssertNeedsConfirmationStock(
@@ -671,7 +738,7 @@ function registerStockOcrTests(context) {
       assert,blank.cards[0],"商品名空欄のカードが要確認になっていません。"
     );
     assert(!String(blank.cards[0].name || "").startsWith("商品カード"),
-      "商品名空欄が商品カード番号で補完されています。");
+      "商品名空欄が商品カード番号で補完されていません。");
   });
 
   runTest("S11b追補A⑦：楽天証券wrapper別名",() => {
