@@ -200,7 +200,7 @@ function registerStockOcrComparisonTests(context) {
       "消失候補の商品名が一致しません。");
   });
 
-  runTest("S11b候補：商品名のl/i誤認識を選択候補にする",() => {
+  runTest("S11b候補：商品名のl/i誤認識を候補表示",() => {
     const previous = stockOcrMakeCompareHoldingTest(
       "previous-ispace","account-a","iSpace",
       "特定","2026-10-31",100000,90000,10000
