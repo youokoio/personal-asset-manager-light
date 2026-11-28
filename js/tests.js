@@ -102,6 +102,7 @@ function runAllTests() {
   registerBulkTests(context);
   registerBulkSwapTests(context);
   registerChartTests(context);
+  registerChartUiTests(context);
   registerHoldingsTests(context);
   registerFxTests(context);
   registerFxSettlementTests(context);
