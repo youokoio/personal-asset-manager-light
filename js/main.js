@@ -423,6 +423,7 @@ async function runTestsAndRender() {
 
   const testScripts = [
     "./js/tests-migration.js",
+    "./js/tests-cashflow-data.js",
     "./js/tests-summary.js",
     "./js/tests-input.js",
     "./js/tests-bulk.js",
