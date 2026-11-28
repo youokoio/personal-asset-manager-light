@@ -97,6 +97,7 @@ function runAllTests() {
   };
 
   registerMigrationTests(context);
+  registerCashflowDataTests(context);
   registerSummaryTests(context);
   registerInputTests(context);
   registerBulkTests(context);
