@@ -98,6 +98,7 @@ function runAllTests() {
 
   registerMigrationTests(context);
   registerCashflowDataTests(context);
+  registerCashflowTests(context);
   registerSummaryTests(context);
   registerInputTests(context);
   registerBulkTests(context);
