@@ -465,6 +465,7 @@ async function runTestsAndRender() {
     "./js/tests-ocr-stock-render.js",
     "./js/tests-ocr-stock-state.js",
     "./js/tests-chart-ui.js",
+    "./js/tests-cashflow.js",
     "./js/tests.js"
   ];
 
