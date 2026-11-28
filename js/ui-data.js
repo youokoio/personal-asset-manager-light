@@ -250,6 +250,29 @@ function runDataSelfDiagnosis(data,serviceWorkerRegistered) {
     );
   }
 
+  try {
+    const cashflow = runCashflowDataSelfDiagnosis(data);
+    const detailParts = cashflow.errors.length > 0
+      ? cashflow.errors
+      : ["収支データの形式・列挙値・一意キー・分類の整合に問題はありません。"];
+
+    if (cashflow.warnings.length > 0) {
+      detailParts.push("注意：" + cashflow.warnings.join(" "));
+    }
+
+    add(
+      "収支データの整合",
+      cashflow.errors.length === 0 ? "ok" : "ng",
+      detailParts.join(" ")
+    );
+  } catch (error) {
+    add(
+      "収支データの整合",
+      "ng",
+      error.message || "収支データの整合を確認できません。"
+    );
+  }
+
   const ngCount = items.filter(item => item.status === "ng").length;
   return {items,ngCount,allOk:ngCount === 0};
 }
@@ -334,7 +357,7 @@ function getTemporaryBackupKeys() {
 
 /*
  * JSONバックアップの準備
- * v1・v2・v3はv4へ移行してから検証する。
+ * 旧版データはv5まで順番に移行してから検証する。
  * 元の読み込みデータは直接変更しない。
  */
 function prepareImportedData(parsed) {
@@ -349,12 +372,17 @@ function prepareImportedData(parsed) {
   if (parsed.schemaVersion === 1) {
     const migratedV2 = migrateDataV1ToV2(parsed);
     const migratedV3 = migrateDataV2ToV3(migratedV2);
-    imported = migrateDataV3ToV4(migratedV3);
+    const migratedV4 = migrateDataV3ToV4(migratedV3);
+    imported = migrateDataV4ToV5(migratedV4);
   } else if (parsed.schemaVersion === 2) {
     const migratedV3 = migrateDataV2ToV3(parsed);
-    imported = migrateDataV3ToV4(migratedV3);
+    const migratedV4 = migrateDataV3ToV4(migratedV3);
+    imported = migrateDataV4ToV5(migratedV4);
   } else if (parsed.schemaVersion === 3) {
-    imported = migrateDataV3ToV4(parsed);
+    const migratedV4 = migrateDataV3ToV4(parsed);
+    imported = migrateDataV4ToV5(migratedV4);
+  } else if (parsed.schemaVersion === 4) {
+    imported = migrateDataV4ToV5(parsed);
   } else if (parsed.schemaVersion === SCHEMA_VERSION) {
     imported = JSON.parse(JSON.stringify(parsed));
   } else {
@@ -411,7 +439,7 @@ function renderDataManagement() {
   fileField.append(fileLabel,fileInput);
   restoreCard.appendChild(fileField);
   restoreCard.appendChild(el("p","help",
-    "対応形式：schemaVersion 1・2・3（v4へ移行後に検証）または現在のschemaVersion 4。"
+    "対応形式：schemaVersion 1・2・3・4（v5へ移行後に検証）または現在のschemaVersion 5。"
   ));
   app.appendChild(restoreCard);
 
