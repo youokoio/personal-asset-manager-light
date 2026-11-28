@@ -134,6 +134,7 @@ headerMenu.addEventListener("click",event => {
     selectedAccountId = null;
     chartWorkingPreferences = getChartPreferences();
     chartVisibleSeries = {};
+    resetChartZoom();
     chartSelectedPointText =
       "グラフ上の点を選択すると、日付と金額を表示します。";
     showMessage("");
@@ -214,6 +215,7 @@ app.addEventListener("click",event => {
     selectedAccountId = null;
     chartWorkingPreferences = getChartPreferences();
     chartVisibleSeries = {};
+    resetChartZoom();
     chartSelectedPointText =
       "グラフ上の点を選択すると、日付と金額を表示します。";
     showMessage("");
@@ -238,12 +240,14 @@ app.addEventListener("click",event => {
       endDate:""
     };
     chartVisibleSeries = {};
+    resetChartZoom();
     chartSelectedPointText =
       "グラフ上の点を選択すると、日付と金額を表示します。";
     showMessage("");
     render();
     window.scrollTo(0,0);
   } else if (action === "close-chart") {
+    resetChartZoom();
     currentTab = "home";
     chartWorkingPreferences = null;
     showMessage("");
@@ -256,6 +260,7 @@ app.addEventListener("click",event => {
         target:"all",
         field:"value"
       });
+      resetChartZoom();
       render();
     }
   } else if (action === "remove-chart-series") {
@@ -266,6 +271,7 @@ app.addEventListener("click",event => {
         index < chartWorkingPreferences.series.length) {
       chartWorkingPreferences.series.splice(index,1);
       chartVisibleSeries = {};
+      resetChartZoom();
       render();
     }
   } else if (action === "save-chart-preferences") {
@@ -279,6 +285,9 @@ app.addEventListener("click",event => {
         true
       );
     }
+    render();
+  } else if (action === "reset-chart-zoom") {
+    resetChartZoom();
     render();
   } else if (action === "toggle-chart-series") {
     const index = Number(button.dataset.index);
