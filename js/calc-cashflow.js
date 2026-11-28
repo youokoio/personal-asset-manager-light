@@ -275,8 +275,10 @@ function getCashflowItemCandidates(data,month) {
         itemName:normalizedName,
         category:null,
         type:null,
+        ruleAmount:null,
         previousAmount:null,
         latestDate:"",
+        latestRuleDate:"",
         totalAmount:0,
         count:0,
         monthAmount:0,
@@ -297,10 +299,11 @@ function getCashflowItemCandidates(data,month) {
       group.latestDate = effectiveDate;
       group.category = rule.category;
       group.type = "定期";
+    }
 
-      if (group.previousAmount === null) {
-        group.previousAmount = rule.amount;
-      }
+    if (effectiveDate >= group.latestRuleDate) {
+      group.latestRuleDate = effectiveDate;
+      group.ruleAmount = rule.amount;
     }
   }
 
