@@ -13,6 +13,19 @@ let chartWorkingPreferences = null;
 
 try {
   appData = loadData();
+
+  try {
+    const completion = applyCashflowAutoCompletion(
+      appData,
+      localDateString()
+    );
+    appData = completion.data;
+  } catch (error) {
+    showMessage(
+      error.message || "定期収支の補完に失敗しました。",
+      true
+    );
+  }
 } catch (error) {
   errorText = error.message || "データを読み込めませんでした。";
 }
