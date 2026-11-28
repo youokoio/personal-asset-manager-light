@@ -255,3 +255,22 @@ function migrateDataV3ToV4(oldData) {
 
   return data;
 }
+
+/* ---------- v4 → v5 移行 ---------- */
+
+function migrateDataV4ToV5(oldData) {
+  if (!oldData ||
+      oldData.schemaVersion !== 4 ||
+      !Array.isArray(oldData.accounts) ||
+      !Array.isArray(oldData.snapshots)) {
+    throw new Error("v4データの形式が正しくありません。");
+  }
+
+  const data = JSON.parse(JSON.stringify(oldData));
+
+  data.schemaVersion = 5;
+  data.cashflowRules = [];
+  data.cashflowRecords = [];
+
+  return data;
+}
