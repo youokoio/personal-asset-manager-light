@@ -1339,3 +1339,63 @@ button.chart-legend-button.chart-legend-hidden {
 .fx-history-cell-input {
   font-size:16px;
 }
+
+/* ---------- S14 グラフ系列選択・ピンチズーム ---------- */
+.chart-graph {
+  touch-action:pan-y;
+}
+
+.chart-series-matrix {
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  margin-top:12px;
+}
+
+.chart-series-matrix-row {
+  padding:10px 0;
+  border-bottom:1px solid var(--border);
+}
+
+.chart-series-matrix-row:last-child {
+  border-bottom:0;
+}
+
+.chart-series-matrix-title {
+  margin:0 0 9px;
+  font-size:13px;
+  font-weight:700;
+}
+
+.chart-series-matrix-fields {
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:10px 12px;
+}
+
+.chart-series-checkbox {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  min-width:0;
+  font-size:13px;
+  line-height:1.4;
+}
+
+.chart-series-checkbox input[type="checkbox"] {
+  flex:0 0 auto;
+  width:19px;
+  height:19px;
+  margin:0;
+  accent-color:var(--blue);
+}
+
+.chart-series-checkbox input[type="checkbox"]:disabled {
+  opacity:.4;
+}
+
+@media (min-width:600px) {
+  .chart-series-matrix-fields {
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+}
