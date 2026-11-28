@@ -141,56 +141,6 @@ function createChartSvgElement(name,attributes = {}) {
   return element;
 }
 
-function getChartPointTimestamp(dateString) {
-  const parts = dateString.split("-").map(Number);
-  return Date.UTC(parts[0],parts[1] - 1,parts[2]);
-}
-
-function getChartAxisRange(series,approximation = null) {
-  const values = series.flatMap(item =>
-    item.points.map(point => point.value)
-  );
-
-  if (approximation && approximation.available) {
-    values.push(
-      ...approximation.curve.map(point => point.value),
-      ...approximation.forecastCurve.map(point => point.value)
-    );
-  }
-
-  if (!values.length) return null;
-
-  let minimum = Math.min(...values);
-  let maximum = Math.max(...values);
-
-  if (minimum > 0 && maximum > 0) {
-    minimum = 0;
-  } else if (minimum < 0 && maximum < 0) {
-    maximum = 0;
-  }
-
-  if (minimum === maximum) {
-    const padding = Math.abs(minimum) * 0.1 || 1;
-    minimum -= padding;
-    maximum += padding;
-  } else {
-    const padding = (maximum - minimum) * 0.08;
-    minimum -= padding;
-    maximum += padding;
-  }
-
-  return {minimum,maximum};
-}
-
-function createChartPointPath(points,xForDate,yForValue) {
-  return points.map((point,index) => {
-    const command = index === 0 ? "M" : "L";
-    return command + " " +
-      xForDate(point.date).toFixed(2) + " " +
-      yForValue(point.value).toFixed(2);
-  }).join(" ");
-}
-
 function renderChartSvg(
   container,
   series,
@@ -216,20 +166,49 @@ function renderChartSvg(
   });
   svg.classList.add("chart-svg");
 
-  const visibleSeries = series.filter((item,index) =>
-    chartVisibleSeries[index] !== false
-  );
+  const displayRange = chartZoomRange;
+  const visibleSeries = series
+    .map((item,index) => ({
+      ...item,
+      originalIndex:index,
+      points:item.points.filter(point => {
+        if (!displayRange) return true;
+        const timestamp = getChartPointTimestamp(point.date);
+        return timestamp >= displayRange.start &&
+          timestamp <= displayRange.end;
+      })
+    }))
+    .filter((item,index) =>
+      chartVisibleSeries[index] !== false
+    );
   const allPoints = visibleSeries.flatMap(item => item.points);
   const canDrawApproximation = approximation &&
     approximation.available &&
     approximationSeriesIndex >= 0 &&
     chartVisibleSeries[approximationSeriesIndex] !== false;
+  const visibleApproximation = canDrawApproximation
+    ? {
+        ...approximation,
+        curve:approximation.curve.filter(point => {
+          if (!displayRange) return true;
+          const timestamp = getChartPointTimestamp(point.date);
+          return timestamp >= displayRange.start &&
+            timestamp <= displayRange.end;
+        }),
+        forecastCurve:approximation.forecastCurve.filter(point => {
+          if (!displayRange) return true;
+          const timestamp = getChartPointTimestamp(point.date);
+          return timestamp >= displayRange.start &&
+            timestamp <= displayRange.end;
+        })
+      }
+    : null;
   const plottedPoints = allPoints.slice();
 
-  if (canDrawApproximation) {
+  if (visibleApproximation) {
     plottedPoints.push(
-      ...approximation.curve,
-      ...approximation.forecastCurve
+      ...visibleApproximation.curve,
+      ...visibleApproximation.forecastCurve
     );
   }
 
@@ -245,11 +224,15 @@ function renderChartSvg(
   const dates = plottedPoints.map(point =>
     getChartPointTimestamp(point.date)
   );
-  const firstTimestamp = Math.min(...dates);
-  const lastTimestamp = Math.max(...dates);
+  const firstTimestamp = displayRange
+    ? displayRange.start
+    : Math.min(...dates);
+  const lastTimestamp = displayRange
+    ? displayRange.end
+    : Math.max(...dates);
   const axisRange = getChartAxisRange(
     visibleSeries,
-    canDrawApproximation ? approximation : null
+    visibleApproximation
   );
 
   const xForDate = date => {
@@ -300,14 +283,18 @@ function renderChartSvg(
     }));
   }
 
-  const firstDate = plottedPoints.reduce((value,point) =>
-    point.date < value ? point.date : value,
-    plottedPoints[0].date
-  );
-  const lastDate = plottedPoints.reduce((value,point) =>
-    point.date > value ? point.date : value,
-    plottedPoints[0].date
-  );
+  const firstDate = displayRange
+    ? new Date(displayRange.start).toISOString().slice(0,10)
+    : plottedPoints.reduce((value,point) =>
+        point.date < value ? point.date : value,
+        plottedPoints[0].date
+      );
+  const lastDate = displayRange
+    ? new Date(displayRange.end).toISOString().slice(0,10)
+    : plottedPoints.reduce((value,point) =>
+        point.date > value ? point.date : value,
+        plottedPoints[0].date
+      );
 
   const firstLabel = createChartSvgElement("text",{
     x:padding.left,
@@ -328,7 +315,7 @@ function renderChartSvg(
   svg.appendChild(lastLabel);
 
   visibleSeries.forEach(item => {
-    const originalIndex = series.indexOf(item);
+    const originalIndex = item.originalIndex;
     const color = CHART_SERIES_COLORS[originalIndex];
 
     if (item.points.length >= 2) {
@@ -345,10 +332,10 @@ function renderChartSvg(
 
     if (canDrawApproximation &&
         originalIndex === approximationSeriesIndex) {
-      if (approximation.curve.length >= 2) {
+      if (visibleApproximation.curve.length >= 2) {
         svg.appendChild(createChartSvgElement("path",{
           d:createChartPointPath(
-            approximation.curve,
+            visibleApproximation.curve,
             xForDate,
             yForValue
           ),
@@ -359,10 +346,10 @@ function renderChartSvg(
         }));
       }
 
-      if (approximation.forecastCurve.length >= 2) {
+      if (visibleApproximation.forecastCurve.length >= 2) {
         svg.appendChild(createChartSvgElement("path",{
           d:createChartPointPath(
-            approximation.forecastCurve,
+            visibleApproximation.forecastCurve,
             xForDate,
             yForValue
           ),
@@ -437,6 +424,7 @@ function renderChartPeriodSettings(preferences) {
   periodSelect.setAttribute("aria-label","グラフの表示期間");
   periodSelect.addEventListener("change",() => {
     preferences.period = periodSelect.value;
+    resetChartZoom();
     render();
   });
 
@@ -462,10 +450,12 @@ function renderChartPeriodSettings(preferences) {
 
     startInput.addEventListener("change",() => {
       preferences.startDate = startInput.value;
+      resetChartZoom();
       render();
     });
     endInput.addEventListener("change",() => {
       preferences.endDate = endInput.value;
+      resetChartZoom();
       render();
     });
 
@@ -894,6 +884,7 @@ function renderChartScreen() {
     preferences.endDate,
     preferences.approximation
   );
+  const fullRange = getChartSeriesTimestampRange(result.series);
 
   app.appendChild(renderChartSeriesSettings(preferences));
   app.appendChild(renderChartPeriodSettings(preferences));
@@ -922,6 +913,19 @@ function renderChartScreen() {
     );
     chartCard.appendChild(graph);
 
+    setupChartPinchZoom(graph,result.series,fullRange);
+
+    if (chartZoomRange) {
+      const zoomActions = el("div","actions");
+      const resetZoom = makeButton(
+        "ズームをリセット",
+        "reset-chart-zoom",
+        "secondary small"
+      );
+      zoomActions.appendChild(resetZoom);
+      chartCard.appendChild(zoomActions);
+    }
+
     chartCard.appendChild(el(
       "div",
       "chart-point-detail",
@@ -946,10 +950,7 @@ function renderChartScreen() {
     selectedApproximationSeries
   ));
 
-  const visibleStatistics = result.series.filter((item,index) =>
-    chartVisibleSeries[index] !== false
-  );
-  app.appendChild(renderChartStatistics(visibleStatistics));
+  app.appendChild(renderChartStatistics(result.series));
 
   app.appendChild(el(
     "div",
