@@ -59,6 +59,8 @@ function createInitialData() {
     contributionPlans:[],
     contributions:[],
     saleChecks:[],
+    cashflowRules:[],
+    cashflowRecords:[],
     settings:{
       taxRatePct:20.315,
       fxYtdRealized:0,
@@ -68,6 +70,20 @@ function createInitialData() {
   };
 }
 
+function migrateAndSaveV4Data(data,rawV4,storage) {
+  const backupKey = "pam2_pre_v5";
+
+  if (storage.getItem(backupKey) === null) {
+    storage.setItem(backupKey,rawV4);
+  }
+
+  const migrated = migrateDataV4ToV5(data);
+  validateData(migrated);
+  storage.setItem(STORAGE_KEY,JSON.stringify(migrated));
+
+  return migrated;
+}
+
 function migrateAndSaveV3Data(data,rawV3,storage) {
   const backupKey = "pam2_pre_v4";
 
@@ -75,11 +91,13 @@ function migrateAndSaveV3Data(data,rawV3,storage) {
     storage.setItem(backupKey,rawV3);
   }
 
-  const migrated = migrateDataV3ToV4(data);
-  validateData(migrated);
-  storage.setItem(STORAGE_KEY,JSON.stringify(migrated));
+  const migratedV4 = migrateDataV3ToV4(data);
 
-  return migrated;
+  return migrateAndSaveV4Data(
+    migratedV4,
+    JSON.stringify(migratedV4),
+    storage
+  );
 }
 
 function loadData(storage = localStorage) {
@@ -134,6 +152,10 @@ function loadData(storage = localStorage) {
     return migrateAndSaveV3Data(parsed,raw,storage);
   }
 
+  if (parsed && parsed.schemaVersion === 4) {
+    return migrateAndSaveV4Data(parsed,raw,storage);
+  }
+
   validateData(parsed);
   return parsed;
 }
@@ -167,6 +189,31 @@ function saveStockTrackingData(kind,updateData,storage = localStorage) {
   const nextData = JSON.parse(currentRaw);
 
   storage.setItem(backupKey,currentRaw);
+  updateData(nextData);
+  validateData(nextData);
+  storage.setItem(STORAGE_KEY,JSON.stringify(nextData));
+
+  return nextData;
+}
+
+/*
+ * 収支データの共通保存。
+ * 既存データを pam2_pre_cashflow に複製してから、
+ * 複製データを変更・検証し、本体へ1回だけ書き込む。
+ */
+function saveCashflowData(updateData,storage = localStorage) {
+  if (typeof updateData !== "function") {
+    throw new Error("収支データの保存指定が正しくありません。");
+  }
+
+  const currentRaw = storage.getItem(STORAGE_KEY);
+  if (currentRaw === null) {
+    throw new Error("保存データがありません。");
+  }
+
+  const nextData = JSON.parse(currentRaw);
+
+  storage.setItem("pam2_pre_cashflow",currentRaw);
   updateData(nextData);
   validateData(nextData);
   storage.setItem(STORAGE_KEY,JSON.stringify(nextData));
