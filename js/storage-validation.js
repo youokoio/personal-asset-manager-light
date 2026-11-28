@@ -81,7 +81,9 @@ function validateData(data) {
     "loanSnapshots",
     "contributionPlans",
     "contributions",
-    "saleChecks"
+    "saleChecks",
+    "cashflowRules",
+    "cashflowRecords"
   ];
 
   for (const name of collectionNames) {
@@ -487,4 +489,5 @@ function validateData(data) {
   }
 
   validateStockTrackingData(data);
+  validateCashflowData(data);
 }
