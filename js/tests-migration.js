@@ -83,7 +83,7 @@ function registerMigrationTests(context) {
     return JSON.parse(JSON.stringify(data));
   }
 
-  runTest("v1からv4への連続移行と新項目追加",() => {
+  runTest("v1からv5への連続移行と新項目追加",() => {
     const oldData = {
       schemaVersion:1,
       accounts:[
@@ -121,9 +121,11 @@ function registerMigrationTests(context) {
 
     const migratedV2 = migrateDataV1ToV2(oldData);
     const migratedV3 = migrateDataV2ToV3(migratedV2);
-    const migrated = migrateDataV3ToV4(migratedV3);
+    const migratedV4 = migrateDataV3ToV4(migratedV3);
+    const migrated = migrateDataV4ToV5(migratedV4);
 
-    assert(migrated.schemaVersion === 4,"schemaVersionが4ではありません。");
+    assert(migratedV4.schemaVersion === 4,"v3からv4への移行が正しくありません。");
+    assert(migrated.schemaVersion === 5,"schemaVersionが5ではありません。");
     assert(migrated.accounts[0].id === "account-fx","既存口座IDが変わっています。");
     assert(migrated.accounts[0].category === "fx","FX分類が正しくありません。");
     assert(migrated.accounts[0].lossCutRatio === 123,"既存のロスカット設定が上書きされています。");
@@ -152,6 +154,8 @@ function registerMigrationTests(context) {
     assert(Array.isArray(migrated.contributionPlans),"contributionPlansが追加されていません。");
     assert(Array.isArray(migrated.contributions),"contributionsが追加されていません。");
     assert(Array.isArray(migrated.saleChecks),"saleChecksが追加されていません。");
+    assert(Array.isArray(migrated.cashflowRules),"cashflowRulesが追加されていません。");
+    assert(Array.isArray(migrated.cashflowRecords),"cashflowRecordsが追加されていません。");
     assert(migrated.accounts[0].fieldLabels.value === "純資産額",
       "FX口座のfieldLabels初期値が正しくありません。");
     assert(migrated.accounts[0].autoCalc === "swap",
@@ -161,13 +165,15 @@ function registerMigrationTests(context) {
     validateData(migrated);
   });
 
-  runTest("v2からv4への連続移行は追加のみで繰り返しても同じ",() => {
+  runTest("v2からv5への連続移行は追加のみで繰り返しても同じ",() => {
     const oldData = createInitialData();
     oldData.schemaVersion = 2;
     delete oldData.fxSwapLedger;
     delete oldData.contributionPlans;
     delete oldData.contributions;
     delete oldData.saleChecks;
+    delete oldData.cashflowRules;
+    delete oldData.cashflowRecords;
 
     for (const account of oldData.accounts) {
       delete account.fieldLabels;
@@ -187,7 +193,7 @@ function registerMigrationTests(context) {
 
     assert(JSON.stringify(first) === JSON.stringify(second),
       "同じv2データからの移行結果が一致しません。");
-    assert(first.schemaVersion === 4,"schemaVersionが4ではありません。");
+    assert(first.schemaVersion === 4,"v2からv4への移行が正しくありません。");
     assert(first.accounts.find(account => account.name === "LIGHT FX").lossCutRatio === 77,
       "既存のFX設定が上書きされています。");
     assert(first.accounts.find(account => account.name === "LIGHT FX").fieldLabels.value === "独自の総資産名",
@@ -201,7 +207,8 @@ function registerMigrationTests(context) {
     assert(Array.isArray(first.fxSwapLedger),"fxSwapLedgerが追加されていません。");
     assert(JSON.stringify(oldData) === sourceJson,
       "移行処理が元データを変更しています。");
-    validateData(first);
+    const firstV5 = migrateDataV4ToV5(first);
+    validateData(firstV5);
   });
 
   runTest("FXデータの読み替え対象と複写",() => {
@@ -347,12 +354,14 @@ function registerMigrationTests(context) {
   });
 
 
-  runTest("S13a M1：v3からv4への移行と既存データ・バックアップ保持",() => {
+  runTest("S13a M1：v3からv5への移行と既存データ・バックアップ保持",() => {
     const oldData = createInitialData();
     oldData.schemaVersion = 3;
     delete oldData.contributionPlans;
     delete oldData.contributions;
     delete oldData.saleChecks;
+    delete oldData.cashflowRules;
+    delete oldData.cashflowRecords;
 
     const stock = oldData.accounts.find(account =>
       account.category === "stock"
@@ -370,7 +379,13 @@ function registerMigrationTests(context) {
     const storage = makeFakeStorage(originalRaw);
     const migrated = loadData(storage);
 
-    assert(migrated.schemaVersion === 4,"v3データがv4になっていません。");
+    assert(migrated.schemaVersion === 5,"v3データがv5になっていません。");
+    assert(Array.isArray(migrated.cashflowRules) && migrated.cashflowRules.length === 0,
+      "cashflowRules が空配列で追加されていません。");
+    assert(Array.isArray(migrated.cashflowRecords) && migrated.cashflowRecords.length === 0,
+      "cashflowRecords が空配列で追加されていません。");
+    assert(JSON.parse(storage.getItem("pam2_pre_v5")).schemaVersion === 4,
+      "v5移行前のv4バックアップがありません。");
     assert(Array.isArray(migrated.contributionPlans) &&
       migrated.contributionPlans.length === 0,
       "contributionPlans が空配列で追加されていません。");
@@ -392,17 +407,21 @@ function registerMigrationTests(context) {
     delete restored.contributionPlans;
     delete restored.contributions;
     delete restored.saleChecks;
+    delete restored.cashflowRules;
+    delete restored.cashflowRecords;
     assert(JSON.stringify(restored) === originalRaw,
       "新コレクション以外の既存データが変わっています。");
   });
 
-  runTest("S13a：v2データはv3を経由してv4へ移行する",() => {
+  runTest("S13a：v2データはv3・v4を経由してv5へ移行する",() => {
     const oldData = createInitialData();
     oldData.schemaVersion = 2;
     delete oldData.fxSwapLedger;
     delete oldData.contributionPlans;
     delete oldData.contributions;
     delete oldData.saleChecks;
+    delete oldData.cashflowRules;
+    delete oldData.cashflowRecords;
 
     for (const account of oldData.accounts) {
       delete account.fieldLabels;
@@ -414,7 +433,13 @@ function registerMigrationTests(context) {
     const migrated = loadData(storage);
     const beforeV4 = JSON.parse(storage.getItem("pam2_pre_v4"));
 
-    assert(migrated.schemaVersion === 4,"v2データがv4になっていません。");
+    assert(migrated.schemaVersion === 5,"v2データがv5になっていません。");
+    assert(Array.isArray(migrated.cashflowRules) && migrated.cashflowRules.length === 0,
+      "cashflowRules が空配列で追加されていません。");
+    assert(Array.isArray(migrated.cashflowRecords) && migrated.cashflowRecords.length === 0,
+      "cashflowRecords が空配列で追加されていません。");
+    assert(JSON.parse(storage.getItem("pam2_pre_v5")).schemaVersion === 4,
+      "v5移行前のv4バックアップがありません。");
     assert(beforeV4.schemaVersion === 3,
       "v2からv3を経由した移行前バックアップがありません。");
     assert(Array.isArray(beforeV4.fxSwapLedger),
@@ -423,23 +448,40 @@ function registerMigrationTests(context) {
       "v2移行前の pam2_pre_v3 が保持されていません。");
   });
 
-  runTest("S13a M2：v4 JSON往復とv3 JSONの読み込み",() => {
+  runTest("S13a M2：v4 JSON往復とv3 JSONの読み込み（v5へ移行）",() => {
     const currentData = makeValidStockTrackingData();
-    const exported = JSON.stringify(currentData);
+    const v4Data = cloneTestData(currentData);
+    v4Data.schemaVersion = 4;
+    delete v4Data.cashflowRules;
+    delete v4Data.cashflowRecords;
+    const exported = JSON.stringify(v4Data);
     const imported = prepareImportedData(JSON.parse(exported));
 
-    assert(JSON.stringify(imported) === exported,
-      "v4 JSONの書き出し・読み込みで内容が変わっています。");
+    assert(imported.schemaVersion === 5,
+      "v4 JSONがv5に移行されていません。");
+    assert(Array.isArray(imported.cashflowRules) && imported.cashflowRules.length === 0,
+      "v4 JSONのcashflowRulesが空配列で追加されていません。");
+    assert(Array.isArray(imported.cashflowRecords) && imported.cashflowRecords.length === 0,
+      "v4 JSONのcashflowRecordsが空配列で追加されていません。");
+    assert(imported.accounts.length === v4Data.accounts.length &&
+      imported.snapshots.length === v4Data.snapshots.length &&
+      imported.holdings.length === v4Data.holdings.length,
+      "v4 JSONの既存コレクションが保持されていません。");
 
     const oldV3 = cloneTestData(currentData);
     oldV3.schemaVersion = 3;
     delete oldV3.contributionPlans;
     delete oldV3.contributions;
     delete oldV3.saleChecks;
+    delete oldV3.cashflowRules;
+    delete oldV3.cashflowRecords;
 
     const restoredV3 = prepareImportedData(oldV3);
-    assert(restoredV3.schemaVersion === 4,
-      "v3 JSONがv4に移行されていません。");
+    assert(restoredV3.schemaVersion === 5,
+      "v3 JSONがv5に移行されていません。");
+    assert(restoredV3.cashflowRules.length === 0 &&
+      restoredV3.cashflowRecords.length === 0,
+      "v3 JSONから収支コレクションが空配列で追加されていません。");
     assert(restoredV3.contributionPlans.length === 0 &&
       restoredV3.contributions.length === 0 &&
       restoredV3.saleChecks.length === 0,
