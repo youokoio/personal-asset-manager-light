@@ -2,10 +2,10 @@
 
 /* ---------- 定数・初期データ ---------- */
 
-const APP_VERSION = "S14-v1";
-const SPEC_VERSION = "v1.27";
+const APP_VERSION = "S15a-v1";
+const SPEC_VERSION = "v1.28";
 const STORAGE_KEY = "pam2";
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 const INITIAL_ACCOUNTS = [
   {name:"LIGHT FX", type:"fx", category:"fx"},
